@@ -3,10 +3,16 @@ import { ResultsService } from './results.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { BadRequestException } from '@nestjs/common';
+import { NotificationsQueueService } from '../notifications/notifications.queue.service';
 
 describe('ResultsService', () => {
   let service: ResultsService;
   let prisma: PrismaService;
+
+  const mockNotificationsQueueService = {
+    addResultsPublishedJob: jest.fn().mockResolvedValue(true),
+    addRegistrationOpenedJob: jest.fn().mockResolvedValue(true),
+  };
 
   const mockPrismaService = {
     student: {
@@ -35,6 +41,7 @@ describe('ResultsService', () => {
         ResultsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditService, useValue: mockAuditService },
+        { provide: NotificationsQueueService, useValue: mockNotificationsQueueService },
       ],
     }).compile();
 

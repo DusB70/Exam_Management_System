@@ -18,6 +18,8 @@ import {
   FileSpreadsheet,
   GraduationCap,
   Sparkles,
+  Download,
+  Search,
 } from 'lucide-react';
 import { UserRole } from '@ems/shared';
 
@@ -41,6 +43,12 @@ export default function ResultsAndImportsPage() {
   const [marksFile, setMarksFile] = useState<File | null>(null);
   const [importExamId, setImportExamId] = useState<string>('');
 
+  // Staff Student PDF Search State
+  const [studentSearch, setStudentSearch] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isDownloadingPdfMap, setIsDownloadingPdfMap] = useState<Record<number, boolean>>({});
+
   // ==========================================
   // STUDENT PORTAL QUERIES
   // ==========================================
@@ -63,12 +71,28 @@ export default function ResultsAndImportsPage() {
   const { data: examsList = [], isLoading: isExamsLoading } = useQuery({
     queryKey: ['admin-exams-list'],
     queryFn: async () => {
-      // Find course exams (Admin can get them, we'll list exams in a simple way or fetch them)
-      // For convenience, we can query '/courses' and list exams or get reviews
       const response = await apiClient.get('/marks/pending-approvals');
       return response.data?.data || [];
     },
     enabled: isStaffOrAdmin,
+  });
+
+  // Fetch searched student users
+  const { data: searchedStudents = [], isLoading: isSearchLoading } = useQuery({
+    queryKey: ['staff-students-search', searchQuery],
+    queryFn: async () => {
+      if (!searchQuery) return [];
+      const response = await apiClient.get('/users', {
+        params: {
+          roleId: 4, // Student role ID
+          search: searchQuery,
+          page: 1,
+          limit: 10,
+        },
+      });
+      return response.data?.data?.items || [];
+    },
+    enabled: isStaffOrAdmin && !!searchQuery,
   });
 
   // ==========================================
@@ -165,6 +189,46 @@ export default function ResultsAndImportsPage() {
       examId: parseInt(importExamId, 10),
       file: marksFile,
     });
+  };
+
+  const handleDownloadMyPdf = async () => {
+    setIsDownloadingPdf(true);
+    try {
+      const response = await apiClient.get('/results/my-report/pdf', {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `transcript_${user?.fullName || 'student'}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+    } catch {
+      setErrorMsg('Failed to download PDF transcript.');
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
+  const handleDownloadStaffPdf = async (studentId: number, studentName: string) => {
+    setIsDownloadingPdfMap((prev) => ({ ...prev, [studentId]: true }));
+    try {
+      const response = await apiClient.get(`/results/student/${studentId}/pdf`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `transcript_${studentName.replace(/\s+/g, '_')}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+    } catch {
+      setErrorMsg('Failed to download student PDF transcript.');
+    } finally {
+      setIsDownloadingPdfMap((prev) => ({ ...prev, [studentId]: false }));
+    }
   };
 
   // Resolve Student GPA metrics
@@ -309,7 +373,21 @@ export default function ResultsAndImportsPage() {
 
               {/* Course Grades table */}
               <div className="space-y-4">
-                <h3 className="text-lg font-bold text-foreground">Official Transcript Sheets</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-foreground">Official Transcript Sheets</h3>
+                  <button
+                    onClick={handleDownloadMyPdf}
+                    disabled={isDownloadingPdf}
+                    className="flex items-center gap-2 px-4 py-2 text-xs font-semibold bg-primary text-primary-foreground rounded-xl shadow-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    {isDownloadingPdf ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    Download PDF Transcript
+                  </button>
+                </div>
                 <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -422,6 +500,93 @@ export default function ResultsAndImportsPage() {
 
           {/* Bulk Spreadsheet Uploads */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Student Search & PDF Download Card */}
+            <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-md space-y-4">
+              <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                <Search className="h-4.5 w-4.5 text-primary" />
+                Student Academic Report Downloader
+              </h3>
+              <p className="text-xs text-muted-foreground leading-normal">
+                Search for a student by name or registration number to download their official PDF
+                transcript card.
+              </p>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Enter name or registration number..."
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setSearchQuery(studentSearch);
+                    }
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-secondary/30 border border-border rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-primary/60 text-foreground"
+                />
+                <button
+                  onClick={() => setSearchQuery(studentSearch)}
+                  className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-1.5"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  Search
+                </button>
+              </div>
+
+              {isSearchLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : searchQuery && searchedStudents.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-2">
+                  No matching students found.
+                </p>
+              ) : searchedStudents.length > 0 ? (
+                <div className="border border-border/50 rounded-xl overflow-hidden text-xs">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-secondary/10 border-b border-border/60 font-bold text-muted-foreground">
+                        <th className="p-3">Student Name</th>
+                        <th className="p-3">Reg No</th>
+                        <th className="p-3">Department</th>
+                        <th className="p-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/40 font-medium">
+                      {searchedStudents.map((u: any) => {
+                        const sId = u.student?.student_id;
+                        const regNo = u.student?.registration_number;
+                        const dept = u.student?.department?.department_code || 'N/A';
+                        if (!sId) return null;
+
+                        return (
+                          <tr key={u.user_id} className="hover:bg-secondary/5">
+                            <td className="p-3 text-foreground">{u.full_name}</td>
+                            <td className="p-3 text-muted-foreground font-mono">{regNo}</td>
+                            <td className="p-3 text-muted-foreground">{dept}</td>
+                            <td className="p-3 text-right">
+                              <button
+                                onClick={() => handleDownloadStaffPdf(sId, u.full_name)}
+                                disabled={isDownloadingPdfMap[sId]}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-primary/10 border border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground rounded-lg transition-colors font-semibold disabled:opacity-50"
+                              >
+                                {isDownloadingPdfMap[sId] ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Download className="h-3 w-3" />
+                                )}
+                                Download PDF
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+
             {/* Student Import Card */}
             <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-md space-y-4">
               <h3 className="text-sm font-bold text-foreground flex items-center gap-2">

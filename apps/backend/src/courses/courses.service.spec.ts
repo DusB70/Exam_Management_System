@@ -4,11 +4,17 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PeriodStatus } from './dtos/registration-periods.dto';
+import { NotificationsQueueService } from '../notifications/notifications.queue.service';
 
 describe('CoursesService', () => {
   let service: CoursesService;
   let prisma: PrismaService;
   let audit: AuditService;
+
+  const mockNotificationsQueueService = {
+    addResultsPublishedJob: jest.fn().mockResolvedValue(true),
+    addRegistrationOpenedJob: jest.fn().mockResolvedValue(true),
+  };
 
   const mockPrismaService = {
     course: {
@@ -43,6 +49,7 @@ describe('CoursesService', () => {
         CoursesService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditService, useValue: mockAuditService },
+        { provide: NotificationsQueueService, useValue: mockNotificationsQueueService },
       ],
     }).compile();
 
