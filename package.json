@@ -1,0 +1,31 @@
+{
+  "name": "ems-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "University Exam Management System (EMS)",
+  "workspaces": [
+    "apps/backend",
+    "apps/frontend",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=apps/backend",
+    "dev:frontend": "npm run dev --workspace=apps/frontend",
+    "build:shared": "npm run build --workspace=packages/shared",
+    "build:backend": "npm run build --workspace=apps/backend",
+    "build:frontend": "npm run build --workspace=apps/frontend",
+    "build": "npm run build:shared && npm run build:backend && npm run build:frontend",
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "prettier": "^3.2.5",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/parser": "^7.1.1",
+    "@typescript-eslint/eslint-plugin": "^7.1.1",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.2"
+  }
+}

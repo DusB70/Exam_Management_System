@@ -1,0 +1,256 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Role {
+  role_id    Int       @id @default(autoincrement())
+  role_name  String    @unique @db.VarChar(50)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  users      User[]
+
+  @@map("roles")
+}
+
+model User {
+  user_id       Int            @id @default(autoincrement())
+  full_name     String         @db.VarChar(150)
+  email         String         @unique @db.VarChar(150)
+  password_hash String
+  role_id       Int
+  is_active     Boolean?       @default(true)
+  created_at    DateTime?      @default(now()) @db.Timestamp(6)
+  role          Role           @relation(fields: [role_id], references: [role_id], onUpdate: NoAction, onDelete: Restrict)
+  student       Student?
+  lecturer      Lecturer?
+  refresh_tokens RefreshToken[]
+  audit_logs    AuditLog[]
+  recorded_marks ExamMark[]
+
+  @@map("users")
+}
+
+model Department {
+  department_id   Int        @id @default(autoincrement())
+  department_name String     @unique @db.VarChar(100)
+  department_code String     @unique @db.VarChar(20)
+  created_at      DateTime?  @default(now()) @db.Timestamp(6)
+  courses         Course[]
+  lecturers       Lecturer[]
+  students        Student[]
+
+  @@map("departments")
+}
+
+model Student {
+  student_id          Int                  @id @default(autoincrement())
+  user_id             Int                  @unique
+  registration_number String               @unique @db.VarChar(50)
+  department_id       Int
+  academic_year       Int
+  semester            Int
+  date_of_birth       DateTime?            @db.Date
+  phone_number        String?              @db.VarChar(20)
+  user                User                 @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  department          Department           @relation(fields: [department_id], references: [department_id], onDelete: Restrict)
+  registrations       CourseRegistration[]
+  exam_marks          ExamMark[]
+  course_grades       StudentCourseGrade[]
+  semester_gpas       StudentSemesterGpa[]
+
+  @@map("students")
+}
+
+model Lecturer {
+  lecturer_id     Int              @id @default(autoincrement())
+  user_id         Int              @unique
+  employee_number String           @unique @db.VarChar(50)
+  department_id   Int
+  specialization  String?          @db.VarChar(100)
+  phone_number    String?          @db.VarChar(20)
+  user            User             @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  department      Department       @relation(fields: [department_id], references: [department_id], onDelete: Restrict)
+  courses         CourseLecturer[]
+
+  @@map("lecturers")
+}
+
+model Course {
+  course_id     Int                  @id @default(autoincrement())
+  course_code   String               @unique @db.VarChar(20)
+  course_name   String               @db.VarChar(150)
+  credit_value  Decimal              @db.Decimal(3, 1)
+  department_id Int
+  semester      Int
+  academic_year Int
+  created_at    DateTime?            @default(now()) @db.Timestamp(6)
+  department    Department           @relation(fields: [department_id], references: [department_id], onDelete: Restrict)
+  registrations CourseRegistration[]
+  exams         Exam[]
+  lecturers     CourseLecturer[]
+  course_grades StudentCourseGrade[]
+
+  @@map("courses")
+}
+
+model CourseRegistration {
+  registration_id   Int       @id @default(autoincrement())
+  student_id        Int
+  course_id         Int
+  registration_date DateTime? @default(now()) @db.Timestamp(6)
+  student           Student   @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+  course            Course    @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+
+  @@unique([student_id, course_id], name: "unique_student_course")
+  @@map("course_registrations")
+}
+
+model Exam {
+  exam_id      Int            @id @default(autoincrement())
+  course_id    Int
+  exam_type    String         @db.VarChar(50)
+  exam_title   String         @db.VarChar(150)
+  total_marks  Int
+  exam_date    DateTime       @db.Date
+  start_time   DateTime       @db.Time(6)
+  end_time     DateTime       @db.Time(6)
+  course       Course         @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+  schedules    ExamSchedule[]
+  exam_marks   ExamMark[]
+
+  @@map("exams")
+}
+
+model ExamHall {
+  hall_id   Int            @id @default(autoincrement())
+  hall_name String         @unique @db.VarChar(50)
+  capacity  Int
+  schedules ExamSchedule[]
+
+  @@map("exam_halls")
+}
+
+model ExamSchedule {
+  schedule_id Int      @id @default(autoincrement())
+  exam_id     Int
+  hall_id     Int
+  exam        Exam     @relation(fields: [exam_id], references: [exam_id], onDelete: Cascade)
+  hall        ExamHall @relation(fields: [hall_id], references: [hall_id], onDelete: Restrict)
+
+  @@map("exam_schedules")
+}
+
+// ==========================================
+// ADDITIVE ENHANCEMENT TABLES
+// ==========================================
+
+model RefreshToken {
+  token_id   String   @id @default(uuid()) @db.Uuid
+  user_id    Int
+  token      String   @unique
+  expires_at DateTime @db.Timestamp(6)
+  is_revoked Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  user       User     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model CourseLecturer {
+  course_id   Int
+  lecturer_id Int
+  assigned_at DateTime @default(now()) @db.Timestamp(6)
+  course      Course   @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+  lecturer    Lecturer @relation(fields: [lecturer_id], references: [lecturer_id], onDelete: Cascade)
+
+  @@id([course_id, lecturer_id])
+  @@map("course_lecturers")
+}
+
+model RegistrationPeriod {
+  period_id     Int      @id @default(autoincrement())
+  academic_year Int
+  semester      Int
+  start_date    DateTime @db.Timestamp(6)
+  end_date      DateTime @db.Timestamp(6)
+  status        String   @default("CLOSED") @db.VarChar(20) // OPEN, CLOSED, SUSPENDED
+  created_at    DateTime @default(now()) @db.Timestamp(6)
+  updated_at    DateTime @updatedAt @db.Timestamp(6)
+
+  @@map("registration_periods")
+}
+
+model ExamMark {
+  mark_id        Int      @id @default(autoincrement())
+  student_id     Int
+  exam_id        Int
+  marks_obtained Float
+  recorded_by_id Int
+  grading_status String   @default("PENDING") @db.VarChar(20) // PENDING, SUBMITTED, APPROVED
+  created_at     DateTime @default(now()) @db.Timestamp(6)
+  updated_at     DateTime @updatedAt @db.Timestamp(6)
+  student        Student  @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+  exam           Exam     @relation(fields: [exam_id], references: [exam_id], onDelete: Cascade)
+  recorded_by    User     @relation(fields: [recorded_by_id], references: [user_id], onDelete: Restrict)
+
+  @@unique([student_id, exam_id])
+  @@map("exam_marks")
+}
+
+model StudentCourseGrade {
+  grade_id                   Int      @id @default(autoincrement())
+  student_id                 Int
+  course_id                  Int
+  continuous_assessment_marks Float    @default(0)
+  final_exam_marks           Float    @default(0)
+  total_marks                Float    @default(0)
+  grade                      String   @db.VarChar(5)
+  grade_point                Float
+  is_published               Boolean  @default(false)
+  is_locked                  Boolean  @default(false)
+  created_at                 DateTime @default(now()) @db.Timestamp(6)
+  updated_at                 DateTime @updatedAt @db.Timestamp(6)
+  student                    Student  @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+  course                     Course   @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+
+  @@unique([student_id, course_id])
+  @@map("student_course_grades")
+}
+
+model StudentSemesterGpa {
+  gpa_id         Int      @id @default(autoincrement())
+  student_id     Int
+  academic_year  Int
+  semester       Int
+  semester_gpa   Float
+  cumulative_gpa Float
+  total_credits  Float
+  is_published   Boolean  @default(false)
+  is_locked      Boolean  @default(false)
+  created_at     DateTime @default(now()) @db.Timestamp(6)
+  updated_at     DateTime @updatedAt @db.Timestamp(6)
+  student        Student  @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+
+  @@unique([student_id, academic_year, semester])
+  @@map("student_semester_gpas")
+}
+
+model AuditLog {
+  log_id      Int      @id @default(autoincrement())
+  user_id     Int?
+  action      String   @db.VarChar(50)
+  entity_name String   @db.VarChar(50)
+  entity_id   String   @db.VarChar(50)
+  old_values  Json?
+  new_values  Json?
+  ip_address  String?  @db.VarChar(45)
+  user_agent  String?  @db.VarChar(255)
+  created_at  DateTime @default(now()) @db.Timestamp(6)
+  user        User?    @relation(fields: [user_id], references: [user_id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}

@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # Redis service for BullMQ queue-based messaging
+  ems-redis:
+    image: redis:7-alpine
+    container_name: ems-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - ems-redis-data:/data
+
+  # PostgreSQL container (as backup / alternative development DB on port 5433 to avoid 5432 conflict)
+  # ems-postgres:
+  #   image: postgres:15-alpine
+  #   container_name: ems-postgres
+  #   restart: always
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #     POSTGRES_DB: ems
+  #   ports:
+  #     - "5433:5432"
+  #   volumes:
+  #     - ems-db-data:/var/lib/postgresql/data
+
+volumes:
+  ems-redis-data:
+  ems-db-data:

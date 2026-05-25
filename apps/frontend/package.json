@@ -1,0 +1,35 @@
+{
+  "name": "@ems/frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@ems/shared": "*",
+    "next": "^15.0.3",
+    "react": "^19.0.0-rc.1",
+    "react-dom": "^19.0.0-rc.1",
+    "@tanstack/react-query": "^5.28.4",
+    "zustand": "^4.5.2",
+    "react-hook-form": "^7.51.1",
+    "zod": "^3.22.4",
+    "@hookform/resolvers": "^3.3.4",
+    "lucide-react": "^0.359.0",
+    "clsx": "^2.1.0",
+    "tailwind-merge": "^2.2.2",
+    "axios": "^1.6.8",
+    "recharts": "^2.12.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "@types/react": "^18.2.64",
+    "@types/react-dom": "^18.2.21",
+    "tailwindcss": "^3.4.1",
+    "postcss": "^8.4.35",
+    "typescript": "^5.3.3"
+  }
+}
