@@ -58,22 +58,23 @@ async function main() {
 
   // 3. Seed Default Admin User
   const adminEmail = 'admin@ems.com';
-  const existingAdmin = await prisma.user.findUnique({
+  await prisma.user.upsert({
     where: { email: adminEmail },
+    update: {
+      full_name: 'System Administrator',
+      password_hash: adminPasswordHash,
+      role_id: 1,
+      is_active: true,
+    },
+    create: {
+      full_name: 'System Administrator',
+      email: adminEmail,
+      password_hash: adminPasswordHash,
+      role_id: 1, // Administrator
+      is_active: true,
+    },
   });
-
-  if (!existingAdmin) {
-    await prisma.user.create({
-      data: {
-        full_name: 'System Administrator',
-        email: adminEmail,
-        password_hash: adminPasswordHash,
-        role_id: 1, // Administrator
-        is_active: true,
-      },
-    });
-    console.log('Default Administrator created (admin@ems.com / AdminPassword123).');
-  }
+  console.log('Default Administrator seeded/updated (admin@ems.com / AdminPassword123).');
 
   // 4. Seed Default Staff User
   const staffEmail = 'staff@ems.com';
