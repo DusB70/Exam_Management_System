@@ -11,13 +11,28 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') || 4000;
   const corsOrigin = configService.get<string>('CORS_ORIGIN') || 'http://localhost:3000';
+  const allowedOrigins = [corsOrigin, 'http://localhost:3000', 'http://127.0.0.1:3000'];
 
-  // Secure headers
-  app.use(helmet());
+  // Secure headers (configured to allow cross-origin API requests from the frontend)
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
 
   // Enable CORS
   app.enableCors({
-    origin: corsOrigin,
+    origin: (origin, callback) => {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
   });
 
