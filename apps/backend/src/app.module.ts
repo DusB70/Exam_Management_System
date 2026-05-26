@@ -15,6 +15,7 @@ import { ResultsModule } from './results/results.module';
 import { ReportsModule } from './reports/reports.module';
 import { BullModule } from '@nestjs/bullmq';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ExamsModule } from './exams/exams.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ResultsModule,
     ReportsModule,
     NotificationsModule,
+    ExamsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

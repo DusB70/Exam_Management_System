@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   User as UserIcon,
+  Calendar,
 } from 'lucide-react';
 import { UserRole } from '@ems/shared';
 
@@ -50,6 +51,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           { name: 'User Management', href: '/users', icon: Users },
           { name: 'Courses & Semesters', href: '/courses', icon: BookOpen },
           { name: 'Lecturer Assignments', href: '/lecturers', icon: GraduationCap },
+          { name: 'Exam Scheduling', href: '/exams', icon: Calendar },
           { name: 'Reports Panel', href: '/reports', icon: FileBarChart },
         ];
       case UserRole.EXAM_DIVISION_STAFF:
@@ -57,6 +59,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ...common,
           { name: 'Courses & Batches', href: '/courses', icon: BookOpen },
           { name: 'Marks Registry', href: '/marks', icon: FileSpreadsheet },
+          { name: 'Exam Scheduling', href: '/exams', icon: Calendar },
           { name: 'Result Sheets', href: '/results', icon: FileBarChart },
           { name: 'Reports Panel', href: '/reports', icon: FileBarChart },
         ];
