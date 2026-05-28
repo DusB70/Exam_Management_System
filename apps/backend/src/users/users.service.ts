@@ -3,6 +3,7 @@ import { UsersRepository } from './users.repository';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateUserDto, UpdateUserDto } from './dtos/users.dto';
+import { UpdateProfileDto, ChangePasswordDto } from './dtos/profile.dto';
 import { Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
@@ -314,6 +315,83 @@ export class UsersService {
     return updatedUser;
   }
 
+  async updateProfile(userId: number, dto: UpdateProfileDto): Promise<User> {
+    const existingUser = await this.findById(userId);
+
+    return this.prisma.$transaction(async (tx) => {
+      if (existingUser.role_id === 4) {
+        // Student
+        await tx.student.update({
+          where: { user_id: userId },
+          data: {
+            phone_number: dto.phoneNumber || null,
+          },
+        });
+      } else if (existingUser.role_id === 3) {
+        // Lecturer
+        await tx.lecturer.update({
+          where: { user_id: userId },
+          data: {
+            phone_number: dto.phoneNumber || null,
+          },
+        });
+      }
+
+      await this.auditService.logAction(
+        userId,
+        'USER_UPDATE_PROFILE',
+        'users',
+        userId.toString(),
+        {
+          phone_number:
+            (existingUser as any).student?.phone_number ||
+            (existingUser as any).lecturer?.phone_number,
+        },
+        { phone_number: dto.phoneNumber },
+      );
+
+      return tx.user.findUniqueOrThrow({
+        where: { user_id: userId },
+        include: {
+          role: true,
+          student: { include: { department: true } },
+          lecturer: { include: { department: true } },
+        },
+      });
+    });
+  }
+
+  async changePassword(userId: number, dto: ChangePasswordDto): Promise<void> {
+    const existingUser = await this.findById(userId);
+
+    const match = await bcrypt.compare(dto.currentPassword, existingUser.password_hash);
+    if (!match) {
+      throw new BadRequestException('Incorrect current password.');
+    }
+
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException('New password and confirmation password do not match.');
+    }
+
+    const hashed = await bcrypt.hash(dto.newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { user_id: userId },
+      data: {
+        password_hash: hashed,
+      },
+    });
+
+    await this.auditService.logAction(
+      userId,
+      'USER_PASSWORD_CHANGE',
+      'users',
+      userId.toString(),
+      null,
+      { password_changed: true },
+    );
+  }
+
   async findAllLecturers() {
     return this.prisma.lecturer.findMany({
       include: {
@@ -326,6 +404,11 @@ export class UsersService {
         department: {
           select: {
             department_name: true,
+          },
+        },
+        courses: {
+          include: {
+            course: true,
           },
         },
       },

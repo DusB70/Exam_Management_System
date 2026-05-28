@@ -1,4 +1,13 @@
-import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  Matches,
+} from 'class-validator';
 
 export class CreateCourseDto {
   @IsString()
@@ -17,14 +26,20 @@ export class CreateCourseDto {
   @IsInt()
   departmentId!: number;
 
-  @IsInt()
-  @Min(1)
-  @Max(8)
-  semester!: number;
+  @IsString()
+  @IsNotEmpty({ message: 'Semester is required' })
+  @Matches(/^(1\.1|1\.2|2\.1|2\.2|3\.1|3\.2|4\.1|4\.2)$/, {
+    message: 'Semester must be in format X.Y (1.1 to 4.2)',
+  })
+  semester!: string;
 
   @IsInt()
   @Min(2000)
   academicYear!: number;
+
+  @IsInt()
+  @IsOptional()
+  lecturerId?: number;
 }
 
 export class UpdateCourseDto {
@@ -46,16 +61,21 @@ export class UpdateCourseDto {
   @IsOptional()
   departmentId?: number;
 
-  @IsInt()
+  @IsString()
   @IsOptional()
-  @Min(1)
-  @Max(8)
-  semester?: number;
+  @Matches(/^(1\.1|1\.2|2\.1|2\.2|3\.1|3\.2|4\.1|4\.2)$/, {
+    message: 'Semester must be in format X.Y (1.1 to 4.2)',
+  })
+  semester?: string;
 
   @IsInt()
   @IsOptional()
   @Min(2000)
   academicYear?: number;
+
+  @IsInt()
+  @IsOptional()
+  lecturerId?: number;
 }
 
 export class AssignLecturerDto {

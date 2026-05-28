@@ -17,7 +17,8 @@ import {
   Menu,
   X,
   User as UserIcon,
-  Calendar,
+  Database,
+  Activity,
 } from 'lucide-react';
 import { UserRole } from '@ems/shared';
 
@@ -49,19 +50,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return [
           ...common,
           { name: 'User Management', href: '/users', icon: Users },
-          { name: 'Courses & Semesters', href: '/courses', icon: BookOpen },
-          { name: 'Lecturer Assignments', href: '/lecturers', icon: GraduationCap },
-          { name: 'Exam Scheduling', href: '/exams', icon: Calendar },
-          { name: 'Reports Panel', href: '/reports', icon: FileBarChart },
+          { name: 'System Backup', href: '/backup', icon: Database },
+          { name: 'System Logs', href: '/logs', icon: Activity },
         ];
       case UserRole.EXAM_DIVISION_STAFF:
         return [
           ...common,
           { name: 'Courses & Batches', href: '/courses', icon: BookOpen },
           { name: 'Marks Registry', href: '/marks', icon: FileSpreadsheet },
-          { name: 'Exam Scheduling', href: '/exams', icon: Calendar },
           { name: 'Result Sheets', href: '/results', icon: FileBarChart },
-          { name: 'Reports Panel', href: '/reports', icon: FileBarChart },
         ];
       case UserRole.LECTURER:
         return [
@@ -74,6 +71,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ...common,
           { name: 'Course Registration', href: '/registration', icon: BookOpen },
           { name: 'My Academic Results', href: '/results', icon: FileBarChart },
+          { name: 'My Profile', href: '/profile', icon: UserIcon },
         ];
       default:
         return common;

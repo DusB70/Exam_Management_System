@@ -26,7 +26,7 @@ export class NotificationsProcessor extends WorkerHost {
     }
   }
 
-  private async handleResultsPublished(data: { academicYear: number; semester: number }) {
+  private async handleResultsPublished(data: { academicYear: number; semester: string }) {
     const students = await this.prisma.student.findMany({
       where: {
         academic_year: data.academicYear,
@@ -42,15 +42,17 @@ export class NotificationsProcessor extends WorkerHost {
     );
 
     for (const student of students) {
-      this.logger.log(
-        `[SIMULATED EMAIL SENT] To: ${student.user.email} (${student.user.full_name}) | Subject: Academic Results Published | Body: Dear ${student.user.full_name}, your academic results for Academic Year ${data.academicYear} Semester ${data.semester} have been compiled and published. Please log into the portal to view your grade sheets and SGPA/CGPA.`,
-      );
+      if (student.user) {
+        this.logger.log(
+          `[SIMULATED EMAIL SENT] To: ${student.user.email} (${student.user.full_name}) | Subject: Academic Results Published | Body: Dear ${student.user.full_name}, your academic results for Academic Year ${data.academicYear} Semester ${data.semester} have been compiled and published. Please log into the portal to view your grade sheets and SGPA/CGPA.`,
+        );
+      }
     }
   }
 
   private async handleRegistrationOpened(data: {
     academicYear: number;
-    semester: number;
+    semester: string;
     endDate: string;
   }) {
     const students = await this.prisma.student.findMany({
@@ -70,9 +72,11 @@ export class NotificationsProcessor extends WorkerHost {
     );
 
     for (const student of students) {
-      this.logger.log(
-        `[SIMULATED EMAIL SENT] To: ${student.user.email} (${student.user.full_name}) | Subject: Course Registration Window Opened | Body: Dear ${student.user.full_name}, the course registration window for Academic Year ${data.academicYear} Semester ${data.semester} is now OPEN. It will remain open until ${formattedDate}. Please complete your registration within the deadline.`,
-      );
+      if (student.user) {
+        this.logger.log(
+          `[SIMULATED EMAIL SENT] To: ${student.user.email} (${student.user.full_name}) | Subject: Course Registration Window Opened | Body: Dear ${student.user.full_name}, the course registration window for Academic Year ${data.academicYear} Semester ${data.semester} is now OPEN. It will remain open until ${formattedDate}. Please complete your registration within the deadline.`,
+        );
+      }
     }
   }
 }

@@ -27,15 +27,29 @@ async function main() {
   const departments = [
     {
       department_id: 1,
-      department_name: 'Computer Science and Engineering',
-      department_code: 'CSE',
+      department_name: 'Information and communication technology(ICT)',
+      department_code: 'ICT',
     },
     {
       department_id: 2,
-      department_name: 'Electrical and Electronic Engineering',
-      department_code: 'EEE',
+      department_name: 'Electrical and electronic technolgy(EET)',
+      department_code: 'EET',
     },
-    { department_id: 3, department_name: 'Mechanical Engineering', department_code: 'ME' },
+    {
+      department_id: 3,
+      department_name: 'Materials technology(MTT)',
+      department_code: 'MTT',
+    },
+    {
+      department_id: 4,
+      department_name: 'Food technology(FDT)',
+      department_code: 'FDT',
+    },
+    {
+      department_id: 5,
+      department_name: 'bio process technology(BPT)',
+      department_code: 'BPT',
+    },
   ];
 
   for (const dept of departments) {
@@ -144,7 +158,7 @@ async function main() {
         registration_number: 'REG001',
         department_id: 1, // CSE
         academic_year: 2026,
-        semester: 1,
+        semester: '1.1',
       },
     });
     console.log('Default Student created (student@ems.com / StudentPassword123).');

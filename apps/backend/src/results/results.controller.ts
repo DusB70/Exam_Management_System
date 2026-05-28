@@ -18,7 +18,7 @@ import { Response } from 'express';
 
 class PublishResultsDto {
   academicYear!: number;
-  semester!: number;
+  semester!: string;
 }
 
 @Controller('results')
@@ -67,6 +67,18 @@ export class ResultsController {
     res.end(buffer);
   }
 
+  @Get('my-report/excel')
+  @Roles(UserRole.STUDENT)
+  async getMyReportExcel(@GetUser('id') studentUserId: number, @Res() res: Response) {
+    const buffer = await this.resultsService.generateReportCardExcelBuffer(studentUserId);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename=report_card.xlsx',
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
   @Get('student/:studentId/pdf')
   @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
   async getStudentReportPdf(
@@ -77,6 +89,33 @@ export class ResultsController {
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename=student_${studentId}_report.pdf`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Get('course/:courseId/combined')
+  @Roles(UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  async getCombinedCourseResults(@Param('courseId', ParseIntPipe) courseId: number) {
+    const data = await this.resultsService.getCombinedCourseMarks(courseId);
+    return {
+      success: true,
+      message: 'Combined course results retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('course/:courseId/combined/excel')
+  @Roles(UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  async getCombinedCourseResultsExcel(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } =
+      await this.resultsService.generateCombinedCourseMarksExcel(courseId);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=${fileName}`,
       'Content-Length': buffer.length,
     });
     res.end(buffer);

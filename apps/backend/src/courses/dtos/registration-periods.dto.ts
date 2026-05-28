@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsInt, IsOptional, Min, IsString, Matches } from 'class-validator';
 
 export enum PeriodStatus {
   OPEN = 'OPEN',
@@ -11,10 +11,11 @@ export class CreatePeriodDto {
   @Min(2000)
   academicYear!: number;
 
-  @IsInt()
-  @Min(1)
-  @Max(8)
-  semester!: number;
+  @IsString()
+  @Matches(/^(1\.1|1\.2|2\.1|2\.2|3\.1|3\.2|4\.1|4\.2)$/, {
+    message: 'Semester must be in format X.Y (1.1 to 4.2)',
+  })
+  semester!: string;
 
   @IsDateString()
   startDate!: string;

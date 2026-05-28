@@ -1,10 +1,10 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-}
-
-generator client {
-  provider = "prisma-client-js"
 }
 
 model Role {
@@ -17,19 +17,19 @@ model Role {
 }
 
 model User {
-  user_id       Int            @id @default(autoincrement())
-  full_name     String         @db.VarChar(150)
-  email         String         @unique @db.VarChar(150)
-  password_hash String
-  role_id       Int
-  is_active     Boolean?       @default(true)
-  created_at    DateTime?      @default(now()) @db.Timestamp(6)
-  role          Role           @relation(fields: [role_id], references: [role_id], onUpdate: NoAction, onDelete: Restrict)
-  student       Student?
-  lecturer      Lecturer?
-  refresh_tokens RefreshToken[]
-  audit_logs    AuditLog[]
+  user_id        Int            @id @default(autoincrement())
+  full_name      String         @db.VarChar(150)
+  email          String         @unique @db.VarChar(150)
+  password_hash  String
+  role_id        Int
+  is_active      Boolean?       @default(true)
+  created_at     DateTime?      @default(now()) @db.Timestamp(6)
+  audit_logs     AuditLog[]
   recorded_marks ExamMark[]
+  lecturer       Lecturer?
+  refresh_tokens RefreshToken[]
+  student        Student?
+  role           Role           @relation(fields: [role_id], references: [role_id], onUpdate: NoAction)
 
   @@map("users")
 }
@@ -52,15 +52,15 @@ model Student {
   registration_number String               @unique @db.VarChar(50)
   department_id       Int
   academic_year       Int
-  semester            Int
+  semester            String               @db.VarChar(10)
   date_of_birth       DateTime?            @db.Date
   phone_number        String?              @db.VarChar(20)
-  user                User                 @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
-  department          Department           @relation(fields: [department_id], references: [department_id], onDelete: Restrict)
   registrations       CourseRegistration[]
   exam_marks          ExamMark[]
   course_grades       StudentCourseGrade[]
   semester_gpas       StudentSemesterGpa[]
+  department          Department           @relation(fields: [department_id], references: [department_id])
+  user                User                 @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
 
   @@map("students")
 }
@@ -72,9 +72,9 @@ model Lecturer {
   department_id   Int
   specialization  String?          @db.VarChar(100)
   phone_number    String?          @db.VarChar(20)
-  user            User             @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
-  department      Department       @relation(fields: [department_id], references: [department_id], onDelete: Restrict)
   courses         CourseLecturer[]
+  department      Department       @relation(fields: [department_id], references: [department_id])
+  user            User             @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
 
   @@map("lecturers")
 }
@@ -85,13 +85,13 @@ model Course {
   course_name   String               @db.VarChar(150)
   credit_value  Decimal              @db.Decimal(3, 1)
   department_id Int
-  semester      Int
+  semester      String   @db.VarChar(10)
   academic_year Int
   created_at    DateTime?            @default(now()) @db.Timestamp(6)
-  department    Department           @relation(fields: [department_id], references: [department_id], onDelete: Restrict)
-  registrations CourseRegistration[]
-  exams         Exam[]
   lecturers     CourseLecturer[]
+  registrations CourseRegistration[]
+  department    Department           @relation(fields: [department_id], references: [department_id])
+  exams         Exam[]
   course_grades StudentCourseGrade[]
 
   @@map("courses")
@@ -102,25 +102,25 @@ model CourseRegistration {
   student_id        Int
   course_id         Int
   registration_date DateTime? @default(now()) @db.Timestamp(6)
-  student           Student   @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
   course            Course    @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+  student           Student   @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
 
   @@unique([student_id, course_id], name: "unique_student_course")
   @@map("course_registrations")
 }
 
 model Exam {
-  exam_id      Int            @id @default(autoincrement())
-  course_id    Int
-  exam_type    String         @db.VarChar(50)
-  exam_title   String         @db.VarChar(150)
-  total_marks  Int
-  exam_date    DateTime       @db.Date
-  start_time   DateTime       @db.Time(6)
-  end_time     DateTime       @db.Time(6)
-  course       Course         @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
-  schedules    ExamSchedule[]
-  exam_marks   ExamMark[]
+  exam_id     Int            @id @default(autoincrement())
+  course_id   Int
+  exam_type   String         @db.VarChar(50)
+  exam_title  String         @db.VarChar(150)
+  total_marks Int
+  exam_date   DateTime       @db.Date
+  start_time  DateTime       @db.Time(6)
+  end_time    DateTime       @db.Time(6)
+  exam_marks  ExamMark[]
+  schedules   ExamSchedule[]
+  course      Course         @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
 
   @@map("exams")
 }
@@ -139,14 +139,10 @@ model ExamSchedule {
   exam_id     Int
   hall_id     Int
   exam        Exam     @relation(fields: [exam_id], references: [exam_id], onDelete: Cascade)
-  hall        ExamHall @relation(fields: [hall_id], references: [hall_id], onDelete: Restrict)
+  hall        ExamHall @relation(fields: [hall_id], references: [hall_id])
 
   @@map("exam_schedules")
 }
-
-// ==========================================
-// ADDITIVE ENHANCEMENT TABLES
-// ==========================================
 
 model RefreshToken {
   token_id   String   @id @default(uuid()) @db.Uuid
@@ -174,10 +170,10 @@ model CourseLecturer {
 model RegistrationPeriod {
   period_id     Int      @id @default(autoincrement())
   academic_year Int
-  semester      Int
+  semester      String   @db.VarChar(10)
   start_date    DateTime @db.Timestamp(6)
   end_date      DateTime @db.Timestamp(6)
-  status        String   @default("CLOSED") @db.VarChar(20) // OPEN, CLOSED, SUSPENDED
+  status        String   @default("CLOSED") @db.VarChar(20)
   created_at    DateTime @default(now()) @db.Timestamp(6)
   updated_at    DateTime @updatedAt @db.Timestamp(6)
 
@@ -190,32 +186,32 @@ model ExamMark {
   exam_id        Int
   marks_obtained Float
   recorded_by_id Int
-  grading_status String   @default("PENDING") @db.VarChar(20) // PENDING, SUBMITTED, APPROVED
+  grading_status String   @default("PENDING") @db.VarChar(20)
   created_at     DateTime @default(now()) @db.Timestamp(6)
   updated_at     DateTime @updatedAt @db.Timestamp(6)
-  student        Student  @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
   exam           Exam     @relation(fields: [exam_id], references: [exam_id], onDelete: Cascade)
-  recorded_by    User     @relation(fields: [recorded_by_id], references: [user_id], onDelete: Restrict)
+  recorded_by    User     @relation(fields: [recorded_by_id], references: [user_id])
+  student        Student  @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
 
   @@unique([student_id, exam_id])
   @@map("exam_marks")
 }
 
 model StudentCourseGrade {
-  grade_id                   Int      @id @default(autoincrement())
-  student_id                 Int
-  course_id                  Int
+  grade_id                    Int      @id @default(autoincrement())
+  student_id                  Int
+  course_id                   Int
   continuous_assessment_marks Float    @default(0)
-  final_exam_marks           Float    @default(0)
-  total_marks                Float    @default(0)
-  grade                      String   @db.VarChar(5)
-  grade_point                Float
-  is_published               Boolean  @default(false)
-  is_locked                  Boolean  @default(false)
-  created_at                 DateTime @default(now()) @db.Timestamp(6)
-  updated_at                 DateTime @updatedAt @db.Timestamp(6)
-  student                    Student  @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
-  course                     Course   @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+  final_exam_marks            Float    @default(0)
+  total_marks                 Float    @default(0)
+  grade                       String   @db.VarChar(5)
+  grade_point                 Float
+  is_published                Boolean  @default(false)
+  is_locked                   Boolean  @default(false)
+  created_at                  DateTime @default(now()) @db.Timestamp(6)
+  updated_at                  DateTime @updatedAt @db.Timestamp(6)
+  course                      Course   @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+  student                     Student  @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
 
   @@unique([student_id, course_id])
   @@map("student_course_grades")
@@ -225,7 +221,7 @@ model StudentSemesterGpa {
   gpa_id         Int      @id @default(autoincrement())
   student_id     Int
   academic_year  Int
-  semester       Int
+  semester       String   @db.VarChar(10)
   semester_gpa   Float
   cumulative_gpa Float
   total_credits  Float
@@ -250,7 +246,7 @@ model AuditLog {
   ip_address  String?  @db.VarChar(45)
   user_agent  String?  @db.VarChar(255)
   created_at  DateTime @default(now()) @db.Timestamp(6)
-  user        User?    @relation(fields: [user_id], references: [user_id], onDelete: SetNull)
+  user        User?    @relation(fields: [user_id], references: [user_id])
 
   @@map("audit_logs")
 }

@@ -28,6 +28,12 @@ describe('ResultsService', () => {
       findMany: jest.fn(),
       upsert: jest.fn(),
     },
+    department: {
+      findUnique: jest.fn(),
+    },
+    user: {
+      findUnique: jest.fn(),
+    },
     $transaction: jest.fn((cb) => cb(mockPrismaService)),
   };
 
@@ -57,13 +63,13 @@ describe('ResultsService', () => {
     it('should throw BadRequestException if no students are registered in the semester', async () => {
       mockPrismaService.student.findMany.mockResolvedValue([]);
 
-      await expect(service.publishResults(2026, 1, 99)).rejects.toThrow(BadRequestException);
+      await expect(service.publishResults(2026, '1.1', 99)).rejects.toThrow(BadRequestException);
     });
 
     it('should calculate GPAs and CGPAs and lock course grades', async () => {
       // 1 registered student
       mockPrismaService.student.findMany.mockResolvedValue([
-        { student_id: 5, user_id: 10, academic_year: 2026, semester: 1 },
+        { student_id: 5, user_id: 10, academic_year: 2026, semester: '1.1' },
       ]);
 
       // Student course grades: CS-101 (3 credits, GP 4.0 - A), CS-102 (4 credits, GP 3.0 - B)
@@ -72,13 +78,13 @@ describe('ResultsService', () => {
           grade_id: 1,
           student_id: 5,
           grade_point: 4.0,
-          course: { credit_value: 3, academic_year: 2026, semester: 1 },
+          course: { credit_value: 3, academic_year: 2026, semester: '1.1' },
         },
         {
           grade_id: 2,
           student_id: 5,
           grade_point: 3.0,
-          course: { credit_value: 4, academic_year: 2026, semester: 1 },
+          course: { credit_value: 4, academic_year: 2026, semester: '1.1' },
         },
       ];
       mockPrismaService.studentCourseGrade.findMany.mockResolvedValue(mockGrades);
@@ -86,7 +92,7 @@ describe('ResultsService', () => {
         gpa_id: 12,
       });
 
-      const result = await service.publishResults(2026, 1, 99);
+      const result = await service.publishResults(2026, '1.1', 99);
 
       expect(result.success).toBe(true);
       expect(result.count).toBe(1);
@@ -110,7 +116,7 @@ describe('ResultsService', () => {
           student_id: 5,
           course: {
             academic_year: 2026,
-            semester: 1,
+            semester: '1.1',
           },
         },
         data: {
@@ -118,6 +124,63 @@ describe('ResultsService', () => {
           is_locked: true,
         },
       });
+    });
+  });
+
+  describe('generateReportCardExcelBuffer', () => {
+    it('should generate an Excel sheet buffer with student grades and summaries', async () => {
+      // Mock student report card query
+      mockPrismaService.student.findUnique.mockResolvedValue({
+        student_id: 5,
+        user_id: 10,
+        registration_number: 'REG001',
+        department_id: 1,
+        academic_year: 2026,
+        semester: '1.1',
+      });
+
+      mockPrismaService.studentSemesterGpa.findMany.mockResolvedValue([
+        {
+          gpa_id: 1,
+          student_id: 5,
+          academic_year: 2026,
+          semester: '1.1',
+          semester_gpa: 3.5,
+          cumulative_gpa: 3.5,
+          total_credits: 6,
+          is_published: true,
+        },
+      ]);
+
+      mockPrismaService.studentCourseGrade.findMany.mockResolvedValue([
+        {
+          grade_id: 1,
+          student_id: 5,
+          course_id: 1,
+          total_marks: 80,
+          grade: 'A',
+          grade_point: 4.0,
+          is_published: true,
+          course: {
+            course_code: 'CS101',
+            course_name: 'Intro to Programming',
+            credit_value: 3,
+            academic_year: 2026,
+            semester: '1.1',
+          },
+        },
+      ]);
+
+      // Mock user and department lookup
+      const mockDepartment = { department_id: 1, department_name: 'Computer Science' };
+      const mockUser = { user_id: 10, full_name: 'Jane Doe', email: 'jane@example.com' };
+
+      mockPrismaService.department.findUnique.mockResolvedValue(mockDepartment);
+      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
+
+      const buffer = await service.generateReportCardExcelBuffer(10);
+      expect(buffer).toBeInstanceOf(Buffer);
+      expect(buffer.length).toBeGreaterThan(0);
     });
   });
 });

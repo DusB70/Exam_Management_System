@@ -33,7 +33,7 @@ export class CoursesController {
     const parsedPage = parseInt(page, 10) || 1;
     const parsedLimit = parseInt(limit, 10) || 10;
     const parsedDeptId = departmentId ? parseInt(departmentId, 10) : undefined;
-    const parsedSemester = semester ? parseInt(semester, 10) : undefined;
+    const parsedSemester = semester || undefined;
     const parsedYear = academicYear ? parseInt(academicYear, 10) : undefined;
 
     const data = await this.coursesService.findAll(

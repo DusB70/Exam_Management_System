@@ -67,7 +67,7 @@ export class MarksController {
   }
 
   @Post('exams/:examId/bulk')
-  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR)
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
   @HttpCode(HttpStatus.OK)
   async recordMarksBulk(
     @Param('examId', ParseIntPipe) examId: number,
@@ -85,7 +85,7 @@ export class MarksController {
   }
 
   @Post('exams/:examId/submit')
-  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR)
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
   @HttpCode(HttpStatus.OK)
   async submitMarks(
     @Param('examId', ParseIntPipe) examId: number,
@@ -111,6 +111,17 @@ export class MarksController {
     return {
       success: true,
       message: 'Submitted marksheets retrieved successfully',
+      data: items,
+    };
+  }
+
+  @Get('approved-marksheets')
+  @Roles(UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  async getApprovedMarksheets() {
+    const items = await this.marksService.getApprovedMarksheets();
+    return {
+      success: true,
+      message: 'Approved marksheets retrieved successfully',
       data: items,
     };
   }

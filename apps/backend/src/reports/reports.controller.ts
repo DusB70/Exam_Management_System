@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@ems/shared';
@@ -7,6 +7,19 @@ import { UserRole } from '@ems/shared';
 @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF, UserRole.LECTURER)
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
+
+  @Get('staff-overview')
+  @Roles(UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  async getStaffOverview(@Query('batch') batch?: string) {
+    const data = await this.reportsService.getStaffOverview(
+      batch ? parseInt(batch, 10) : undefined,
+    );
+    return {
+      success: true,
+      message: 'Staff overview statistics retrieved successfully',
+      data,
+    };
+  }
 
   @Get('summary')
   async getSummary() {

@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StudentSemesterGpa } from '@prisma/client';
 import PDFDocument from 'pdfkit';
+import * as XLSX from 'xlsx';
 import { NotificationsQueueService } from '../notifications/notifications.queue.service';
 
 @Injectable()
@@ -24,7 +25,7 @@ export class ResultsService {
   }
 
   // Publish results for all students in a semester
-  async publishResults(academicYear: number, semester: number, executorUserId: number) {
+  async publishResults(academicYear: number, semester: string, executorUserId: number) {
     // 1. Find all students registered in this semester
     const students = await this.prisma.student.findMany({
       where: {
@@ -115,7 +116,7 @@ export class ResultsService {
     });
 
     // Queue notifications to students asynchronously
-    await this.notificationsQueueService.addResultsPublishedJob(academicYear, semester);
+    this.notificationsQueueService.addResultsPublishedJob(academicYear, semester);
 
     return result;
   }
@@ -169,7 +170,7 @@ export class ResultsService {
     tx: any,
     studentId: number,
     academicYear: number,
-    semester: number,
+    semester: string,
   ) {
     // 1. Fetch current semester grades
     const currentSemesterGrades = await tx.studentCourseGrade.findMany({
@@ -446,6 +447,82 @@ export class ResultsService {
     });
   }
 
+  async generateReportCardExcelBuffer(studentUserId: number): Promise<Buffer> {
+    const report = await this.getStudentReportCard(studentUserId);
+    const { student, gpas, grades } = report;
+
+    // Fetch department details
+    const department = await this.prisma.department.findUnique({
+      where: { department_id: student.department_id },
+    });
+    const deptName = department ? department.department_name : 'Unknown Department';
+
+    // Fetch user details
+    const user = await this.prisma.user.findUnique({
+      where: { user_id: student.user_id },
+    });
+    const fullName = user ? user.full_name : 'Unknown Student';
+
+    const latestGpa = gpas[gpas.length - 1];
+    const sgpaVal = latestGpa ? latestGpa.semester_gpa.toFixed(2) : '0.00';
+    const cgpaVal = latestGpa ? latestGpa.cumulative_gpa.toFixed(2) : '0.00';
+    const totalCreditsVal = latestGpa ? latestGpa.total_credits.toFixed(1) : '0.0';
+
+    // Build array-of-arrays representation
+    const rows = [
+      ['METROPOLITAN UNIVERSITY OF TECHNOLOGY'],
+      ['Office of the Registrar (Examinations Division)'],
+      ['OFFICIAL ACADEMIC TRANSCRIPT / RESULTS SHEET'],
+      [],
+      ['Student Name:', fullName, '', 'Academic Year:', student.academic_year],
+      ['Registration No:', student.registration_number, '', 'Current Semester:', student.semester],
+      ['Department:', deptName, '', 'Date Generated:', new Date().toLocaleDateString()],
+      [],
+      ['Completed Course Unit Grades'],
+      ['Semester', 'Code', 'Course Title', 'Credits', 'Marks', 'Grade', 'Grade Point'],
+    ];
+
+    for (const g of grades) {
+      rows.push([
+        `Sem ${g.course.semester}`,
+        g.course.course_code,
+        g.course.course_name,
+        parseFloat(g.course.credit_value.toString()),
+        g.total_marks,
+        g.grade,
+        g.grade_point,
+      ]);
+    }
+
+    rows.push([]);
+    rows.push(['SUMMARY OF ACADEMIC STANDING']);
+    rows.push(['Total Credits Earned:', parseFloat(totalCreditsVal)]);
+    rows.push(['Semester GPA (SGPA):', parseFloat(sgpaVal)]);
+    rows.push(['Cumulative GPA (CGPA):', parseFloat(cgpaVal)]);
+
+    // Create worksheet
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+
+    // Apply column widths
+    worksheet['!cols'] = [
+      { wch: 15 }, // Semester
+      { wch: 12 }, // Code
+      { wch: 45 }, // Course Title
+      { wch: 10 }, // Credits
+      { wch: 10 }, // Marks
+      { wch: 10 }, // Grade
+      { wch: 12 }, // Grade Point
+    ];
+
+    // Create workbook
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Academic Report');
+
+    // Generate buffer
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    return buffer;
+  }
+
   async generateReportCardPdfBufferByStudentId(studentId: number): Promise<Buffer> {
     const student = await this.prisma.student.findUnique({
       where: { student_id: studentId },
@@ -454,5 +531,175 @@ export class ResultsService {
       throw new NotFoundException(`Student with ID ${studentId} not found`);
     }
     return this.generateReportCardPdfBuffer(student.user_id);
+  }
+
+  async getCombinedCourseMarks(courseId: number) {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+      include: {
+        department: true,
+        lecturers: {
+          include: {
+            lecturer: {
+              include: {
+                user: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    // Get all registered students
+    const registrations = await this.prisma.courseRegistration.findMany({
+      where: { course_id: courseId },
+      include: {
+        student: {
+          include: {
+            user: {
+              select: {
+                full_name: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        student: {
+          registration_number: 'asc',
+        },
+      },
+    });
+
+    // Get all exams for this course
+    const exams = await this.prisma.exam.findMany({
+      where: { course_id: courseId },
+      orderBy: { exam_date: 'asc' },
+    });
+
+    // Get all exam marks for these exams
+    const marks = await this.prisma.examMark.findMany({
+      where: {
+        exam_id: { in: exams.map((e) => e.exam_id) },
+      },
+    });
+
+    // Get compiled course grades (if any)
+    const grades = await this.prisma.studentCourseGrade.findMany({
+      where: { course_id: courseId },
+    });
+
+    // Build student rows
+    const studentsData = registrations.map((reg) => {
+      const student = reg.student;
+      const studentMarks: Record<number, number> = {};
+
+      // Gather marks
+      exams.forEach((exam) => {
+        const mark = marks.find(
+          (m) => m.student_id === student.student_id && m.exam_id === exam.exam_id,
+        );
+        if (mark) {
+          studentMarks[exam.exam_id] = mark.marks_obtained;
+        }
+      });
+
+      // Find compiled grade
+      const compiled = grades.find((g) => g.student_id === student.student_id);
+
+      return {
+        studentId: student.student_id,
+        registrationNumber: student.registration_number,
+        fullName: student.user.full_name,
+        marks: studentMarks,
+        caTotal: compiled?.continuous_assessment_marks || 0,
+        finalTotal: compiled?.final_exam_marks || 0,
+        totalPercentage: compiled?.total_marks || 0,
+        grade: compiled?.grade || '-',
+        gradePoint: compiled?.grade_point || 0,
+      };
+    });
+
+    return {
+      course: {
+        courseId: course.course_id,
+        courseCode: course.course_code,
+        courseName: course.course_name,
+        creditValue: parseFloat(course.credit_value.toString()),
+        semester: course.semester,
+        academicYear: course.academic_year,
+        departmentName: course.department.department_name,
+        lecturers:
+          course.lecturers.map((l) => l.lecturer.user.full_name).join(', ') || 'Unassigned',
+      },
+      exams: exams.map((e) => ({
+        examId: e.exam_id,
+        examTitle: e.exam_title,
+        examType: e.exam_type,
+        totalMarks: e.total_marks,
+      })),
+      students: studentsData,
+    };
+  }
+
+  async generateCombinedCourseMarksExcel(courseId: number) {
+    const data = await this.getCombinedCourseMarks(courseId);
+
+    const rows: any[][] = [
+      ['METROPOLITAN UNIVERSITY OF TECHNOLOGY'],
+      ['Office of the Registrar (Examinations Division)'],
+      ['COMBINED COURSE EVALUATION SHEET'],
+      [],
+      ['Course Code:', data.course.courseCode, '', 'Course Title:', data.course.courseName],
+      ['Academic Year:', data.course.academicYear, '', 'Semester:', data.course.semester],
+      ['Lecturer(s):', data.course.lecturers, '', 'Department:', data.course.departmentName],
+      [],
+    ];
+
+    // Build header row: Index No, Reg No, Student Name, [Exams...], CA Total, Final Total, Total %, Grade
+    const header = ['Index No', 'Registration No', 'Student Name'];
+    data.exams.forEach((ex) => {
+      header.push(`${ex.examTitle} (${ex.examType} - Max ${ex.totalMarks})`);
+    });
+    header.push('CA Total', 'Final Total', 'Overall %', 'Grade');
+    rows.push(header);
+
+    // Build student rows
+    data.students.forEach((student) => {
+      const row: any[] = [`IDX-${student.studentId}`, student.registrationNumber, student.fullName];
+      data.exams.forEach((ex) => {
+        const mark = student.marks[ex.examId];
+        row.push(mark !== undefined ? mark : '-');
+      });
+      row.push(student.caTotal, student.finalTotal, student.totalPercentage, student.grade);
+      rows.push(row);
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+
+    // Apply column widths
+    const cols = [
+      { wch: 12 }, // Index No
+      { wch: 15 }, // Reg No
+      { wch: 30 }, // Name
+    ];
+    data.exams.forEach(() => {
+      cols.push({ wch: 25 }); // Exam columns
+    });
+    cols.push({ wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 });
+    worksheet['!cols'] = cols;
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Evaluation Sheet');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const fileName = `${data.course.courseCode.replace(/[^a-zA-Z0-9-]/g, '_')}_combined_results.xlsx`;
+
+    return { buffer, fileName };
   }
 }

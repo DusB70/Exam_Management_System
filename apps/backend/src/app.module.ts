@@ -16,6 +16,7 @@ import { ReportsModule } from './reports/reports.module';
 import { BullModule } from '@nestjs/bullmq';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ExamsModule } from './exams/exams.module';
+import { SystemModule } from './system/system.module';
 
 @Module({
   imports: [
@@ -27,6 +28,12 @@ import { ExamsModule } from './exams/exams.module';
       connection: {
         host: process.env.REDIS_HOST || 'localhost',
         port: parseInt(process.env.REDIS_PORT || '6379', 10),
+        maxRetriesPerRequest: null,
+        enableOfflineQueue: false,
+        retryStrategy: (times: number) => {
+          // Retry with exponential backoff, max 30 seconds
+          return Math.min(times * 1000, 30000);
+        },
       },
     }),
     PrismaModule,
@@ -42,6 +49,7 @@ import { ExamsModule } from './exams/exams.module';
     ReportsModule,
     NotificationsModule,
     ExamsModule,
+    SystemModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -9,6 +9,7 @@ import {
   IsString,
   MinLength,
   ValidateNested,
+  Matches,
 } from 'class-validator';
 
 export class StudentProfileDto {
@@ -22,8 +23,11 @@ export class StudentProfileDto {
   @IsInt()
   academicYear!: number;
 
-  @IsInt()
-  semester!: number;
+  @IsString()
+  @Matches(/^(1\.1|1\.2|2\.1|2\.2|3\.1|3\.2|4\.1|4\.2)$/, {
+    message: 'Semester must be in format X.Y (1.1 to 4.2)',
+  })
+  semester!: string;
 
   @IsDateString()
   @IsOptional()

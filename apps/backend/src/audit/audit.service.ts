@@ -28,4 +28,48 @@ export class AuditService {
       },
     });
   }
+
+  async findAll(page: number, limit: number, search?: string) {
+    const where: any = {};
+
+    if (search) {
+      where.OR = [
+        { action: { contains: search, mode: 'insensitive' } },
+        { entity_name: { contains: search, mode: 'insensitive' } },
+        { entity_id: { contains: search, mode: 'insensitive' } },
+        {
+          user: {
+            full_name: { contains: search, mode: 'insensitive' },
+          },
+        },
+      ];
+    }
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.auditLog.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          user: {
+            select: {
+              full_name: true,
+              email: true,
+              role: true,
+            },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
 }

@@ -113,4 +113,110 @@ export class ReportsService {
       orderBy: { course_code: 'asc' },
     });
   }
+
+  async getStaffOverview(batch?: number) {
+    // 1. Total students currently learning: derived from the latest completed registration window
+    const latestCompletedPeriod = await this.prisma.registrationPeriod.findFirst({
+      where: { status: 'CLOSED' },
+      orderBy: { end_date: 'desc' },
+    });
+
+    let studentsCurrentlyLearning = 0;
+    if (latestCompletedPeriod) {
+      const uniqueRegistered = await this.prisma.courseRegistration.groupBy({
+        by: ['student_id'],
+        where: {
+          course: {
+            academic_year: latestCompletedPeriod.academic_year,
+            semester: latestCompletedPeriod.semester,
+          },
+        },
+      });
+      studentsCurrentlyLearning = uniqueRegistered.length;
+    } else {
+      // Fallback
+      studentsCurrentlyLearning = await this.prisma.student.count();
+    }
+
+    const totalStudents = await this.prisma.student.count();
+    const totalCourses = await this.prisma.course.count();
+
+    // Distinct batches (academic_year)
+    const distinctBatches = await this.prisma.student.groupBy({
+      by: ['academic_year'],
+      orderBy: { academic_year: 'desc' },
+    });
+    const batchesList = distinctBatches.map((b) => b.academic_year);
+
+    let batchDetails = null;
+
+    if (batch) {
+      // Find the first student in this batch to get their current semester
+      const studentInBatch = await this.prisma.student.findFirst({
+        where: { academic_year: batch },
+        select: { semester: true },
+      });
+
+      const batchSemester = studentInBatch ? studentInBatch.semester : null;
+
+      if (batchSemester) {
+        // Available courses for this batch & semester
+        const availableCoursesCount = await this.prisma.course.count({
+          where: {
+            academic_year: batch,
+            semester: batchSemester,
+          },
+        });
+
+        // Get all students of this batch
+        const studentsInBatch = await this.prisma.student.findMany({
+          where: { academic_year: batch },
+          include: {
+            user: {
+              select: {
+                full_name: true,
+                email: true,
+              },
+            },
+            registrations: {
+              where: {
+                course: {
+                  academic_year: batch,
+                  semester: batchSemester,
+                },
+              },
+            },
+          },
+        });
+
+        const registeredCount = studentsInBatch.filter((s) => s.registrations.length > 0).length;
+        const nonFilledStudents = studentsInBatch
+          .filter((s) => s.registrations.length === 0)
+          .map((s) => ({
+            studentId: s.student_id,
+            registrationNumber: s.registration_number,
+            fullName: s.user.full_name,
+            email: s.user.email,
+            phoneNumber: s.phone_number || '-',
+          }));
+
+        batchDetails = {
+          batch,
+          semester: batchSemester,
+          availableCoursesCount,
+          registeredCount,
+          totalStudentsCount: studentsInBatch.length,
+          nonFilledStudents,
+        };
+      }
+    }
+
+    return {
+      studentsCurrentlyLearning,
+      totalStudents,
+      totalCourses,
+      batches: batchesList,
+      batchDetails,
+    };
+  }
 }

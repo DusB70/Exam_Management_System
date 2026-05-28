@@ -20,13 +20,16 @@ async function bootstrap() {
     }),
   );
 
-  // Enable CORS
+  // Enable CORS — allow localhost, 127.0.0.1, and private-network IPs (LAN access)
   app.enableCors({
     origin: (origin, callback) => {
       if (
         !origin ||
         allowedOrigins.includes(origin) ||
-        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+        /^http:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(
+          origin,
+        )
       ) {
         callback(null, true);
       } else {
@@ -34,6 +37,8 @@ async function bootstrap() {
       }
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
   });
 
   // Global prefix
@@ -48,7 +53,7 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(port);
-  logger.log(`EMS Backend API successfully running on: http://localhost:${port}/api`);
+  await app.listen(port, '0.0.0.0');
+  logger.log(`EMS Backend API successfully running on: http://0.0.0.0:${port}/api`);
 }
 bootstrap();

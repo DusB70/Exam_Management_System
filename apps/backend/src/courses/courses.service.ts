@@ -19,7 +19,7 @@ export class CoursesService {
     limit: number,
     search?: string,
     departmentId?: number,
-    semester?: number,
+    semester?: string,
     academicYear?: number,
   ) {
     const where: Prisma.CourseWhereInput = {};
@@ -50,6 +50,19 @@ export class CoursesService {
         take: limit,
         include: {
           department: true,
+          lecturers: {
+            include: {
+              lecturer: {
+                include: {
+                  user: {
+                    select: {
+                      full_name: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
         orderBy: { course_code: 'asc' },
       }),
@@ -90,8 +103,15 @@ export class CoursesService {
   }
 
   async create(createCourseDto: CreateCourseDto, executorId: number): Promise<Course> {
-    const { courseCode, courseName, creditValue, departmentId, semester, academicYear } =
-      createCourseDto;
+    const {
+      courseCode,
+      courseName,
+      creditValue,
+      departmentId,
+      semester,
+      academicYear,
+      lecturerId,
+    } = createCourseDto;
 
     // Verify course code unique
     const codeExists = await this.prisma.course.findUnique({
@@ -101,15 +121,35 @@ export class CoursesService {
       throw new BadRequestException(`Course code ${courseCode} is already in use`);
     }
 
-    const course = await this.prisma.course.create({
-      data: {
-        course_code: courseCode,
-        course_name: courseName,
-        credit_value: new Prisma.Decimal(creditValue),
-        department_id: departmentId,
-        semester,
-        academic_year: academicYear,
-      },
+    const course = await this.prisma.$transaction(async (tx) => {
+      const newCourse = await tx.course.create({
+        data: {
+          course_code: courseCode,
+          course_name: courseName,
+          credit_value: new Prisma.Decimal(creditValue),
+          department_id: departmentId,
+          semester,
+          academic_year: academicYear,
+        },
+      });
+
+      if (lecturerId) {
+        const lecturer = await tx.lecturer.findUnique({
+          where: { lecturer_id: lecturerId },
+        });
+        if (!lecturer) {
+          throw new NotFoundException(`Lecturer with ID ${lecturerId} not found`);
+        }
+
+        await tx.courseLecturer.create({
+          data: {
+            course_id: newCourse.course_id,
+            lecturer_id: lecturerId,
+          },
+        });
+      }
+
+      return newCourse;
     });
 
     await this.auditService.logAction(
@@ -126,8 +166,15 @@ export class CoursesService {
 
   async update(id: number, updateCourseDto: UpdateCourseDto, executorId: number): Promise<Course> {
     const existingCourse = await this.findOne(id);
-    const { courseCode, courseName, creditValue, departmentId, semester, academicYear } =
-      updateCourseDto;
+    const {
+      courseCode,
+      courseName,
+      creditValue,
+      departmentId,
+      semester,
+      academicYear,
+      lecturerId,
+    } = updateCourseDto;
 
     if (courseCode && courseCode !== existingCourse.course_code) {
       const codeExists = await this.prisma.course.findUnique({
@@ -146,9 +193,35 @@ export class CoursesService {
     if (semester) updateData.semester = semester;
     if (academicYear) updateData.academic_year = academicYear;
 
-    const course = await this.prisma.course.update({
-      where: { course_id: id },
-      data: updateData,
+    const course = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.course.update({
+        where: { course_id: id },
+        data: updateData,
+      });
+
+      if (lecturerId !== undefined) {
+        // Clear previous lecturer assignments for this course
+        await tx.courseLecturer.deleteMany({
+          where: { course_id: id },
+        });
+
+        if (lecturerId) {
+          const lecturer = await tx.lecturer.findUnique({
+            where: { lecturer_id: lecturerId },
+          });
+          if (!lecturer) {
+            throw new NotFoundException(`Lecturer with ID ${lecturerId} not found`);
+          }
+          await tx.courseLecturer.create({
+            data: {
+              course_id: id,
+              lecturer_id: lecturerId,
+            },
+          });
+        }
+      }
+
+      return updated;
     });
 
     await this.auditService.logAction(
@@ -307,7 +380,7 @@ export class CoursesService {
     );
 
     if (period.status === PeriodStatus.OPEN) {
-      await this.notificationsQueueService.addRegistrationOpenedJob(
+      this.notificationsQueueService.addRegistrationOpenedJob(
         period.academic_year,
         period.semester,
         period.end_date,
@@ -366,7 +439,7 @@ export class CoursesService {
     );
 
     if (status === PeriodStatus.OPEN) {
-      await this.notificationsQueueService.addRegistrationOpenedJob(
+      this.notificationsQueueService.addRegistrationOpenedJob(
         period.academic_year,
         period.semester,
         period.end_date,

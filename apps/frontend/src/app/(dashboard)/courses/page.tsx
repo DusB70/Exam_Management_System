@@ -32,7 +32,7 @@ const fetchDepartments = async () => {
 export default function CoursesManagementPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'courses' | 'periods'>('courses');
+  const [activeTab, setActiveTab] = useState<'courses' | 'periods' | 'lecturers'>('courses');
 
   // Filters State for Courses
   const [coursePage, setCoursePage] = useState(1);
@@ -60,6 +60,52 @@ export default function CoursesManagementPage() {
     queryKey: ['departments'],
     queryFn: fetchDepartments,
   });
+
+  // Fetch Lecturers for Assignments Tab
+  const {
+    data: lecturersList = [],
+    isLoading: isLecturersLoading,
+    refetch: refetchLecturers,
+  } = useQuery({
+    queryKey: ['lecturers-list-assignment'],
+    queryFn: async () => {
+      const response = await apiClient.get('/lecturers');
+      return response.data?.data || [];
+    },
+    enabled: activeTab === 'lecturers',
+  });
+
+  // Fetch Courses Lookup
+  const { data: coursesLookup = [] } = useQuery({
+    queryKey: ['courses-lookup-list'],
+    queryFn: async () => {
+      const response = await apiClient.get('/reports/courses');
+      return response.data?.data || [];
+    },
+    enabled: activeTab === 'lecturers',
+  });
+
+  const handleAssignCourseToLecturer = async (courseId: number, lecturerId: number) => {
+    try {
+      await apiClient.post(`/courses/${courseId}/lecturers`, { lecturerId });
+      refetchLecturers();
+      refetchCourses();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to assign lecturer.');
+    }
+  };
+
+  const handleRemoveCourseFromLecturer = async (courseId: number, lecturerId: number) => {
+    if (confirm('Are you sure you want to remove this course assignment?')) {
+      try {
+        await apiClient.delete(`/courses/${courseId}/lecturers/${lecturerId}`);
+        refetchLecturers();
+        refetchCourses();
+      } catch (err: any) {
+        alert(err.response?.data?.message || 'Failed to remove lecturer.');
+      }
+    }
+  };
 
   // Fetch Courses with filters
   const {
@@ -109,10 +155,20 @@ export default function CoursesManagementPage() {
   // Update Period Status Mutation
   const updatePeriodStatusMutation = useMutation({
     mutationFn: async ({ periodId, status }: { periodId: number; status: string }) => {
-      await apiClient.patch(`/courses/periods/${periodId}/status`, { status });
+      const response = await apiClient.patch(`/courses/periods/${periodId}/status`, { status });
+      return response.data?.data;
     },
-    onSuccess: () => {
+    onSuccess: (updatedPeriod) => {
+      if (updatedPeriod) {
+        queryClient.setQueryData(['registration-periods'], (oldPeriods: any) => {
+          if (!Array.isArray(oldPeriods)) return [updatedPeriod];
+          return oldPeriods.map((p: any) =>
+            p.period_id === updatedPeriod.period_id ? updatedPeriod : p,
+          );
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ['registration-periods'] });
+      refetchPeriods();
     },
   });
 
@@ -201,6 +257,19 @@ export default function CoursesManagementPage() {
           <Calendar className="h-4 w-4" />
           Registration Windows
         </button>
+        {isAdminOrStaff && (
+          <button
+            onClick={() => setActiveTab('lecturers')}
+            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+              activeTab === 'lecturers'
+                ? 'border-primary text-primary font-bold'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <GraduationCap className="h-4 w-4" />
+            Lecturer Assignments
+          </button>
+        )}
       </div>
 
       {/* Tabs Content */}
@@ -250,7 +319,7 @@ export default function CoursesManagementPage() {
                 className="w-full px-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
               >
                 <option value="">All Semesters</option>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+                {['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2'].map((s) => (
                   <option key={s} value={s} className="bg-card">
                     Semester {s}
                   </option>
@@ -280,6 +349,7 @@ export default function CoursesManagementPage() {
                   <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
                     <th className="px-6 py-4">Course Code</th>
                     <th className="px-6 py-4">Course Name</th>
+                    <th className="px-6 py-4">Lecturer</th>
                     <th className="px-6 py-4">Credits</th>
                     <th className="px-6 py-4">Dept</th>
                     <th className="px-6 py-4">Semester</th>
@@ -303,7 +373,7 @@ export default function CoursesManagementPage() {
                   ) : courses.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={isAdminOrStaff ? 7 : 6}
+                        colSpan={isAdminOrStaff ? 8 : 7}
                         className="text-center py-20 text-muted-foreground"
                       >
                         No courses found. Add courses to populate database.
@@ -320,6 +390,14 @@ export default function CoursesManagementPage() {
                         </td>
                         <td className="px-6 py-4.5 font-semibold text-foreground">
                           {course.course_name}
+                        </td>
+                        <td className="px-6 py-4.5 text-muted-foreground text-xs font-semibold">
+                          {course.lecturers && course.lecturers.length > 0
+                            ? course.lecturers
+                                .map((l: any) => l.lecturer?.user?.full_name)
+                                .filter(Boolean)
+                                .join(', ')
+                            : 'Assign Later'}
                         </td>
                         <td className="px-6 py-4.5 font-mono text-muted-foreground">
                           {parseFloat(course.credit_value)}
@@ -535,6 +613,115 @@ export default function CoursesManagementPage() {
         </div>
       )}
 
+      {activeTab === 'lecturers' && isAdminOrStaff && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Lecturers Table */}
+          <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
+                    <th className="px-6 py-4">Lecturer Name</th>
+                    <th className="px-6 py-4">Email</th>
+                    <th className="px-6 py-4">Department</th>
+                    <th className="px-6 py-4">Assigned Courses</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60 text-sm font-medium">
+                  {isLecturersLoading ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-20 text-muted-foreground">
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></span>
+                          Loading lecturers list...
+                        </span>
+                      </td>
+                    </tr>
+                  ) : lecturersList.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-20 text-muted-foreground">
+                        No lecturers found in the database.
+                      </td>
+                    </tr>
+                  ) : (
+                    lecturersList.map((lec: any) => (
+                      <tr key={lec.lecturer_id} className="hover:bg-secondary/15 transition-colors">
+                        <td className="px-6 py-4 font-bold text-foreground">
+                          {lec.user?.full_name}
+                        </td>
+                        <td className="px-6 py-4 text-muted-foreground text-xs">
+                          {lec.user?.email}
+                        </td>
+                        <td className="px-6 py-4 text-xs text-muted-foreground uppercase">
+                          {lec.department?.department_name}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1.5 max-w-md">
+                            {lec.courses && lec.courses.length > 0 ? (
+                              lec.courses.map((c: any) => (
+                                <span
+                                  key={c.course?.course_id}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg text-xs font-bold font-mono"
+                                >
+                                  {c.course?.course_code}
+                                  <button
+                                    onClick={() =>
+                                      handleRemoveCourseFromLecturer(
+                                        c.course?.course_id,
+                                        lec.lecturer_id,
+                                      )
+                                    }
+                                    className="hover:text-destructive hover:bg-destructive/10 rounded p-0.5"
+                                    title="Unassign course"
+                                  >
+                                    ✕
+                                  </button>
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs text-muted-foreground/60 italic">
+                                No courses assigned
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <select
+                            onChange={(e) => {
+                              const courseId = parseInt(e.target.value, 10);
+                              if (courseId) {
+                                handleAssignCourseToLecturer(courseId, lec.lecturer_id);
+                                e.target.value = ''; // Reset select
+                              }
+                            }}
+                            className="px-3 py-1.5 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/90 transition text-xs font-semibold"
+                          >
+                            <option value="">+ Assign Course...</option>
+                            {coursesLookup
+                              .filter(
+                                (c: any) =>
+                                  !lec.courses?.some(
+                                    (ac: any) => ac.course?.course_id === c.course_id,
+                                  ),
+                              )
+                              .map((c: any) => (
+                                <option key={c.course_id} value={c.course_id}>
+                                  {c.course_code} - {c.course_name}
+                                </option>
+                              ))}
+                          </select>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Dialogs */}
       <CourseDialog
         open={courseDialogOpen}
@@ -559,7 +746,17 @@ export default function CoursesManagementPage() {
       <PeriodDialog
         open={periodDialogOpen}
         onClose={() => setPeriodDialogOpen(false)}
-        onSuccess={refetchPeriods}
+        onSuccess={(newPeriod) => {
+          if (newPeriod) {
+            queryClient.setQueryData(['registration-periods'], (oldPeriods: any) => {
+              if (!Array.isArray(oldPeriods)) return [newPeriod];
+              return [newPeriod, ...oldPeriods];
+            });
+          }
+          queryClient.invalidateQueries({ queryKey: ['registration-periods'] });
+          refetchPeriods();
+          setPeriodDialogOpen(false);
+        }}
       />
     </div>
   );

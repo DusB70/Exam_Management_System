@@ -130,17 +130,19 @@ export class MarksService {
       }
     }
 
-    // 2. Check if marksheet is locked (submitted or approved)
-    const existingSubmitted = await this.prisma.examMark.findFirst({
-      where: {
-        exam_id: examId,
-        grading_status: { in: ['SUBMITTED', 'APPROVED'] },
-      },
-    });
-    if (existingSubmitted) {
-      throw new BadRequestException(
-        'Marksheet has already been submitted or approved and is locked.',
-      );
+    // 2. Check if marksheet is locked (submitted or approved) for Lecturers
+    if (isLecturer) {
+      const existingSubmitted = await this.prisma.examMark.findFirst({
+        where: {
+          exam_id: examId,
+          grading_status: { in: ['SUBMITTED', 'APPROVED'] },
+        },
+      });
+      if (existingSubmitted) {
+        throw new BadRequestException(
+          'Marksheet has already been submitted or approved and is locked.',
+        );
+      }
     }
 
     // 3. Validate entries against exam max marks
@@ -153,7 +155,7 @@ export class MarksService {
     }
 
     // 4. Save bulk marks in database transaction
-    return this.prisma.$transaction(async (tx) => {
+    const results = await this.prisma.$transaction(async (tx) => {
       const savedMarks: ExamMark[] = [];
 
       for (const entry of dto.marks) {
@@ -167,14 +169,14 @@ export class MarksService {
           update: {
             marks_obtained: entry.marksObtained,
             recorded_by_id: executorUserId,
-            grading_status: 'PENDING',
+            grading_status: isLecturer ? 'PENDING' : 'APPROVED',
           },
           create: {
             student_id: entry.studentId,
             exam_id: examId,
             marks_obtained: entry.marksObtained,
             recorded_by_id: executorUserId,
-            grading_status: 'PENDING',
+            grading_status: isLecturer ? 'PENDING' : 'APPROVED',
           },
         });
 
@@ -192,6 +194,12 @@ export class MarksService {
 
       return savedMarks;
     });
+
+    if (!isLecturer) {
+      await this.compileCourseGrades(exam.course_id);
+    }
+
+    return results;
   }
 
   // Submit marksheet for approval
@@ -457,5 +465,34 @@ export class MarksService {
     if (pct >= 50.0) return { grade: 'C-', gradePoint: 1.7 };
     if (pct >= 40.0) return { grade: 'D', gradePoint: 1.0 };
     return { grade: 'F', gradePoint: 0.0 };
+  }
+
+  async getApprovedMarksheets() {
+    return this.prisma.exam.findMany({
+      where: {
+        exam_marks: {
+          some: {
+            grading_status: 'APPROVED',
+          },
+        },
+      },
+      include: {
+        course: {
+          include: {
+            department: true,
+            lecturers: {
+              include: {
+                lecturer: {
+                  include: {
+                    user: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { exam_date: 'desc' },
+    });
   }
 }

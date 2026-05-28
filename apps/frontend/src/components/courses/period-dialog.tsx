@@ -11,7 +11,12 @@ import { ApiResponse } from '@ems/shared';
 const PeriodFormSchema = z
   .object({
     academicYear: z.coerce.number().int().min(2000, 'Academic year must be 2000 or later'),
-    semester: z.coerce.number().int().min(1).max(8, 'Semester must be between 1 and 8'),
+    semester: z
+      .string()
+      .regex(
+        /^(1\.1|1\.2|2\.1|2\.2|3\.1|3\.2|4\.1|4\.2)$/,
+        'Semester must be in format X.Y (1.1 to 4.2)',
+      ),
     startDate: z.string().min(1, 'Start date is required'),
     endDate: z.string().min(1, 'End date is required'),
     status: z.enum(['OPEN', 'CLOSED', 'SUSPENDED']).default('CLOSED'),
@@ -33,7 +38,7 @@ type PeriodFormInput = z.infer<typeof PeriodFormSchema>;
 interface PeriodDialogProps {
   open: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (newPeriod: any) => void;
 }
 
 export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogProps) {
@@ -49,7 +54,7 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
     resolver: zodResolver(PeriodFormSchema),
     defaultValues: {
       academicYear: new Date().getFullYear(),
-      semester: 1,
+      semester: '1.1',
       status: 'CLOSED',
       startDate: new Date().toISOString().split('T')[0],
       endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days later
@@ -67,9 +72,8 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
         startDate: new Date(data.startDate).toISOString(),
         endDate: new Date(data.endDate).toISOString(),
       };
-      await apiClient.post('/courses/periods', payload);
-      onSuccess();
-      onClose();
+      const response = await apiClient.post('/courses/periods', payload);
+      onSuccess(response.data?.data);
       reset();
     } catch (err) {
       const axiosError = err as AxiosError<ApiResponse>;
@@ -119,11 +123,19 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
             <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
               Semester
             </label>
-            <input
-              type="number"
+            <select
               {...register('semester')}
-              className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm"
-            />
+              className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+            >
+              <option value="1.1">Semester 1.1</option>
+              <option value="1.2">Semester 1.2</option>
+              <option value="2.1">Semester 2.1</option>
+              <option value="2.2">Semester 2.2</option>
+              <option value="3.1">Semester 3.1</option>
+              <option value="3.2">Semester 3.2</option>
+              <option value="4.1">Semester 4.1</option>
+              <option value="4.2">Semester 4.2</option>
+            </select>
             {errors.semester && (
               <p className="mt-1 text-xs text-destructive">{errors.semester.message}</p>
             )}

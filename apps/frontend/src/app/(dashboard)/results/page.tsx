@@ -36,7 +36,7 @@ export default function ResultsAndImportsPage() {
 
   // Staff Publisher Form State
   const [publishYear, setPublishYear] = useState<string>(new Date().getFullYear().toString());
-  const [publishSemester, setPublishSemester] = useState<string>('1');
+  const [publishSemester, setPublishSemester] = useState<string>('1.1');
 
   // Staff Import Files State
   const [studentsFile, setStudentsFile] = useState<File | null>(null);
@@ -47,6 +47,7 @@ export default function ResultsAndImportsPage() {
   const [studentSearch, setStudentSearch] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
   const [isDownloadingPdfMap, setIsDownloadingPdfMap] = useState<Record<number, boolean>>({});
 
   // ==========================================
@@ -101,7 +102,7 @@ export default function ResultsAndImportsPage() {
 
   // Publish results mutation
   const publishMutation = useMutation({
-    mutationFn: async (payload: { academicYear: number; semester: number }) => {
+    mutationFn: async (payload: { academicYear: number; semester: string }) => {
       await apiClient.post('/results/publish', payload);
     },
     onSuccess: () => {
@@ -171,7 +172,7 @@ export default function ResultsAndImportsPage() {
     ) {
       publishMutation.mutate({
         academicYear: parseInt(publishYear, 10),
-        semester: parseInt(publishSemester, 10),
+        semester: publishSemester,
       });
     }
   };
@@ -211,6 +212,26 @@ export default function ResultsAndImportsPage() {
     }
   };
 
+  const handleDownloadMyExcel = async () => {
+    setIsDownloadingExcel(true);
+    try {
+      const response = await apiClient.get('/results/my-report/excel', {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `transcript_${user?.fullName || 'student'}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+    } catch {
+      setErrorMsg('Failed to download Excel transcript.');
+    } finally {
+      setIsDownloadingExcel(false);
+    }
+  };
+
   const handleDownloadStaffPdf = async (studentId: number, studentName: string) => {
     setIsDownloadingPdfMap((prev) => ({ ...prev, [studentId]: true }));
     try {
@@ -237,7 +258,7 @@ export default function ResultsAndImportsPage() {
   const latestGpa = gpas.length > 0 ? gpas[gpas.length - 1] : null;
 
   const totalCreditsEarned = grades.reduce(
-    (sum: number, g: any) => sum + parseFloat(g.course.credit_value),
+    (sum: number, g: any) => sum + parseFloat(g.course?.credit_value || '0'),
     0,
   );
 
@@ -373,21 +394,40 @@ export default function ResultsAndImportsPage() {
 
               {/* Course Grades table */}
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <h3 className="text-lg font-bold text-foreground">Official Transcript Sheets</h3>
-                  <button
-                    onClick={handleDownloadMyPdf}
-                    disabled={isDownloadingPdf}
-                    className="flex items-center gap-2 px-4 py-2 text-xs font-semibold bg-primary text-primary-foreground rounded-xl shadow-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-                  >
-                    {isDownloadingPdf ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Download className="h-3.5 w-3.5" />
+                  <div className="flex flex-wrap gap-2">
+                    {grades.length > 0 && (
+                      <>
+                        <button
+                          onClick={handleDownloadMyPdf}
+                          disabled={isDownloadingPdf}
+                          className="flex items-center gap-2 px-4 py-2 text-xs font-semibold bg-primary text-primary-foreground rounded-xl shadow-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                        >
+                          {isDownloadingPdf ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Download className="h-3.5 w-3.5" />
+                          )}
+                          Download PDF Transcript
+                        </button>
+                        <button
+                          onClick={handleDownloadMyExcel}
+                          disabled={isDownloadingExcel}
+                          className="flex items-center gap-2 px-4 py-2 text-xs font-semibold bg-emerald-600 text-white rounded-xl shadow-lg hover:bg-emerald-500 transition-colors disabled:opacity-50"
+                        >
+                          {isDownloadingExcel ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <FileSpreadsheet className="h-3.5 w-3.5" />
+                          )}
+                          Download Excel Sheet
+                        </button>
+                      </>
                     )}
-                    Download PDF Transcript
-                  </button>
+                  </div>
                 </div>
+
                 <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -434,6 +474,219 @@ export default function ResultsAndImportsPage() {
                   </div>
                 </div>
               </div>
+
+              {/* GPA Calculation Section */}
+              <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-md space-y-6 shadow-xl">
+                <div className="border-b border-border/60 pb-4">
+                  <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                    <Award className="h-5 w-5 text-primary" />
+                    GPA Calculation Breakdown
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    See the step-by-step mathematical breakdown of how your GPA is calculated.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Semester GPA Calculation */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center bg-secondary/10 border border-border/40 p-4 rounded-2xl">
+                      <div>
+                        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                          Semester {latestGpa?.semester} GPA (SGPA)
+                        </h4>
+                        <p className="text-2xl font-extrabold text-foreground font-mono mt-1">
+                          {latestGpa ? latestGpa.semester_gpa.toFixed(2) : '0.00'}
+                        </p>
+                      </div>
+                      <span className="px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full text-xs font-semibold">
+                        SGPA
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground">Formula:</p>
+                      <code className="block p-3 bg-secondary/20 border border-border/40 rounded-xl text-xs font-mono text-center text-primary font-bold">
+                        SGPA = Σ(Credits × Grade Point) / Σ(Credits)
+                      </code>
+                    </div>
+
+                    <div className="border border-border/50 rounded-xl overflow-hidden text-xs">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-secondary/15 border-b border-border/60 font-bold text-muted-foreground">
+                            <th className="p-3">Course</th>
+                            <th className="p-3 text-center">Credits (C)</th>
+                            <th className="p-3 text-center">Grade Point (GP)</th>
+                            <th className="p-3 text-right">Product (C × GP)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/40 font-medium">
+                          {grades
+                            .filter((g: any) => g.course?.semester === latestGpa?.semester)
+                            .map((g: any) => {
+                              const credVal = parseFloat(g.course?.credit_value || '0');
+                              const gpVal = g.grade_point;
+                              const prodVal = credVal * gpVal;
+                              return (
+                                <tr key={g.grade_id} className="hover:bg-secondary/5">
+                                  <td className="p-3 font-semibold text-foreground">
+                                    {g.course?.course_code}
+                                  </td>
+                                  <td className="p-3 text-center font-mono text-muted-foreground">
+                                    {credVal.toFixed(1)}
+                                  </td>
+                                  <td className="p-3 text-center font-mono text-muted-foreground">
+                                    {gpVal.toFixed(2)}
+                                  </td>
+                                  <td className="p-3 text-right font-mono font-bold text-foreground">
+                                    {prodVal.toFixed(2)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          <tr className="bg-secondary/10 font-bold border-t border-border/60">
+                            <td className="p-3 text-foreground font-bold">Total / Sum (Σ)</td>
+                            <td className="p-3 text-center font-mono text-primary font-bold">
+                              {grades
+                                .filter((g: any) => g.course?.semester === latestGpa?.semester)
+                                .reduce(
+                                  (sum: number, g: any) =>
+                                    sum + parseFloat(g.course?.credit_value || '0'),
+                                  0,
+                                )
+                                .toFixed(1)}
+                            </td>
+                            <td className="p-3 text-center text-muted-foreground font-medium">-</td>
+                            <td className="p-3 text-right font-mono text-primary font-bold">
+                              {grades
+                                .filter((g: any) => g.course?.semester === latestGpa?.semester)
+                                .reduce(
+                                  (sum: number, g: any) =>
+                                    sum + parseFloat(g.course?.credit_value || '0') * g.grade_point,
+                                  0,
+                                )
+                                .toFixed(2)}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="p-3 bg-secondary/15 border border-border/45 rounded-xl text-xs space-y-1">
+                      <span className="font-semibold text-muted-foreground">Calculation step:</span>
+                      <p className="font-mono font-bold text-foreground">
+                        SGPA ={' '}
+                        {grades
+                          .filter((g: any) => g.course?.semester === latestGpa?.semester)
+                          .reduce(
+                            (sum: number, g: any) =>
+                              sum + parseFloat(g.course?.credit_value || '0') * g.grade_point,
+                            0,
+                          )
+                          .toFixed(2)}{' '}
+                        /{' '}
+                        {grades
+                          .filter((g: any) => g.course?.semester === latestGpa?.semester)
+                          .reduce(
+                            (sum: number, g: any) =>
+                              sum + parseFloat(g.course?.credit_value || '0'),
+                            0,
+                          )
+                          .toFixed(1)}{' '}
+                        ={' '}
+                        <span className="text-primary">
+                          {latestGpa ? latestGpa.semester_gpa.toFixed(2) : '0.00'}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Cumulative GPA Calculation */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center bg-primary/5 border border-primary/20 p-4 rounded-2xl">
+                      <div>
+                        <h4 className="text-xs font-bold text-primary uppercase tracking-wider">
+                          Cumulative GPA (CGPA)
+                        </h4>
+                        <p className="text-2xl font-extrabold text-foreground font-mono mt-1">
+                          {latestGpa ? latestGpa.cumulative_gpa.toFixed(2) : '0.00'}
+                        </p>
+                      </div>
+                      <span className="px-3 py-1 bg-primary text-primary-foreground rounded-full text-xs font-semibold shadow-md">
+                        CGPA
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground">Formula:</p>
+                      <code className="block p-3 bg-secondary/20 border border-border/40 rounded-xl text-xs font-mono text-center text-primary font-bold">
+                        CGPA = Σ(Credits × Grade Point) / Σ(Credits) [All Semesters]
+                      </code>
+                    </div>
+
+                    <div className="border border-border/50 rounded-xl p-4 bg-secondary/10 space-y-3.5 text-xs">
+                      <h5 className="font-bold text-foreground">All Semesters Totals</h5>
+                      <div className="space-y-2.5 font-medium">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Total Cumulative Credits (Σ C):
+                          </span>
+                          <span className="font-mono font-bold text-foreground">
+                            {grades
+                              .reduce(
+                                (sum: number, g: any) =>
+                                  sum + parseFloat(g.course?.credit_value || '0'),
+                                0,
+                              )
+                              .toFixed(1)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Total Grade Point Products (Σ C × GP):
+                          </span>
+                          <span className="font-mono font-bold text-foreground">
+                            {grades
+                              .reduce(
+                                (sum: number, g: any) =>
+                                  sum + parseFloat(g.course?.credit_value || '0') * g.grade_point,
+                                0,
+                              )
+                              .toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-secondary/15 border border-border/45 rounded-xl text-xs space-y-1">
+                      <span className="font-semibold text-muted-foreground">Calculation step:</span>
+                      <p className="font-mono font-bold text-foreground">
+                        CGPA ={' '}
+                        {grades
+                          .reduce(
+                            (sum: number, g: any) =>
+                              sum + parseFloat(g.course?.credit_value || '0') * g.grade_point,
+                            0,
+                          )
+                          .toFixed(2)}{' '}
+                        /{' '}
+                        {grades
+                          .reduce(
+                            (sum: number, g: any) =>
+                              sum + parseFloat(g.course?.credit_value || '0'),
+                            0,
+                          )
+                          .toFixed(1)}{' '}
+                        ={' '}
+                        <span className="text-primary">
+                          {latestGpa ? latestGpa.cumulative_gpa.toFixed(2) : '0.00'}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -466,14 +719,14 @@ export default function ResultsAndImportsPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                  Semester (1 - 8)
+                  Semester (e.g. 1.1)
                 </label>
                 <select
                   value={publishSemester}
                   onChange={(e) => setPublishSemester(e.target.value)}
                   className="w-full px-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
                 >
-                  {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+                  {['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2'].map((s) => (
                     <option key={s} value={s} className="bg-card">
                       Semester {s}
                     </option>

@@ -37,6 +37,7 @@ describe('CoursesService', () => {
       create: jest.fn(),
       update: jest.fn(),
     },
+    $transaction: jest.fn((cb) => cb(mockPrismaService)),
   };
 
   const mockAuditService = {
@@ -74,7 +75,7 @@ describe('CoursesService', () => {
         courseName: 'Intro to CS',
         creditValue: 3,
         departmentId: 1,
-        semester: 1,
+        semester: '1.1',
         academicYear: 2026,
       };
 
@@ -96,7 +97,7 @@ describe('CoursesService', () => {
         courseName: 'Intro to CS',
         creditValue: 3,
         departmentId: 1,
-        semester: 1,
+        semester: '1.1',
         academicYear: 2026,
       };
 
@@ -157,7 +158,7 @@ describe('CoursesService', () => {
     it('should throw BadRequestException if start date is after or equal to end date', async () => {
       const dto = {
         academicYear: 2026,
-        semester: 1,
+        semester: '1.1',
         startDate: '2026-06-01T00:00:00.000Z',
         endDate: '2026-05-01T00:00:00.000Z',
         status: PeriodStatus.OPEN,
@@ -169,7 +170,7 @@ describe('CoursesService', () => {
     it('should throw BadRequestException if a registration window is already OPEN for the same semester/year', async () => {
       const dto = {
         academicYear: 2026,
-        semester: 1,
+        semester: '1.1',
         startDate: '2026-05-01T00:00:00.000Z',
         endDate: '2026-06-01T00:00:00.000Z',
         status: PeriodStatus.OPEN,

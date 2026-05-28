@@ -10,17 +10,17 @@ import { AxiosError } from 'axios';
 import { ApiResponse } from '@ems/shared';
 
 const StudentProfileSchema = z.object({
-  registrationNumber: z.string().min(1, 'Registration number is required'),
-  departmentId: z.coerce.number().int().min(1, 'Department is required'),
-  academicYear: z.coerce.number().int().min(2000, 'Academic year must be 2000 or later'),
-  semester: z.coerce.number().int().min(1).max(8, 'Semester must be between 1 and 8'),
+  registrationNumber: z.string().optional().or(z.literal('')),
+  departmentId: z.coerce.number().int().optional(),
+  academicYear: z.coerce.number().int().optional(),
+  semester: z.coerce.number().int().optional(),
   dateOfBirth: z.string().optional().or(z.literal('')),
   phoneNumber: z.string().optional().or(z.literal('')),
 });
 
 const LecturerProfileSchema = z.object({
-  employeeNumber: z.string().min(1, 'Employee number is required'),
-  departmentId: z.coerce.number().int().min(1, 'Department is required'),
+  employeeNumber: z.string().optional().or(z.literal('')),
+  departmentId: z.coerce.number().int().optional(),
   specialization: z.string().optional().or(z.literal('')),
   phoneNumber: z.string().optional().or(z.literal('')),
 });
@@ -36,19 +36,55 @@ const UserFormSchema = z
     lecturerProfile: LecturerProfileSchema.optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.roleId === 4 && !data.studentProfile?.registrationNumber) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Student profile details are required',
-        path: ['studentProfile', 'registrationNumber'],
-      });
+    if (data.roleId === 4) {
+      if (!data.studentProfile?.registrationNumber?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Registration number is required',
+          path: ['studentProfile', 'registrationNumber'],
+        });
+      }
+      if (!data.studentProfile?.departmentId || data.studentProfile.departmentId < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Department is required',
+          path: ['studentProfile', 'departmentId'],
+        });
+      }
+      if (!data.studentProfile?.academicYear || data.studentProfile.academicYear < 2000) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Academic year must be 2000 or later',
+          path: ['studentProfile', 'academicYear'],
+        });
+      }
+      if (
+        !data.studentProfile?.semester ||
+        data.studentProfile.semester < 1 ||
+        data.studentProfile.semester > 8
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Semester must be between 1 and 8',
+          path: ['studentProfile', 'semester'],
+        });
+      }
     }
-    if (data.roleId === 3 && !data.lecturerProfile?.employeeNumber) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Lecturer profile details are required',
-        path: ['lecturerProfile', 'employeeNumber'],
-      });
+    if (data.roleId === 3) {
+      if (!data.lecturerProfile?.employeeNumber?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Employee number is required',
+          path: ['lecturerProfile', 'employeeNumber'],
+        });
+      }
+      if (!data.lecturerProfile?.departmentId || data.lecturerProfile.departmentId < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Department is required',
+          path: ['lecturerProfile', 'departmentId'],
+        });
+      }
     }
   });
 

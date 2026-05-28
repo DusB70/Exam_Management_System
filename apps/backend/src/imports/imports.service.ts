@@ -10,7 +10,7 @@ interface StudentImportRow {
   registrationNumber: string;
   departmentCode: string;
   academicYear: number;
-  semester: number;
+  semester: string;
 }
 
 interface MarkImportRow {
@@ -103,7 +103,7 @@ export class ImportsService {
             registration_number: registrationNumber.trim(),
             department_id: dept.department_id,
             academic_year: Number(academicYear),
-            semester: Number(semester),
+            semester: String(semester),
           },
         });
 
