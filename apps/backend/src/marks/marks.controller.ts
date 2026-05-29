@@ -7,8 +7,11 @@ import {
   ParseIntPipe,
   HttpStatus,
   HttpCode,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { MarksService } from './marks.service';
+import { MarksPdfService } from './marks.pdf.service';
 import { BulkRecordMarksDto } from './dtos/marks.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
@@ -16,7 +19,10 @@ import { UserRole } from '@ems/shared';
 
 @Controller('marks')
 export class MarksController {
-  constructor(private readonly marksService: MarksService) {}
+  constructor(
+    private readonly marksService: MarksService,
+    private readonly marksPdfService: MarksPdfService,
+  ) {}
 
   // ==========================================
   // LECTURER GRADE ENTRY PORTAL
@@ -30,6 +36,17 @@ export class MarksController {
       success: true,
       message: 'Lecturer assigned courses retrieved successfully',
       data: courses,
+    };
+  }
+
+  @Get('my-students-overview')
+  @Roles(UserRole.LECTURER)
+  async getMyStudentsOverview(@GetUser('id') userId: number) {
+    const overview = await this.marksService.getMyStudentsOverview(userId);
+    return {
+      success: true,
+      message: 'Lecturer students overview retrieved successfully',
+      data: overview,
     };
   }
 
@@ -152,5 +169,29 @@ export class MarksController {
       success: true,
       message: result.message,
     };
+  }
+
+  @Get('exams/:examId/pdf')
+  @Roles(UserRole.LECTURER, UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  async downloadSubmittedMarksPdf(
+    @Param('examId', ParseIntPipe) examId: number,
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+    @Res() res: Response,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const buffer = await this.marksPdfService.generateSubmittedMarksPdf(
+      examId,
+      executorUserId,
+      isLecturer,
+    );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=marksheet_exam_${examId}.pdf`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
   }
 }

@@ -495,4 +495,44 @@ export class MarksService {
       orderBy: { exam_date: 'desc' },
     });
   }
+
+  async getMyStudentsOverview(lecturerUserId: number) {
+    const lecturer = await this.getLecturerByUserId(lecturerUserId);
+
+    const courses = await this.prisma.course.findMany({
+      where: {
+        lecturers: {
+          some: { lecturer_id: lecturer.lecturer_id },
+        },
+      },
+      include: {
+        registrations: {
+          select: {
+            student_id: true,
+          },
+        },
+      },
+    });
+
+    const courseDistribution = courses.map((c) => ({
+      courseId: c.course_id,
+      courseCode: c.course_code,
+      courseName: c.course_name,
+      studentCount: c.registrations.length,
+      academicYear: c.academic_year,
+      semester: c.semester,
+    }));
+
+    const allStudentIds = new Set<number>();
+    courses.forEach((c) => {
+      c.registrations.forEach((r) => {
+        allStudentIds.add(r.student_id);
+      });
+    });
+
+    return {
+      totalUniqueStudents: allStudentIds.size,
+      courseDistribution,
+    };
+  }
 }

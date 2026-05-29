@@ -19,6 +19,8 @@ import {
   Search,
   FileSpreadsheet,
   Edit3,
+  Upload,
+  FileText,
 } from 'lucide-react';
 import { UserRole } from '@ems/shared';
 
@@ -36,6 +38,7 @@ export default function MarksRegistryPage() {
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [selectedExamId, setSelectedExamId] = useState<string>('');
   const [marksDraft, setMarksDraft] = useState<{ [studentId: number]: string }>({});
+  const [isUploadingExcel, setIsUploadingExcel] = useState(false);
 
   // Review View States (Staff)
   const [reviewExamId, setReviewExamId] = useState<number | null>(null);
@@ -60,7 +63,7 @@ export default function MarksRegistryPage() {
   // ==========================================
 
   // 1. Fetch lecturer courses
-  const { data: myCoursesData = [], isLoading: isCoursesLoading } = useQuery({
+  const { data: myCoursesData, isLoading: isCoursesLoading } = useQuery({
     queryKey: ['my-courses'],
     queryFn: async () => {
       const response = await apiClient.get('/marks/my-courses');
@@ -71,7 +74,7 @@ export default function MarksRegistryPage() {
   const myCourses = Array.isArray(myCoursesData) ? myCoursesData : STABLE_EMPTY_ARRAY;
 
   // 2. Fetch exams for selected course
-  const { data: courseExamsData = [], isLoading: isExamsLoading } = useQuery({
+  const { data: courseExamsData, isLoading: isExamsLoading } = useQuery({
     queryKey: ['course-exams', selectedCourseId],
     queryFn: async () => {
       const response = await apiClient.get(`/marks/courses/${selectedCourseId}/exams`);
@@ -82,7 +85,7 @@ export default function MarksRegistryPage() {
   const courseExams = Array.isArray(courseExamsData) ? courseExamsData : STABLE_EMPTY_ARRAY;
 
   // 3. Fetch registered students for selected course
-  const { data: courseStudentsData = [], isLoading: isStudentsLoading } = useQuery({
+  const { data: courseStudentsData, isLoading: isStudentsLoading } = useQuery({
     queryKey: ['course-students', selectedCourseId],
     queryFn: async () => {
       const response = await apiClient.get(`/marks/courses/${selectedCourseId}/students`);
@@ -96,7 +99,7 @@ export default function MarksRegistryPage() {
 
   // 4. Fetch existing marks for selected exam
   const {
-    data: examMarksData = [],
+    data: examMarksData,
     isLoading: isMarksLoading,
     refetch: refetchExamMarks,
   } = useQuery({
@@ -130,7 +133,7 @@ export default function MarksRegistryPage() {
 
   // 1. Fetch pending approvals list
   const {
-    data: pendingApprovalsData = [],
+    data: pendingApprovalsData,
     isLoading: isPendingLoading,
     refetch: refetchPending,
   } = useQuery({
@@ -146,7 +149,7 @@ export default function MarksRegistryPage() {
     : STABLE_EMPTY_ARRAY;
 
   // 2. Fetch marksheet for review
-  const { data: reviewMarksData = [], isLoading: isReviewMarksLoading } = useQuery({
+  const { data: reviewMarksData, isLoading: isReviewMarksLoading } = useQuery({
     queryKey: ['review-marks', reviewExamId],
     queryFn: async () => {
       const response = await apiClient.get(`/marks/exams/${reviewExamId}`);
@@ -157,7 +160,7 @@ export default function MarksRegistryPage() {
   const reviewMarks = Array.isArray(reviewMarksData) ? reviewMarksData : STABLE_EMPTY_ARRAY;
 
   // 3. Fetch approved marksheets list (for directory)
-  const { data: approvedSheetsData = [], isLoading: isApprovedLoading } = useQuery({
+  const { data: approvedSheetsData, isLoading: isApprovedLoading } = useQuery({
     queryKey: ['approved-marksheets'],
     queryFn: async () => {
       const response = await apiClient.get('/marks/approved-marksheets');
@@ -171,7 +174,7 @@ export default function MarksRegistryPage() {
 
   // 4. Fetch marksheet marks for approved sheet select
   const {
-    data: approvedMarksData = [],
+    data: approvedMarksData,
     isLoading: isApprovedMarksLoading,
     refetch: refetchApprovedMarks,
   } = useQuery({
@@ -185,7 +188,7 @@ export default function MarksRegistryPage() {
   const approvedMarks = Array.isArray(approvedMarksData) ? approvedMarksData : STABLE_EMPTY_ARRAY;
 
   // 5. Fetch all courses list (for combined evaluation dropdown)
-  const { data: coursesLookupData = [], isLoading: isCoursesLookupLoading } = useQuery({
+  const { data: coursesLookupData, isLoading: isCoursesLookupLoading } = useQuery({
     queryKey: ['courses-lookup'],
     queryFn: async () => {
       const response = await apiClient.get('/reports/courses');
@@ -382,6 +385,59 @@ export default function MarksRegistryPage() {
   const handleSubmitMarks = () => {
     if (confirm('Once submitted, grades are locked and sent for review. Proceed?')) {
       submitMarksMutation.mutate();
+    }
+  };
+
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedExamId) return;
+
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    setIsUploadingExcel(true);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await apiClient.post(`/imports/exams/${selectedExamId}/marks`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      if (response.data?.success) {
+        setSuccessMsg(response.data?.message || 'Marks imported successfully!');
+        refetchExamMarks();
+      } else {
+        setErrorMsg(response.data?.message || 'Failed to import marks.');
+      }
+    } catch (err: any) {
+      const errMsg = err.response?.data?.message || 'Error occurred during Excel upload.';
+      setErrorMsg(Array.isArray(errMsg) ? errMsg.join(', ') : errMsg);
+    } finally {
+      setIsUploadingExcel(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!selectedExamId) return;
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const response = await apiClient.get(`/marks/exams/${selectedExamId}/pdf`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Marksheet_Exam_${selectedExamId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+      setSuccessMsg('PDF marks list downloaded successfully!');
+    } catch (err) {
+      setErrorMsg('Failed to download PDF marks list.');
     }
   };
 
@@ -591,26 +647,54 @@ export default function MarksRegistryPage() {
                     </span>
                   </div>
 
-                  {!isSheetLocked() && (
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    {(getMarksheetStatus() === 'SUBMITTED' ||
+                      getMarksheetStatus() === 'APPROVED') && (
                       <button
-                        onClick={handleSaveDraft}
-                        disabled={saveMarksMutation.isPending}
-                        className="px-4 py-2 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs flex items-center gap-1.5"
+                        onClick={handleDownloadPdf}
+                        className="px-4 py-2 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs flex items-center gap-1.5 border border-border/60"
                       >
-                        <Save className="h-3.5 w-3.5" />
-                        Save Draft
+                        <FileText className="h-3.5 w-3.5 text-primary" />
+                        Download PDF
                       </button>
-                      <button
-                        onClick={handleSubmitMarks}
-                        disabled={submitMarksMutation.isPending}
-                        className="px-4 py-2 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-1.5"
-                      >
-                        <Send className="h-3.5 w-3.5" />
-                        Submit Sheet
-                      </button>
-                    </div>
-                  )}
+                    )}
+
+                    {!isSheetLocked() && (
+                      <>
+                        <label className="cursor-pointer px-4 py-2 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs flex items-center gap-1.5 border border-border/60">
+                          {isUploadingExcel ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Upload className="h-3.5 w-3.5" />
+                          )}
+                          Bulk Upload Excel
+                          <input
+                            type="file"
+                            accept=".xlsx, .xls"
+                            onChange={handleExcelUpload}
+                            className="hidden"
+                            disabled={isUploadingExcel}
+                          />
+                        </label>
+                        <button
+                          onClick={handleSaveDraft}
+                          disabled={saveMarksMutation.isPending}
+                          className="px-4 py-2 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs flex items-center gap-1.5 border border-border/60"
+                        >
+                          <Save className="h-3.5 w-3.5" />
+                          Save Draft
+                        </button>
+                        <button
+                          onClick={handleSubmitMarks}
+                          disabled={submitMarksMutation.isPending}
+                          className="px-4 py-2 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-1.5"
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                          Submit Sheet
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {/* Grade Entry Table */}
