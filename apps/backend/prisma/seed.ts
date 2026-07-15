@@ -1,12 +1,18 @@
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// Load .env.local from the monorepo root (two levels up from prisma/)
+dotenv.config({ path: path.resolve(__dirname, '../../../.env.local') });
+
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding database...');
+  console.log('🌱 Starting database seed...');
 
-  // 1. Seed Roles
+  // ─── 1. Roles ────────────────────────────────────────────────────────────
   const roles = [
     { role_id: 1, role_name: 'Administrator' },
     { role_id: 2, role_name: 'Exam Division Staff' },
@@ -14,162 +20,122 @@ async function main() {
     { role_id: 4, role_name: 'Student' },
   ];
 
-  for (const r of roles) {
+  for (const role of roles) {
     await prisma.role.upsert({
-      where: { role_id: r.role_id },
-      update: { role_name: r.role_name },
-      create: r,
+      where: { role_id: role.role_id },
+      update: { role_name: role.role_name },
+      create: role,
     });
   }
-  console.log('Roles seeded successfully.');
+  console.log('✅ Roles seeded');
 
-  // 2. Seed Default Departments
-  const departments = [
-    {
-      department_id: 1,
-      department_name: 'Information and communication technology(ICT)',
-      department_code: 'ICT',
+  // ─── 2. A default Department (needed for Lecturer & Student profiles) ─────
+  const department = await prisma.department.upsert({
+    where: { department_code: 'GEN' },
+    update: {},
+    create: {
+      department_name: 'General Studies',
+      department_code: 'GEN',
     },
-    {
-      department_id: 2,
-      department_name: 'Electrical and electronic technolgy(EET)',
-      department_code: 'EET',
-    },
-    {
-      department_id: 3,
-      department_name: 'Materials technology(MTT)',
-      department_code: 'MTT',
-    },
-    {
-      department_id: 4,
-      department_name: 'Food technology(FDT)',
-      department_code: 'FDT',
-    },
-    {
-      department_id: 5,
-      department_name: 'bio process technology(BPT)',
-      department_code: 'BPT',
-    },
-  ];
+  });
+  console.log('✅ Department seeded');
 
-  for (const dept of departments) {
-    await prisma.department.upsert({
-      where: { department_id: dept.department_id },
-      update: {
-        department_name: dept.department_name,
-        department_code: dept.department_code,
-      },
-      create: dept,
-    });
-  }
-  console.log('Departments seeded successfully.');
+  // ─── 3. Users ────────────────────────────────────────────────────────────
+  const SALT_ROUNDS = 10;
 
-  // Password hashes
-  const adminPasswordHash = await bcrypt.hash('AdminPassword123', 10);
-  const staffPasswordHash = await bcrypt.hash('StaffPassword123', 10);
-  const lecturerPasswordHash = await bcrypt.hash('LecturerPassword123', 10);
-  const studentPasswordHash = await bcrypt.hash('StudentPassword123', 10);
-
-  // 3. Seed Default Admin User
-  const adminEmail = 'admin@ems.com';
-  await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: {
+  // Admin
+  const adminHash = await bcrypt.hash('AdminPassword123', SALT_ROUNDS);
+  const admin = await prisma.user.upsert({
+    where: { email: 'admin@ems.com' },
+    update: { password_hash: adminHash },
+    create: {
       full_name: 'System Administrator',
-      password_hash: adminPasswordHash,
+      email: 'admin@ems.com',
+      password_hash: adminHash,
       role_id: 1,
       is_active: true,
     },
+  });
+  console.log(`✅ Admin user seeded (id: ${admin.user_id})`);
+
+  // Exam Division Staff
+  const staffHash = await bcrypt.hash('StaffPassword123', SALT_ROUNDS);
+  const staff = await prisma.user.upsert({
+    where: { email: 'staff@ems.com' },
+    update: { password_hash: staffHash },
     create: {
-      full_name: 'System Administrator',
-      email: adminEmail,
-      password_hash: adminPasswordHash,
-      role_id: 1, // Administrator
+      full_name: 'Exam Division Staff',
+      email: 'staff@ems.com',
+      password_hash: staffHash,
+      role_id: 2,
       is_active: true,
     },
   });
-  console.log('Default Administrator seeded/updated (admin@ems.com / AdminPassword123).');
+  console.log(`✅ Staff user seeded (id: ${staff.user_id})`);
 
-  // 4. Seed Default Staff User
-  const staffEmail = 'staff@ems.com';
-  const existingStaff = await prisma.user.findUnique({
-    where: { email: staffEmail },
+  // Lecturer
+  const lecturerHash = await bcrypt.hash('LecturerPassword123', SALT_ROUNDS);
+  const lecturer = await prisma.user.upsert({
+    where: { email: 'lecturer@ems.com' },
+    update: { password_hash: lecturerHash },
+    create: {
+      full_name: 'Demo Lecturer',
+      email: 'lecturer@ems.com',
+      password_hash: lecturerHash,
+      role_id: 3,
+      is_active: true,
+    },
   });
-
-  if (!existingStaff) {
-    await prisma.user.create({
-      data: {
-        full_name: 'Exam Staff Member',
-        email: staffEmail,
-        password_hash: staffPasswordHash,
-        role_id: 2, // Exam Division Staff
-        is_active: true,
-      },
-    });
-    console.log('Default Staff User created (staff@ems.com / StaffPassword123).');
-  }
-
-  // 5. Seed Default Lecturer User
-  const lecturerEmail = 'lecturer@ems.com';
-  const existingLecturer = await prisma.user.findUnique({
-    where: { email: lecturerEmail },
+  // Lecturer sub-profile (required by the system)
+  await prisma.lecturer.upsert({
+    where: { user_id: lecturer.user_id },
+    update: {},
+    create: {
+      user_id: lecturer.user_id,
+      employee_number: 'EMP-001',
+      department_id: department.department_id,
+      specialization: 'General',
+    },
   });
+  console.log(`✅ Lecturer user seeded (id: ${lecturer.user_id})`);
 
-  if (!existingLecturer) {
-    const user = await prisma.user.create({
-      data: {
-        full_name: 'Dr. John Doe',
-        email: lecturerEmail,
-        password_hash: lecturerPasswordHash,
-        role_id: 3, // Lecturer
-        is_active: true,
-      },
-    });
-    await prisma.lecturer.create({
-      data: {
-        user_id: user.user_id,
-        employee_number: 'EMP001',
-        department_id: 1, // CSE
-        specialization: 'Computer Science',
-      },
-    });
-    console.log('Default Lecturer created (lecturer@ems.com / LecturerPassword123).');
-  }
-
-  // 6. Seed Default Student User
-  const studentEmail = 'student@ems.com';
-  const existingStudent = await prisma.user.findUnique({
-    where: { email: studentEmail },
+  // Student
+  const studentHash = await bcrypt.hash('StudentPassword123', SALT_ROUNDS);
+  const student = await prisma.user.upsert({
+    where: { email: 'student@ems.com' },
+    update: { password_hash: studentHash },
+    create: {
+      full_name: 'Demo Student',
+      email: 'student@ems.com',
+      password_hash: studentHash,
+      role_id: 4,
+      is_active: true,
+    },
   });
+  // Student sub-profile (required by the system)
+  await prisma.student.upsert({
+    where: { user_id: student.user_id },
+    update: {},
+    create: {
+      user_id: student.user_id,
+      registration_number: 'STU-2024-001',
+      department_id: department.department_id,
+      academic_year: 2024,
+      semester: '1',
+    },
+  });
+  console.log(`✅ Student user seeded (id: ${student.user_id})`);
 
-  if (!existingStudent) {
-    const user = await prisma.user.create({
-      data: {
-        full_name: 'Jane Smith',
-        email: studentEmail,
-        password_hash: studentPasswordHash,
-        role_id: 4, // Student
-        is_active: true,
-      },
-    });
-    await prisma.student.create({
-      data: {
-        user_id: user.user_id,
-        registration_number: 'REG001',
-        department_id: 1, // CSE
-        academic_year: 2026,
-        semester: '1.1',
-      },
-    });
-    console.log('Default Student created (student@ems.com / StudentPassword123).');
-  }
-
-  console.log('Database seeding complete!');
+  console.log('\n🎉 Seed complete! You can now log in with:');
+  console.log('   Admin    → admin@ems.com / AdminPassword123');
+  console.log('   Staff    → staff@ems.com / StaffPassword123');
+  console.log('   Lecturer → lecturer@ems.com / LecturerPassword123');
+  console.log('   Student  → student@ems.com / StudentPassword123');
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error('❌ Seed failed:', e);
     process.exit(1);
   })
   .finally(async () => {

@@ -4,14 +4,14 @@ import { AuditService } from '../audit/audit.service';
 import { StudentSemesterGpa } from '@prisma/client';
 import PDFDocument from 'pdfkit';
 import * as XLSX from 'xlsx';
-import { NotificationsQueueService } from '../notifications/notifications.queue.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ResultsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
-    private readonly notificationsQueueService: NotificationsQueueService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private async getStudentByUserId(userId: number) {
@@ -115,8 +115,8 @@ export class ResultsService {
       };
     });
 
-    // Queue notifications to students asynchronously
-    this.notificationsQueueService.addResultsPublishedJob(academicYear, semester);
+    // Send notifications to students synchronously/in-process
+    this.notificationsService.sendResultsPublishedNotifications(academicYear, semester);
 
     return result;
   }

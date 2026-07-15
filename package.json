@@ -9,6 +9,7 @@
     "packages/shared"
   ],
   "scripts": {
+    "dev": "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "npm run dev --workspace=apps/backend",
     "dev:frontend": "npm run dev --workspace=apps/frontend",
     "build:shared": "npm run build --workspace=packages/shared",
@@ -20,6 +21,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "concurrently": "^8.2.2",
     "typescript": "^5.3.3",
     "prettier": "^3.2.5",
     "eslint": "^8.57.0",

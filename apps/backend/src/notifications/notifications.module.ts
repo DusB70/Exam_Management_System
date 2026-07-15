@@ -1,15 +1,10 @@
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
-import { NotificationsQueueService } from './notifications.queue.service';
-import { NotificationsProcessor } from './notifications.processor';
+import { NotificationsService } from './notifications.service';
+import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
-  imports: [
-    BullModule.registerQueue({
-      name: 'notifications',
-    }),
-  ],
-  providers: [NotificationsQueueService, NotificationsProcessor],
-  exports: [NotificationsQueueService],
+  imports: [PrismaModule],
+  providers: [NotificationsService],
+  exports: [NotificationsService],
 })
 export class NotificationsModule {}

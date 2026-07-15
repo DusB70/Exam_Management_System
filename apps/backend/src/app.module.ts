@@ -13,7 +13,6 @@ import { MarksModule } from './marks/marks.module';
 import { ImportsModule } from './imports/imports.module';
 import { ResultsModule } from './results/results.module';
 import { ReportsModule } from './reports/reports.module';
-import { BullModule } from '@nestjs/bullmq';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ExamsModule } from './exams/exams.module';
 import { SystemModule } from './system/system.module';
@@ -22,19 +21,7 @@ import { SystemModule } from './system/system.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
-    }),
-    BullModule.forRoot({
-      connection: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT || '6379', 10),
-        maxRetriesPerRequest: null,
-        enableOfflineQueue: false,
-        retryStrategy: (times: number) => {
-          // Retry with exponential backoff, max 30 seconds
-          return Math.min(times * 1000, 30000);
-        },
-      },
+      envFilePath: ['../../.env.local', '.env'],
     }),
     PrismaModule,
     UsersModule,

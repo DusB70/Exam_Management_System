@@ -4,14 +4,14 @@ import { AuditService } from '../audit/audit.service';
 import { CreateCourseDto, UpdateCourseDto } from './dtos/courses.dto';
 import { CreatePeriodDto, PeriodStatus } from './dtos/registration-periods.dto';
 import { Prisma, Course, RegistrationPeriod } from '@prisma/client';
-import { NotificationsQueueService } from '../notifications/notifications.queue.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class CoursesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
-    private readonly notificationsQueueService: NotificationsQueueService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async findAll(
@@ -380,7 +380,7 @@ export class CoursesService {
     );
 
     if (period.status === PeriodStatus.OPEN) {
-      this.notificationsQueueService.addRegistrationOpenedJob(
+      this.notificationsService.sendRegistrationOpenedNotifications(
         period.academic_year,
         period.semester,
         period.end_date,
@@ -439,7 +439,7 @@ export class CoursesService {
     );
 
     if (status === PeriodStatus.OPEN) {
-      this.notificationsQueueService.addRegistrationOpenedJob(
+      this.notificationsService.sendRegistrationOpenedNotifications(
         period.academic_year,
         period.semester,
         period.end_date,
