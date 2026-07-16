@@ -1,37 +1,76 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { LoginSchema, LoginInput, ApiResponse } from '@ems/shared';
+import { UserRole } from '@ems/shared';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { AxiosError } from 'axios';
-import { Eye, EyeOff } from 'lucide-react';
+import { ApiResponse } from '@ems/shared';
+import { Shield, Users, BookOpen, GraduationCap, Loader2, ArrowRight } from 'lucide-react';
+
+const DEVELOPMENT_USERS = [
+  {
+    role: UserRole.STUDENT,
+    email: 'student@ems.com',
+    password: 'StudentPassword123',
+    title: 'Demo Student',
+    desc: 'Register for courses and view your semester academic grades & results.',
+    icon: GraduationCap,
+    color:
+      'from-blue-600/20 to-indigo-600/5 border-blue-500/20 hover:border-blue-400/50 hover:shadow-blue-500/5',
+    iconColor: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
+  },
+  {
+    role: UserRole.LECTURER,
+    email: 'lecturer@ems.com',
+    password: 'LecturerPassword123',
+    title: 'Demo Lecturer',
+    desc: 'Manage assigned course lists, rosters, and submit student exam marks.',
+    icon: BookOpen,
+    color:
+      'from-emerald-600/20 to-teal-600/5 border-emerald-500/20 hover:border-emerald-400/50 hover:shadow-emerald-500/5',
+    iconColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+  },
+  {
+    role: UserRole.EXAM_DIVISION_STAFF,
+    email: 'staff@ems.com',
+    password: 'StaffPassword123',
+    title: 'Exam Staff',
+    desc: 'Verify registrations, publish results, and view batch-wise statistics.',
+    icon: Users,
+    color:
+      'from-amber-600/20 to-orange-600/5 border-amber-500/20 hover:border-amber-400/50 hover:shadow-amber-500/5',
+    iconColor: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+  },
+  {
+    role: UserRole.ADMINISTRATOR,
+    email: 'admin@ems.com',
+    password: 'AdminPassword123',
+    title: 'Administrator',
+    desc: 'Add/manage system users, monitor audit logs, and trigger database backups.',
+    icon: Shield,
+    color:
+      'from-violet-600/20 to-purple-600/5 border-violet-500/20 hover:border-violet-400/50 hover:shadow-violet-500/5',
+    iconColor: 'text-violet-400 bg-violet-500/10 border-violet-500/20',
+  },
+];
 
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [signingInRole, setSigningInRole] = useState<string | null>(null);
   const setUser = useAuthStore((state) => state.setUser);
   const router = useRouter();
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginInput>({
-    resolver: zodResolver(LoginSchema),
-  });
-
-  const onSubmit = async (data: LoginInput) => {
+  const handleQuickLogin = async (userConfig: (typeof DEVELOPMENT_USERS)[0]) => {
     setError(null);
-    setIsSubmitting(true);
+    setSigningInRole(userConfig.role);
 
     try {
-      const response = await apiClient.post('/auth/login', data);
+      const response = await apiClient.post('/auth/login', {
+        email: userConfig.email,
+        password: userConfig.password,
+      });
       if (response.data?.success && response.data?.user) {
         setUser(response.data.user);
         router.push('/');
@@ -42,117 +81,84 @@ export default function LoginPage() {
       const axiosError = err as AxiosError<ApiResponse>;
       setError(
         axiosError.response?.data?.message ||
-          'An error occurred during sign-in. Please check credentials.',
+          'An error occurred during sign-in. Please ensure backend is running.',
       );
     } finally {
-      setIsSubmitting(false);
+      setSigningInRole(null);
     }
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-12 sm:px-6 lg:px-8">
+    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-16 sm:px-6 lg:px-8 relative overflow-hidden">
       {/* Background gradients */}
       <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-[40%] -left-[20%] h-[80%] w-[60%] rounded-full bg-primary/20 blur-[120px]" />
-        <div className="absolute -bottom-[40%] -right-[20%] h-[80%] w-[60%] rounded-full bg-violet-600/10 blur-[120px]" />
+        <div className="absolute -top-[40%] -left-[20%] h-[80%] w-[60%] rounded-full bg-primary/10 blur-[120px]" />
+        <div className="absolute -bottom-[40%] -right-[20%] h-[80%] w-[60%] rounded-full bg-rose-600/10 blur-[120px]" />
       </div>
 
-      <div className="w-full max-w-md space-y-8 bg-card/40 backdrop-blur-md border border-border/60 p-8 rounded-3xl shadow-2xl">
-        <div className="text-center">
-          <h2 className="text-3xl font-extrabold tracking-tight text-foreground">Sign in to EMS</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Enter your academic credentials below
+      <div className="w-full max-w-5xl space-y-10 z-10">
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold border border-primary/15">
+            Development Mode Enabled
+          </div>
+          <h2 className="text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
+            Welcome to EMS Portal
+          </h2>
+          <p className="text-muted-foreground text-sm max-w-md mx-auto">
+            Credentials bypassed for testing. Click any of the academic profiles below to sign in
+            instantly.
           </p>
         </div>
 
         {error && (
-          <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl font-medium">
+          <div className="max-w-md mx-auto p-4 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-2xl font-medium text-center shadow-lg">
             {error}
           </div>
         )}
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
-          <div className="space-y-4 rounded-md">
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-muted-foreground mb-1.5"
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {DEVELOPMENT_USERS.map((roleConfig) => {
+            const Icon = roleConfig.icon;
+            const isCurrentSigning = signingInRole === roleConfig.role;
+
+            return (
+              <button
+                key={roleConfig.role}
+                onClick={() => !signingInRole && handleQuickLogin(roleConfig)}
+                disabled={!!signingInRole}
+                className={`relative flex flex-col justify-between text-left p-6 bg-card/40 border rounded-3xl transition-all duration-300 backdrop-blur-md shadow-lg group hover:scale-[1.02] active:scale-[0.98] ${roleConfig.color} ${
+                  signingInRole ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                }`}
               >
-                Email address
-              </label>
-              <div className="relative">
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="name@university.edu"
-                  {...register('email')}
-                  className="w-full px-4 py-3 bg-secondary/35 border border-border/80 rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 transition"
-                />
-              </div>
-              {errors.email && (
-                <p className="mt-1 text-xs text-destructive font-medium">{errors.email.message}</p>
-              )}
-            </div>
+                <div className="space-y-4 w-full">
+                  <div className={`p-3 rounded-2xl border w-fit ${roleConfig.iconColor}`}>
+                    <Icon className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-foreground leading-snug group-hover:text-primary transition-colors">
+                      {roleConfig.title}
+                    </h3>
+                    <p className="text-[11px] font-mono text-muted-foreground/60 mt-1">
+                      {roleConfig.email}
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{roleConfig.desc}</p>
+                </div>
 
-            <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label htmlFor="password" className="text-sm font-medium text-muted-foreground">
-                  Password
-                </label>
-                <Link
-                  href="/forgot-password"
-                  className="text-xs text-primary hover:underline font-medium"
-                >
-                  Forgot password?
-                </Link>
-              </div>
-              <div className="relative flex items-center">
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  {...register('password')}
-                  className="w-full px-4 py-3 pr-11 bg-secondary/35 border border-border/80 rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 transition"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 text-muted-foreground hover:text-foreground transition-colors focus:outline-none"
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4.5 w-4.5" />
+                <div className="mt-8 flex items-center justify-between w-full border-t border-border/40 pt-4 text-xs font-semibold">
+                  <span className="text-muted-foreground/80 group-hover:text-foreground transition-colors">
+                    {isCurrentSigning ? 'Connecting...' : 'Sign In'}
+                  </span>
+                  {isCurrentSigning ? (
+                    <Loader2 className="h-4.5 w-4.5 animate-spin text-primary" />
                   ) : (
-                    <Eye className="h-4.5 w-4.5" />
+                    <ArrowRight className="h-4.5 w-4.5 text-muted-foreground/60 group-hover:text-primary group-hover:translate-x-1 transition-all" />
                   )}
-                </button>
-              </div>
-              {errors.password && (
-                <p className="mt-1 text-xs text-destructive font-medium">
-                  {errors.password.message}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="group relative flex w-full justify-center px-4 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition shadow-lg shadow-primary/20 disabled:opacity-50"
-            >
-              {isSubmitting ? (
-                <span className="flex items-center gap-2">
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent"></span>
-                  Signing in...
-                </span>
-              ) : (
-                'Sign In'
-              )}
-            </button>
-          </div>
-        </form>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </main>
   );

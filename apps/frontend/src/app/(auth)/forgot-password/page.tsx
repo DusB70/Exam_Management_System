@@ -41,7 +41,7 @@ export default function ForgotPasswordPage() {
       {/* Background gradients */}
       <div className="absolute inset-0 -z-10 overflow-hidden">
         <div className="absolute -top-[40%] -left-[20%] h-[80%] w-[60%] rounded-full bg-primary/20 blur-[120px]" />
-        <div className="absolute -bottom-[40%] -right-[20%] h-[80%] w-[60%] rounded-full bg-violet-600/10 blur-[120px]" />
+        <div className="absolute -bottom-[40%] -right-[20%] h-[80%] w-[60%] rounded-full bg-rose-600/10 blur-[120px]" />
       </div>
 
       <div className="w-full max-w-md space-y-8 bg-card/40 backdrop-blur-md border border-border/60 p-8 rounded-3xl shadow-2xl">
