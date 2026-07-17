@@ -509,6 +509,11 @@ export class MarksService {
         registrations: {
           select: {
             student_id: true,
+            student: {
+              select: {
+                academic_year: true,
+              },
+            },
           },
         },
       },
@@ -519,7 +524,7 @@ export class MarksService {
       courseCode: c.course_code,
       courseName: c.course_name,
       studentCount: c.registrations.length,
-      academicYear: c.academic_year,
+      academicYear: c.registrations[0]?.student?.academic_year || new Date().getFullYear(),
       semester: c.semester,
     }));
 

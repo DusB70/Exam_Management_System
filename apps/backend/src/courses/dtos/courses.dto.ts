@@ -24,7 +24,11 @@ export class CreateCourseDto {
   creditValue!: number;
 
   @IsInt()
-  departmentId!: number;
+  degreeId!: number;
+
+  @IsInt()
+  @IsOptional()
+  specializationId?: number;
 
   @IsString()
   @IsNotEmpty({ message: 'Semester is required' })
@@ -32,10 +36,6 @@ export class CreateCourseDto {
     message: 'Semester must be in format X.Y (1.1 to 4.2)',
   })
   semester!: string;
-
-  @IsInt()
-  @Min(2000)
-  academicYear!: number;
 
   @IsInt()
   @IsOptional()
@@ -59,7 +59,11 @@ export class UpdateCourseDto {
 
   @IsInt()
   @IsOptional()
-  departmentId?: number;
+  degreeId?: number;
+
+  @IsInt()
+  @IsOptional()
+  specializationId?: number;
 
   @IsString()
   @IsOptional()
@@ -67,11 +71,6 @@ export class UpdateCourseDto {
     message: 'Semester must be in format X.Y (1.1 to 4.2)',
   })
   semester?: string;
-
-  @IsInt()
-  @IsOptional()
-  @Min(2000)
-  academicYear?: number;
 
   @IsInt()
   @IsOptional()

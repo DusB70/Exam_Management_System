@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { UsersRepository } from './users.repository';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateUserDto, UpdateUserDto } from './dtos/users.dto';
 import { UpdateProfileDto, ChangePasswordDto } from './dtos/profile.dto';
 import { Prisma, User } from '@prisma/client';
@@ -13,6 +14,7 @@ export class UsersService {
     private readonly usersRepository: UsersRepository,
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async findByEmail(email: string) {
@@ -58,7 +60,12 @@ export class UsersService {
           role: true,
           student: {
             include: {
-              department: true,
+              degree: {
+                include: {
+                  department: true,
+                },
+              },
+              specialization: true,
             },
           },
           lecturer: {
@@ -82,8 +89,20 @@ export class UsersService {
   }
 
   async create(createUserDto: CreateUserDto, executorId: number): Promise<User> {
-    const { email, fullName, password, roleId, isActive, studentProfile, lecturerProfile } =
-      createUserDto;
+    const {
+      email,
+      fullName,
+      nameWithInitials,
+      nicNo,
+      dateOfBirth,
+      phoneNumber,
+      address,
+      password,
+      roleId,
+      isActive,
+      studentProfile,
+      lecturerProfile,
+    } = createUserDto;
 
     // 1. Verify email uniqueness
     const emailExists = await this.prisma.user.findUnique({ where: { email } });
@@ -91,18 +110,30 @@ export class UsersService {
       throw new BadRequestException('Email address already registered');
     }
 
-    // 2. Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // 2. Verify NIC uniqueness
+    const nicExists = await this.prisma.user.findUnique({ where: { nic_no: nicNo } });
+    if (nicExists) {
+      throw new BadRequestException('NIC number already registered');
+    }
 
-    // 3. Perform transactional creation
-    return this.prisma.$transaction(async (tx) => {
+    // 3. Hash password (default to NIC number if not provided)
+    const rawPassword = password || nicNo;
+    const hashedPassword = await bcrypt.hash(rawPassword, 10);
+
+    // 4. Perform transactional creation
+    const createdUser = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
           full_name: fullName,
+          name_with_initials: nameWithInitials,
           email,
           password_hash: hashedPassword,
           role_id: roleId,
           is_active: isActive !== undefined ? isActive : true,
+          nic_no: nicNo,
+          date_of_birth: new Date(dateOfBirth),
+          phone_number: phoneNumber,
+          address,
         },
       });
 
@@ -119,15 +150,37 @@ export class UsersService {
           throw new BadRequestException('Student registration number already exists');
         }
 
+        const indexExists = await tx.student.findUnique({
+          where: { index_number: studentProfile.indexNumber },
+        });
+        if (indexExists) {
+          throw new BadRequestException('Student index number already exists');
+        }
+
+        const degreeExists = await tx.degree.findUnique({
+          where: { degree_id: studentProfile.degreeId },
+        });
+        if (!degreeExists) {
+          throw new BadRequestException('Selected degree does not exist');
+        }
+
+        if (studentProfile.specializationId) {
+          const specExists = await tx.specialization.findUnique({
+            where: { specialization_id: studentProfile.specializationId },
+          });
+          if (!specExists || specExists.degree_id !== studentProfile.degreeId) {
+            throw new BadRequestException('Selected specialization is invalid for this degree');
+          }
+        }
+
         await tx.student.create({
           data: {
             user_id: user.user_id,
             registration_number: studentProfile.registrationNumber,
-            department_id: studentProfile.departmentId,
+            index_number: studentProfile.indexNumber,
+            degree_id: studentProfile.degreeId,
+            specialization_id: studentProfile.specializationId || null,
             academic_year: studentProfile.academicYear,
-            semester: studentProfile.semester,
-            date_of_birth: studentProfile.dateOfBirth ? new Date(studentProfile.dateOfBirth) : null,
-            phone_number: studentProfile.phoneNumber || null,
           },
         });
       } else if (roleId === 3) {
@@ -151,7 +204,6 @@ export class UsersService {
             employee_number: lecturerProfile.employeeNumber,
             department_id: lecturerProfile.departmentId,
             specialization: lecturerProfile.specialization || null,
-            phone_number: lecturerProfile.phoneNumber || null,
           },
         });
       }
@@ -168,12 +220,31 @@ export class UsersService {
 
       return user;
     });
+
+    // 5. Send welcome email (non-blocking — does not affect user creation outcome)
+    this.notificationsService.sendWelcomeEmail(email, fullName, rawPassword).catch(() => {
+      /* Errors are already logged inside NotificationsService */
+    });
+
+    return createdUser;
   }
 
   async update(userId: number, updateUserDto: UpdateUserDto, executorId: number): Promise<User> {
     const existingUser = await this.findById(userId);
-    const { email, fullName, password, roleId, isActive, studentProfile, lecturerProfile } =
-      updateUserDto;
+    const {
+      email,
+      fullName,
+      nameWithInitials,
+      nicNo,
+      dateOfBirth,
+      phoneNumber,
+      address,
+      password,
+      roleId,
+      isActive,
+      studentProfile,
+      lecturerProfile,
+    } = updateUserDto;
 
     // If changing email, verify uniqueness
     if (email && email !== existingUser.email) {
@@ -183,11 +254,24 @@ export class UsersService {
       }
     }
 
+    // If changing NIC, verify uniqueness
+    if (nicNo && nicNo !== existingUser.nic_no) {
+      const nicExists = await this.prisma.user.findUnique({ where: { nic_no: nicNo } });
+      if (nicExists) {
+        throw new BadRequestException('NIC number already registered');
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       // 1. Prepare user updates
       const updateData: Prisma.UserUpdateInput = {};
       if (email) updateData.email = email;
       if (fullName) updateData.full_name = fullName;
+      if (nameWithInitials) updateData.name_with_initials = nameWithInitials;
+      if (nicNo) updateData.nic_no = nicNo;
+      if (dateOfBirth) updateData.date_of_birth = new Date(dateOfBirth);
+      if (phoneNumber) updateData.phone_number = phoneNumber;
+      if (address) updateData.address = address;
       if (isActive !== undefined) updateData.is_active = isActive;
       if (roleId) updateData.role = { connect: { role_id: roleId } };
       if (password) updateData.password_hash = await bcrypt.hash(password, 10);
@@ -219,24 +303,48 @@ export class UsersService {
           throw new BadRequestException('Student registration number already allocated');
         }
 
+        const indexExists = await tx.student.findFirst({
+          where: {
+            index_number: studentProfile.indexNumber,
+            NOT: { user_id: userId },
+          },
+        });
+        if (indexExists) {
+          throw new BadRequestException('Student index number already allocated');
+        }
+
+        const degreeExists = await tx.degree.findUnique({
+          where: { degree_id: studentProfile.degreeId },
+        });
+        if (!degreeExists) {
+          throw new BadRequestException('Selected degree does not exist');
+        }
+
+        if (studentProfile.specializationId) {
+          const specExists = await tx.specialization.findUnique({
+            where: { specialization_id: studentProfile.specializationId },
+          });
+          if (!specExists || specExists.degree_id !== studentProfile.degreeId) {
+            throw new BadRequestException('Selected specialization is invalid for this degree');
+          }
+        }
+
         await tx.student.upsert({
           where: { user_id: userId },
           create: {
             user_id: userId,
             registration_number: studentProfile.registrationNumber,
-            department_id: studentProfile.departmentId,
+            index_number: studentProfile.indexNumber,
+            degree_id: studentProfile.degreeId,
+            specialization_id: studentProfile.specializationId || null,
             academic_year: studentProfile.academicYear,
-            semester: studentProfile.semester,
-            date_of_birth: studentProfile.dateOfBirth ? new Date(studentProfile.dateOfBirth) : null,
-            phone_number: studentProfile.phoneNumber || null,
           },
           update: {
             registration_number: studentProfile.registrationNumber,
-            department_id: studentProfile.departmentId,
+            index_number: studentProfile.indexNumber,
+            degree_id: studentProfile.degreeId,
+            specialization_id: studentProfile.specializationId || null,
             academic_year: studentProfile.academicYear,
-            semester: studentProfile.semester,
-            date_of_birth: studentProfile.dateOfBirth ? new Date(studentProfile.dateOfBirth) : null,
-            phone_number: studentProfile.phoneNumber || null,
           },
         });
       } else if (activeRole === 3) {
@@ -267,13 +375,11 @@ export class UsersService {
             employee_number: lecturerProfile.employeeNumber,
             department_id: lecturerProfile.departmentId,
             specialization: lecturerProfile.specialization || null,
-            phone_number: lecturerProfile.phoneNumber || null,
           },
           update: {
             employee_number: lecturerProfile.employeeNumber,
             department_id: lecturerProfile.departmentId,
             specialization: lecturerProfile.specialization || null,
-            phone_number: lecturerProfile.phoneNumber || null,
           },
         });
       } else {
@@ -319,23 +425,12 @@ export class UsersService {
     const existingUser = await this.findById(userId);
 
     return this.prisma.$transaction(async (tx) => {
-      if (existingUser.role_id === 4) {
-        // Student
-        await tx.student.update({
-          where: { user_id: userId },
-          data: {
-            phone_number: dto.phoneNumber || null,
-          },
-        });
-      } else if (existingUser.role_id === 3) {
-        // Lecturer
-        await tx.lecturer.update({
-          where: { user_id: userId },
-          data: {
-            phone_number: dto.phoneNumber || null,
-          },
-        });
-      }
+      await tx.user.update({
+        where: { user_id: userId },
+        data: {
+          phone_number: dto.phoneNumber || '',
+        },
+      });
 
       await this.auditService.logAction(
         userId,
@@ -343,9 +438,7 @@ export class UsersService {
         'users',
         userId.toString(),
         {
-          phone_number:
-            (existingUser as any).student?.phone_number ||
-            (existingUser as any).lecturer?.phone_number,
+          phone_number: existingUser.phone_number,
         },
         { phone_number: dto.phoneNumber },
       );
@@ -354,7 +447,16 @@ export class UsersService {
         where: { user_id: userId },
         include: {
           role: true,
-          student: { include: { department: true } },
+          student: {
+            include: {
+              degree: {
+                include: {
+                  department: true,
+                },
+              },
+              specialization: true,
+            },
+          },
           lecturer: { include: { department: true } },
         },
       });

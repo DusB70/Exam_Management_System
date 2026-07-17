@@ -13,7 +13,12 @@ export class UsersRepository {
         role: true,
         student: {
           include: {
-            department: true,
+            degree: {
+              include: {
+                department: true,
+              },
+            },
+            specialization: true,
           },
         },
         lecturer: {
@@ -32,7 +37,12 @@ export class UsersRepository {
         role: true,
         student: {
           include: {
-            department: true,
+            degree: {
+              include: {
+                department: true,
+              },
+            },
+            specialization: true,
           },
         },
         lecturer: {

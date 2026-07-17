@@ -5,12 +5,18 @@ import { XlsxParserService } from './xlsx-parser.service';
 import * as bcrypt from 'bcrypt';
 
 interface StudentImportRow {
+  nameWithInitials: string;
   fullName: string;
   email: string;
+  nicNo: string;
+  dateOfBirth: string; // YYYY-MM-DD
+  phoneNumber: string;
+  address: string;
+  indexNumber: string;
   registrationNumber: string;
-  departmentCode: string;
   academicYear: number;
-  semester: string;
+  degreeCode: string;
+  specializationCode?: string;
 }
 
 interface MarkImportRow {
@@ -32,9 +38,6 @@ export class ImportsService {
       throw new BadRequestException('Import file is empty.');
     }
 
-    // Default password hash
-    const defaultPasswordHash = await bcrypt.hash('StudentPassword123', 10);
-
     return this.prisma.$transaction(async (tx) => {
       const importedStudents = [];
 
@@ -42,32 +45,65 @@ export class ImportsService {
         const row = rows[i];
         const rowNum = i + 2; // Row number in sheet (1-based, plus header)
 
-        const { fullName, email, registrationNumber, departmentCode, academicYear, semester } = row;
+        const {
+          nameWithInitials,
+          fullName,
+          email,
+          nicNo,
+          dateOfBirth,
+          phoneNumber,
+          address,
+          indexNumber,
+          registrationNumber,
+          academicYear,
+          degreeCode,
+          specializationCode,
+        } = row;
 
         if (
+          !nameWithInitials ||
           !fullName ||
           !email ||
+          !nicNo ||
+          !dateOfBirth ||
+          !phoneNumber ||
+          !address ||
+          !indexNumber ||
           !registrationNumber ||
-          !departmentCode ||
           !academicYear ||
-          !semester
+          !degreeCode
         ) {
           throw new BadRequestException(
-            `Row ${rowNum}: All columns (fullName, email, registrationNumber, departmentCode, academicYear, semester) are required.`,
+            `Row ${rowNum}: All columns except specializationCode are required (nameWithInitials, fullName, email, nicNo, dateOfBirth, phoneNumber, address, indexNumber, registrationNumber, academicYear, degreeCode).`,
           );
         }
 
-        // 1. Verify department
-        const dept = await tx.department.findUnique({
-          where: { department_code: departmentCode.trim() },
+        // 1. Verify degree
+        const degree = await tx.degree.findUnique({
+          where: { degree_code: degreeCode.trim().toUpperCase() },
         });
-        if (!dept) {
-          throw new BadRequestException(
-            `Row ${rowNum}: Department code "${departmentCode}" not found.`,
-          );
+        if (!degree) {
+          throw new BadRequestException(`Row ${rowNum}: Degree code "${degreeCode}" not found.`);
         }
 
-        // 2. Verify unique email
+        // 2. Verify specialization (optional)
+        let specializationId: number | null = null;
+        if (specializationCode && specializationCode.trim()) {
+          const spec = await tx.specialization.findFirst({
+            where: {
+              degree_id: degree.degree_id,
+              specialization_code: specializationCode.trim().toUpperCase(),
+            },
+          });
+          if (!spec) {
+            throw new BadRequestException(
+              `Row ${rowNum}: Specialization "${specializationCode}" not found for degree "${degreeCode}".`,
+            );
+          }
+          specializationId = spec.specialization_id;
+        }
+
+        // 3. Verify unique email
         const emailExists = await tx.user.findUnique({
           where: { email: email.trim().toLowerCase() },
         });
@@ -75,7 +111,15 @@ export class ImportsService {
           throw new BadRequestException(`Row ${rowNum}: Email "${email}" is already in use.`);
         }
 
-        // 3. Verify unique registration number
+        // 4. Verify unique NIC
+        const nicExists = await tx.user.findUnique({
+          where: { nic_no: nicNo.trim() },
+        });
+        if (nicExists) {
+          throw new BadRequestException(`Row ${rowNum}: NIC "${nicNo}" is already in use.`);
+        }
+
+        // 5. Verify unique registration number
         const regExists = await tx.student.findUnique({
           where: { registration_number: registrationNumber.trim() },
         });
@@ -85,25 +129,44 @@ export class ImportsService {
           );
         }
 
-        // 4. Create User
+        // 6. Verify unique index number
+        const indexExists = await tx.student.findUnique({
+          where: { index_number: indexNumber.trim() },
+        });
+        if (indexExists) {
+          throw new BadRequestException(
+            `Row ${rowNum}: Index number "${indexNumber}" is already in use.`,
+          );
+        }
+
+        // Default password is NIC number
+        const defaultPasswordHash = await bcrypt.hash(nicNo.trim(), 10);
+
+        // 7. Create User
         const user = await tx.user.create({
           data: {
             full_name: fullName.trim(),
+            name_with_initials: nameWithInitials.trim(),
             email: email.trim().toLowerCase(),
             password_hash: defaultPasswordHash,
             role_id: 4, // Student Role ID
             is_active: true,
+            nic_no: nicNo.trim(),
+            date_of_birth: new Date(dateOfBirth),
+            phone_number: phoneNumber.toString().trim(),
+            address: address.trim(),
           },
         });
 
-        // 5. Create Student
+        // 8. Create Student
         const student = await tx.student.create({
           data: {
             user_id: user.user_id,
             registration_number: registrationNumber.trim(),
-            department_id: dept.department_id,
+            index_number: indexNumber.trim(),
+            degree_id: degree.degree_id,
+            specialization_id: specializationId,
             academic_year: Number(academicYear),
-            semester: String(semester),
           },
         });
 

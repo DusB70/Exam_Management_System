@@ -23,6 +23,9 @@ describe('CoursesService', () => {
       update: jest.fn(),
       delete: jest.fn(),
     },
+    degree: {
+      findUnique: jest.fn(),
+    },
     lecturer: {
       findUnique: jest.fn(),
     },
@@ -69,14 +72,17 @@ describe('CoursesService', () => {
         course_id: 1,
         course_code: 'CS-101',
       });
+      mockPrismaService.degree.findUnique.mockResolvedValue({
+        degree_id: 1,
+        department_id: 2,
+      });
 
       const dto = {
         courseCode: 'CS-101',
         courseName: 'Intro to CS',
         creditValue: 3,
-        departmentId: 1,
+        degreeId: 1,
         semester: '1.1',
-        academicYear: 2026,
       };
 
       await expect(service.create(dto, 99)).rejects.toThrow(BadRequestException);
@@ -85,6 +91,10 @@ describe('CoursesService', () => {
 
     it('should create course and log audit action', async () => {
       mockPrismaService.course.findUnique.mockResolvedValue(null);
+      mockPrismaService.degree.findUnique.mockResolvedValue({
+        degree_id: 1,
+        department_id: 2,
+      });
       mockPrismaService.course.create.mockResolvedValue({
         course_id: 10,
         course_code: 'CS-101',
@@ -96,9 +106,8 @@ describe('CoursesService', () => {
         courseCode: 'CS-101',
         courseName: 'Intro to CS',
         creditValue: 3,
-        departmentId: 1,
+        degreeId: 1,
         semester: '1.1',
-        academicYear: 2026,
       };
 
       const result = await service.create(dto, 99);

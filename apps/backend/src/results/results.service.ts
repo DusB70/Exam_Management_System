@@ -17,6 +17,13 @@ export class ResultsService {
   private async getStudentByUserId(userId: number) {
     const student = await this.prisma.student.findUnique({
       where: { user_id: userId },
+      include: {
+        degree: {
+          include: {
+            department: true,
+          },
+        },
+      },
     });
     if (!student) {
       throw new NotFoundException(`Student profile not found for user ID ${userId}`);
@@ -26,11 +33,10 @@ export class ResultsService {
 
   // Publish results for all students in a semester
   async publishResults(academicYear: number, semester: string, executorUserId: number) {
-    // 1. Find all students registered in this semester
+    // 1. Find all students registered in this academic year
     const students = await this.prisma.student.findMany({
       where: {
         academic_year: academicYear,
-        semester,
       },
     });
 
@@ -87,7 +93,6 @@ export class ResultsService {
           where: {
             student_id: student.student_id,
             course: {
-              academic_year: academicYear,
               semester,
             },
           },
@@ -146,7 +151,6 @@ export class ResultsService {
             course_code: true,
             course_name: true,
             credit_value: true,
-            academic_year: true,
             semester: true,
           },
         },
@@ -177,7 +181,6 @@ export class ResultsService {
       where: {
         student_id: studentId,
         course: {
-          academic_year: academicYear,
           semester,
         },
       },
@@ -204,10 +207,7 @@ export class ResultsService {
       where: {
         student_id: studentId,
         course: {
-          OR: [
-            { academic_year: { lt: academicYear } },
-            { academic_year: academicYear, semester: { lte: semester } },
-          ],
+          semester: { lte: semester },
         },
       },
       include: { course: true },
@@ -235,11 +235,9 @@ export class ResultsService {
     const report = await this.getStudentReportCard(studentUserId);
     const { student, gpas, grades } = report;
 
-    // Fetch department details
-    const department = await this.prisma.department.findUnique({
-      where: { department_id: student.department_id },
-    });
-    const deptName = department ? department.department_name : 'Unknown Department';
+    const deptName = (student as any).degree?.department?.department_name || 'Unknown Department';
+    const latestGpa = gpas[gpas.length - 1];
+    const displaySemester = latestGpa ? latestGpa.semester : '1';
 
     // Fetch user details
     const user = await this.prisma.user.findUnique({
@@ -309,7 +307,7 @@ export class ResultsService {
         .font('Helvetica-Bold')
         .text('Current Semester:', 350, startY + 18)
         .font('Helvetica')
-        .text(`${student.semester}`, 450, startY + 18)
+        .text(`${displaySemester}`, 450, startY + 18)
         .font('Helvetica-Bold')
         .text('Date Generated:', 350, startY + 36)
         .font('Helvetica')
@@ -451,11 +449,7 @@ export class ResultsService {
     const report = await this.getStudentReportCard(studentUserId);
     const { student, gpas, grades } = report;
 
-    // Fetch department details
-    const department = await this.prisma.department.findUnique({
-      where: { department_id: student.department_id },
-    });
-    const deptName = department ? department.department_name : 'Unknown Department';
+    const deptName = (student as any).degree?.department?.department_name || 'Unknown Department';
 
     // Fetch user details
     const user = await this.prisma.user.findUnique({
@@ -467,6 +461,7 @@ export class ResultsService {
     const sgpaVal = latestGpa ? latestGpa.semester_gpa.toFixed(2) : '0.00';
     const cgpaVal = latestGpa ? latestGpa.cumulative_gpa.toFixed(2) : '0.00';
     const totalCreditsVal = latestGpa ? latestGpa.total_credits.toFixed(1) : '0.0';
+    const displaySemester = latestGpa ? latestGpa.semester : '1';
 
     // Build array-of-arrays representation
     const rows = [
@@ -475,7 +470,7 @@ export class ResultsService {
       ['OFFICIAL ACADEMIC TRANSCRIPT / RESULTS SHEET'],
       [],
       ['Student Name:', fullName, '', 'Academic Year:', student.academic_year],
-      ['Registration No:', student.registration_number, '', 'Current Semester:', student.semester],
+      ['Registration No:', student.registration_number, '', 'Current Semester:', displaySemester],
       ['Department:', deptName, '', 'Date Generated:', new Date().toLocaleDateString()],
       [],
       ['Completed Course Unit Grades'],
@@ -632,7 +627,7 @@ export class ResultsService {
         courseName: course.course_name,
         creditValue: parseFloat(course.credit_value.toString()),
         semester: course.semester,
-        academicYear: course.academic_year,
+        academicYear: registrations[0]?.student?.academic_year || new Date().getFullYear(),
         departmentName: course.department.department_name,
         lecturers:
           course.lecturers.map((l) => l.lecturer.user.full_name).join(', ') || 'Unassigned',

@@ -20,14 +20,14 @@ const CourseFormSchema = z.object({
     .number()
     .min(0, 'Credit value must be at least 0')
     .max(10, 'Credit value cannot exceed 10'),
-  departmentId: z.coerce.number().int().min(1, 'Department is required'),
+  degreeId: z.coerce.number().int().min(1, 'Degree is required'),
+  specializationId: z.coerce.number().int().optional().nullable().or(z.literal('')),
   semester: z
     .string()
     .regex(
       /^(1\.1|1\.2|2\.1|2\.2|3\.1|3\.2|4\.1|4\.2)$/,
       'Semester must be format X.Y (1.1 to 4.2)',
     ),
-  academicYear: z.coerce.number().int().min(2000, 'Academic year must be 2000 or later'),
   lecturerId: z.preprocess(
     (val) => (val === '' || val === undefined ? 0 : Number(val)),
     z.number().int().optional(),
@@ -43,8 +43,8 @@ interface CourseDialogProps {
   onSuccess: () => void;
 }
 
-const fetchDepartments = async () => {
-  const response = await apiClient.get('/departments');
+const fetchDegrees = async () => {
+  const response = await apiClient.get('/degrees');
   return response.data?.data || [];
 };
 
@@ -53,9 +53,9 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isEdit = !!course;
 
-  const { data: departments = [] } = useQuery({
-    queryKey: ['departments'],
-    queryFn: fetchDepartments,
+  const { data: degrees = [] } = useQuery({
+    queryKey: ['degrees'],
+    queryFn: fetchDegrees,
     enabled: open,
   });
 
@@ -72,16 +72,21 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors },
   } = useForm<CourseFormInput>({
     resolver: zodResolver(CourseFormSchema),
     defaultValues: {
       creditValue: 3,
       semester: '1.1',
-      academicYear: new Date().getFullYear(),
       lecturerId: 0,
+      specializationId: '',
     },
   });
+
+  const selectedDegreeId = watch('degreeId');
+  const currentDegree = degrees.find((d: any) => d.degree_id === Number(selectedDegreeId));
+  const availableSpecializations = currentDegree?.specializations || [];
 
   useEffect(() => {
     if (course && open) {
@@ -89,9 +94,9 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
         courseCode: course.course_code,
         courseName: course.course_name,
         creditValue: parseFloat(course.credit_value),
-        departmentId: course.department_id,
+        degreeId: course.degree_id,
+        specializationId: course.specialization_id || '',
         semester: course.semester,
-        academicYear: course.academic_year,
         lecturerId: course.lecturers?.[0]?.lecturer_id || 0,
       });
     } else if (open) {
@@ -99,23 +104,28 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
         courseCode: '',
         courseName: '',
         creditValue: 3,
-        departmentId: departments[0]?.department_id || 1,
+        degreeId: degrees[0]?.degree_id || 1,
+        specializationId: '',
         semester: '1.1',
-        academicYear: new Date().getFullYear(),
         lecturerId: 0,
       });
     }
-  }, [course, open, reset, departments]);
+  }, [course, open, reset, degrees]);
 
   const onSubmit = async (data: CourseFormInput) => {
     setError(null);
     setIsSubmitting(true);
 
+    const payload: any = { ...data };
+    if (!payload.specializationId || payload.specializationId === '') {
+      payload.specializationId = null;
+    }
+
     try {
       if (isEdit) {
-        await apiClient.put(`/courses/${course.course_id}`, data);
+        await apiClient.put(`/courses/${course.course_id}`, payload);
       } else {
-        await apiClient.post('/courses', data);
+        await apiClient.post('/courses', payload);
       }
       onSuccess();
       onClose();
@@ -197,36 +207,52 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
 
             <div className="md:col-span-2">
               <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                Department
+                Degree Program
               </label>
               <select
-                {...register('departmentId')}
+                {...register('degreeId')}
                 className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
               >
-                {departments.map((dept: any) => (
-                  <option key={dept.department_id} value={dept.department_id} className="bg-card">
-                    {dept.department_name} ({dept.department_code})
+                {degrees.map((deg: any) => (
+                  <option key={deg.degree_id} value={deg.degree_id} className="bg-card">
+                    {deg.degree_name} ({deg.degree_code})
                   </option>
                 ))}
               </select>
-              {errors.departmentId && (
-                <p className="mt-1 text-xs text-destructive">{errors.departmentId.message}</p>
+              {errors.degreeId && (
+                <p className="mt-1 text-xs text-destructive">{errors.degreeId.message}</p>
               )}
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                Academic Year Offered
-              </label>
-              <input
-                type="number"
-                {...register('academicYear')}
-                className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm"
-              />
-              {errors.academicYear && (
-                <p className="mt-1 text-xs text-destructive">{errors.academicYear.message}</p>
-              )}
-            </div>
+            {selectedDegreeId && Number(selectedDegreeId) > 0 && (
+              <div className="md:col-span-2 animate-fadeIn">
+                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+                  Allocated Specialization (Optional)
+                </label>
+                {availableSpecializations.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic bg-secondary/15 p-3.5 rounded-xl border border-border/60">
+                    No specializations defined for this degree. (This course will be a general core
+                    unit).
+                  </p>
+                ) : (
+                  <select
+                    {...register('specializationId')}
+                    className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+                  >
+                    <option value="">No Specialization (Core Unit for All Students)</option>
+                    {availableSpecializations.map((spec: any) => (
+                      <option
+                        key={spec.specialization_id}
+                        value={spec.specialization_id}
+                        className="bg-card"
+                      >
+                        {spec.specialization_name} ({spec.specialization_code})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
@@ -234,7 +260,7 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
               </label>
               <select
                 {...register('semester')}
-                className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+                className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground animate-fadeIn"
               >
                 <option value="1.1">Semester 1.1</option>
                 <option value="1.2">Semester 1.2</option>

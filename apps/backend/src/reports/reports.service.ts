@@ -32,7 +32,9 @@ export class ReportsService {
         where: {
           is_published: true,
           student: {
-            department_id: dept.department_id,
+            degree: {
+              department_id: dept.department_id,
+            },
           },
         },
         _avg: {
@@ -126,8 +128,10 @@ export class ReportsService {
       const uniqueRegistered = await this.prisma.courseRegistration.groupBy({
         by: ['student_id'],
         where: {
-          course: {
+          student: {
             academic_year: latestCompletedPeriod.academic_year,
+          },
+          course: {
             semester: latestCompletedPeriod.semester,
           },
         },
@@ -151,20 +155,26 @@ export class ReportsService {
     let batchDetails = null;
 
     if (batch) {
-      // Find the first student in this batch to get their current semester
-      const studentInBatch = await this.prisma.student.findFirst({
+      // Find the latest registration period for this batch to get their active semester
+      const latestPeriod = await this.prisma.registrationPeriod.findFirst({
         where: { academic_year: batch },
-        select: { semester: true },
+        orderBy: { end_date: 'desc' },
       });
 
-      const batchSemester = studentInBatch ? studentInBatch.semester : null;
+      const batchSemester = latestPeriod ? latestPeriod.semester : '1';
 
       if (batchSemester) {
         // Available courses for this batch & semester
         const availableCoursesCount = await this.prisma.course.count({
           where: {
-            academic_year: batch,
             semester: batchSemester,
+            degree: {
+              students: {
+                some: {
+                  academic_year: batch,
+                },
+              },
+            },
           },
         });
 
@@ -176,12 +186,12 @@ export class ReportsService {
               select: {
                 full_name: true,
                 email: true,
+                phone_number: true,
               },
             },
             registrations: {
               where: {
                 course: {
-                  academic_year: batch,
                   semester: batchSemester,
                 },
               },
@@ -197,7 +207,7 @@ export class ReportsService {
             registrationNumber: s.registration_number,
             fullName: s.user.full_name,
             email: s.user.email,
-            phoneNumber: s.phone_number || '-',
+            phoneNumber: s.user.phone_number || '-',
           }));
 
         batchDetails = {

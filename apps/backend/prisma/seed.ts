@@ -1,7 +1,7 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
-// Load .env.local from the monorepo root (two levels up from prisma/)
+// Load .env.local from the monorepo root
 dotenv.config({ path: path.resolve(__dirname, '../../../.env.local') });
 
 import { PrismaClient } from '@prisma/client';
@@ -29,18 +29,90 @@ async function main() {
   }
   console.log('✅ Roles seeded');
 
-  // ─── 2. A default Department (needed for Lecturer & Student profiles) ─────
-  const department = await prisma.department.upsert({
-    where: { department_code: 'GEN' },
-    update: {},
-    create: {
-      department_name: 'General Studies',
-      department_code: 'GEN',
-    },
-  });
-  console.log('✅ Department seeded');
+  // ─── 2. Departments ──────────────────────────────────────────────────────
+  const departments = [
+    { department_name: 'Bio system technology', department_code: 'BST' },
+    { department_name: 'Engineering technology', department_code: 'ET' },
+    { department_name: 'Information and communication technology', department_code: 'ICT' },
+  ];
 
-  // ─── 3. Users ────────────────────────────────────────────────────────────
+  const seededDepts: Record<string, any> = {};
+
+  for (const dept of departments) {
+    const d = await prisma.department.upsert({
+      where: { department_code: dept.department_code },
+      update: { department_name: dept.department_name },
+      create: dept,
+    });
+    seededDepts[dept.department_code] = d;
+  }
+  console.log('✅ Departments seeded');
+
+  // ─── 3. Degrees ──────────────────────────────────────────────────────────
+  const degrees = [
+    {
+      degree_name: 'Bachelor of Biosystems Technology',
+      degree_code: 'BBST',
+      department_code: 'BST',
+    },
+    {
+      degree_name: 'Bachelor of Engineering Technology',
+      degree_code: 'BET',
+      department_code: 'ET',
+    },
+    {
+      degree_name: 'Bachelor of Information and Communication Technology',
+      degree_code: 'BICT',
+      department_code: 'ICT',
+    },
+  ];
+
+  const seededDegrees: Record<string, any> = {};
+
+  for (const deg of degrees) {
+    const dept = seededDepts[deg.department_code];
+    const d = await prisma.degree.upsert({
+      where: { degree_code: deg.degree_code },
+      update: { degree_name: deg.degree_name, department_id: dept.department_id },
+      create: {
+        degree_name: deg.degree_name,
+        degree_code: deg.degree_code,
+        department_id: dept.department_id,
+      },
+    });
+    seededDegrees[deg.degree_code] = d;
+  }
+  console.log('✅ Degrees seeded');
+
+  // ─── 4. Specializations ──────────────────────────────────────────────────
+  const specializations = [
+    { specialization_name: 'Software Technology', specialization_code: 'ST', degree_code: 'BICT' },
+    { specialization_name: 'Network Technology', specialization_code: 'NT', degree_code: 'BICT' },
+    { specialization_name: 'Civil Technology', specialization_code: 'CT', degree_code: 'BET' },
+    { specialization_name: 'Mechanical Technology', specialization_code: 'MT', degree_code: 'BET' },
+    { specialization_name: 'Food Technology', specialization_code: 'FT', degree_code: 'BBST' },
+  ];
+
+  for (const spec of specializations) {
+    const deg = seededDegrees[spec.degree_code];
+    await prisma.specialization.upsert({
+      where: {
+        degree_id_specialization_code: {
+          degree_id: deg.degree_id,
+          specialization_code: spec.specialization_code,
+        },
+      },
+      update: { specialization_name: spec.specialization_name },
+      create: {
+        specialization_name: spec.specialization_name,
+        specialization_code: spec.specialization_code,
+        degree_id: deg.degree_id,
+      },
+    });
+  }
+  console.log('✅ Specializations seeded');
+
+  // ─── 5. Users ────────────────────────────────────────────────────────────
   const SALT_ROUNDS = 10;
 
   // Admin
@@ -50,10 +122,15 @@ async function main() {
     update: { password_hash: adminHash },
     create: {
       full_name: 'System Administrator',
+      name_with_initials: 'S. Administrator',
       email: 'admin@ems.com',
       password_hash: adminHash,
       role_id: 1,
       is_active: true,
+      nic_no: '199000000001',
+      date_of_birth: new Date('1990-01-01'),
+      phone_number: '0712345678',
+      address: 'No. 1, Admin Road, Colombo',
     },
   });
   console.log(`✅ Admin user seeded (id: ${admin.user_id})`);
@@ -65,10 +142,15 @@ async function main() {
     update: { password_hash: staffHash },
     create: {
       full_name: 'Exam Division Staff',
+      name_with_initials: 'E.D. Staff',
       email: 'staff@ems.com',
       password_hash: staffHash,
       role_id: 2,
       is_active: true,
+      nic_no: '199100000002',
+      date_of_birth: new Date('1991-02-02'),
+      phone_number: '0722345678',
+      address: 'No. 2, Staff Lane, Colombo',
     },
   });
   console.log(`✅ Staff user seeded (id: ${staff.user_id})`);
@@ -80,20 +162,26 @@ async function main() {
     update: { password_hash: lecturerHash },
     create: {
       full_name: 'Demo Lecturer',
+      name_with_initials: 'D. Lecturer',
       email: 'lecturer@ems.com',
       password_hash: lecturerHash,
       role_id: 3,
       is_active: true,
+      nic_no: '198500000003',
+      date_of_birth: new Date('1985-03-03'),
+      phone_number: '0732345678',
+      address: 'No. 3, Lecturer Street, Kandy',
     },
   });
   // Lecturer sub-profile (required by the system)
+  const ictDept = seededDepts['ICT'];
   await prisma.lecturer.upsert({
     where: { user_id: lecturer.user_id },
-    update: {},
+    update: { department_id: ictDept.department_id },
     create: {
       user_id: lecturer.user_id,
       employee_number: 'EMP-001',
-      department_id: department.department_id,
+      department_id: ictDept.department_id,
       specialization: 'General',
     },
   });
@@ -106,22 +194,29 @@ async function main() {
     update: { password_hash: studentHash },
     create: {
       full_name: 'Demo Student',
+      name_with_initials: 'D. Student',
       email: 'student@ems.com',
       password_hash: studentHash,
       role_id: 4,
       is_active: true,
+      nic_no: '200200000004',
+      date_of_birth: new Date('2002-04-04'),
+      phone_number: '0742345678',
+      address: 'No. 4, Student Road, Galle',
     },
   });
   // Student sub-profile (required by the system)
+  const bictDegree = seededDegrees['BICT'];
   await prisma.student.upsert({
     where: { user_id: student.user_id },
-    update: {},
+    update: { degree_id: bictDegree.degree_id },
     create: {
       user_id: student.user_id,
       registration_number: 'STU-2024-001',
-      department_id: department.department_id,
+      index_number: 'IDX-2024-001',
+      degree_id: bictDegree.degree_id,
       academic_year: 2024,
-      semester: '1',
+      specialization_id: null, // First year has no specialization
     },
   });
   console.log(`✅ Student user seeded (id: ${student.user_id})`);

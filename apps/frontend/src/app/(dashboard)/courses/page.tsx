@@ -39,7 +39,7 @@ export default function CoursesManagementPage() {
   const [courseSearch, setCourseSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
   const [semesterFilter, setSemesterFilter] = useState('');
-  const [yearFilter, setYearFilter] = useState('');
+  const [degreeFilter, setDegreeFilter] = useState('');
 
   // Course Dialog States
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
@@ -107,13 +107,22 @@ export default function CoursesManagementPage() {
     }
   };
 
+  // Fetch Degrees for filtering
+  const { data: degrees = [] } = useQuery({
+    queryKey: ['degrees-list-filter'],
+    queryFn: async () => {
+      const response = await apiClient.get('/degrees');
+      return response.data?.data || [];
+    },
+  });
+
   // Fetch Courses with filters
   const {
     data: courseData,
     isLoading: isCoursesLoading,
     refetch: refetchCourses,
   } = useQuery({
-    queryKey: ['courses', coursePage, courseSearch, deptFilter, semesterFilter, yearFilter],
+    queryKey: ['courses', coursePage, courseSearch, deptFilter, semesterFilter, degreeFilter],
     queryFn: async () => {
       const params: any = {
         page: coursePage,
@@ -121,7 +130,7 @@ export default function CoursesManagementPage() {
         search: courseSearch || undefined,
         departmentId: deptFilter || undefined,
         semester: semesterFilter || undefined,
-        academicYear: yearFilter || undefined,
+        degreeId: degreeFilter || undefined,
       };
       const response = await apiClient.get('/courses', { params });
       return response.data?.data;
@@ -328,16 +337,21 @@ export default function CoursesManagementPage() {
             </div>
 
             <div>
-              <input
-                type="number"
-                placeholder="Enrollment Year"
-                value={yearFilter}
+              <select
+                value={degreeFilter}
                 onChange={(e) => {
-                  setYearFilter(e.target.value);
+                  setDegreeFilter(e.target.value);
                   setCoursePage(1);
                 }}
                 className="w-full px-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
-              />
+              >
+                <option value="">All Degrees</option>
+                {degrees.map((deg: any) => (
+                  <option key={deg.degree_id} value={deg.degree_id} className="bg-card">
+                    {deg.degree_code}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -353,7 +367,7 @@ export default function CoursesManagementPage() {
                     <th className="px-6 py-4">Credits</th>
                     <th className="px-6 py-4">Dept</th>
                     <th className="px-6 py-4">Semester</th>
-                    <th className="px-6 py-4">Academic Year</th>
+                    <th className="px-6 py-4">Degree / Specialization</th>
                     {isAdminOrStaff && <th className="px-6 py-4 text-right">Actions</th>}
                   </tr>
                 </thead>
@@ -408,8 +422,10 @@ export default function CoursesManagementPage() {
                         <td className="px-6 py-4.5 font-mono text-muted-foreground">
                           Sem {course.semester}
                         </td>
-                        <td className="px-6 py-4.5 font-mono text-muted-foreground">
-                          {course.academic_year}
+                        <td className="px-6 py-4.5 text-xs font-semibold text-muted-foreground">
+                          {course.degree?.degree_code}
+                          {course.specialization &&
+                            ` - ${course.specialization.specialization_code}`}
                         </td>
                         {isAdminOrStaff && (
                           <td className="px-6 py-4.5 text-right space-x-1.5 whitespace-nowrap">

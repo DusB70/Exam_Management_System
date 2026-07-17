@@ -21,6 +21,8 @@ export class CoursesService {
     departmentId?: number,
     semester?: string,
     academicYear?: number,
+    degreeId?: number,
+    specializationId?: number,
   ) {
     const where: Prisma.CourseWhereInput = {};
 
@@ -35,12 +37,16 @@ export class CoursesService {
       where.department_id = departmentId;
     }
 
-    if (semester) {
-      where.semester = semester;
+    if (degreeId) {
+      where.degree_id = degreeId;
     }
 
-    if (academicYear) {
-      where.academic_year = academicYear;
+    if (specializationId) {
+      where.specialization_id = specializationId;
+    }
+
+    if (semester) {
+      where.semester = semester;
     }
 
     const [items, total] = await this.prisma.$transaction([
@@ -50,6 +56,8 @@ export class CoursesService {
         take: limit,
         include: {
           department: true,
+          degree: true,
+          specialization: true,
           lecturers: {
             include: {
               lecturer: {
@@ -83,6 +91,8 @@ export class CoursesService {
       where: { course_id: id },
       include: {
         department: true,
+        degree: true,
+        specialization: true,
         lecturers: {
           include: {
             lecturer: {
@@ -107,9 +117,9 @@ export class CoursesService {
       courseCode,
       courseName,
       creditValue,
-      departmentId,
+      degreeId,
+      specializationId,
       semester,
-      academicYear,
       lecturerId,
     } = createCourseDto;
 
@@ -121,15 +131,24 @@ export class CoursesService {
       throw new BadRequestException(`Course code ${courseCode} is already in use`);
     }
 
+    // Look up target Degree to obtain its department_id
+    const degreeObj = await this.prisma.degree.findUnique({
+      where: { degree_id: degreeId },
+    });
+    if (!degreeObj) {
+      throw new NotFoundException(`Degree with ID ${degreeId} not found`);
+    }
+
     const course = await this.prisma.$transaction(async (tx) => {
       const newCourse = await tx.course.create({
         data: {
           course_code: courseCode,
           course_name: courseName,
           credit_value: new Prisma.Decimal(creditValue),
-          department_id: departmentId,
+          department_id: degreeObj.department_id,
+          degree_id: degreeId,
+          specialization_id: specializationId || null,
           semester,
-          academic_year: academicYear,
         },
       });
 
@@ -170,9 +189,9 @@ export class CoursesService {
       courseCode,
       courseName,
       creditValue,
-      departmentId,
+      degreeId,
+      specializationId,
       semester,
-      academicYear,
       lecturerId,
     } = updateCourseDto;
 
@@ -189,9 +208,26 @@ export class CoursesService {
     if (courseCode) updateData.course_code = courseCode;
     if (courseName) updateData.course_name = courseName;
     if (creditValue !== undefined) updateData.credit_value = new Prisma.Decimal(creditValue);
-    if (departmentId) updateData.department = { connect: { department_id: departmentId } };
     if (semester) updateData.semester = semester;
-    if (academicYear) updateData.academic_year = academicYear;
+
+    if (degreeId) {
+      const degreeObj = await this.prisma.degree.findUnique({
+        where: { degree_id: degreeId },
+      });
+      if (!degreeObj) {
+        throw new NotFoundException(`Degree with ID ${degreeId} not found`);
+      }
+      updateData.degree = { connect: { degree_id: degreeId } };
+      updateData.department = { connect: { department_id: degreeObj.department_id } };
+    }
+
+    if (specializationId !== undefined) {
+      if (specializationId === null || specializationId === 0) {
+        updateData.specialization = { disconnect: true };
+      } else {
+        updateData.specialization = { connect: { specialization_id: specializationId } };
+      }
+    }
 
     const course = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.course.update({

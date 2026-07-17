@@ -14,7 +14,7 @@ export class RegistrationsService {
   async getStudentByUserId(userId: number) {
     const student = await this.prisma.student.findUnique({
       where: { user_id: userId },
-      include: { department: true },
+      include: { degree: true },
     });
     if (!student) {
       throw new NotFoundException(`Student profile not found for user ID ${userId}`);
@@ -29,7 +29,6 @@ export class RegistrationsService {
     return this.prisma.registrationPeriod.findFirst({
       where: {
         academic_year: student.academic_year,
-        semester: student.semester,
         status: 'OPEN',
         start_date: { lte: now },
         end_date: { gte: now },
@@ -40,12 +39,17 @@ export class RegistrationsService {
   async getEligibleCourses(userId: number) {
     const student = await this.getStudentByUserId(userId);
 
-    // Get all courses offered for the student's department, semester, and year
+    const activePeriod = await this.getActivePeriodForStudent(userId);
+    if (!activePeriod) {
+      return [];
+    }
+
+    // Get all courses offered for the student's degree, specialization, and semester
     const courses = await this.prisma.course.findMany({
       where: {
-        department_id: student.department_id,
-        semester: student.semester,
-        academic_year: student.academic_year,
+        degree_id: student.degree_id,
+        semester: activePeriod.semester,
+        OR: [{ specialization_id: null }, { specialization_id: student.specialization_id }],
       },
       include: {
         lecturers: {
@@ -84,6 +88,8 @@ export class RegistrationsService {
         course: {
           include: {
             department: true,
+            degree: true,
+            specialization: true,
             lecturers: {
               include: {
                 lecturer: {
@@ -115,7 +121,7 @@ export class RegistrationsService {
     const period = await this.getActivePeriodForStudent(userId);
     if (!period) {
       throw new BadRequestException(
-        `Registration window is closed or suspended for Year ${student.academic_year} Semester ${student.semester}`,
+        `Registration window is closed or suspended for Year ${student.academic_year}`,
       );
     }
 
@@ -130,15 +136,16 @@ export class RegistrationsService {
       throw new BadRequestException('One or more of the selected courses do not exist.');
     }
 
-    // Verify all selected courses match student's current academic year, semester, and department
+    // Verify all selected courses match student's degree, specialization, and semester
     for (const course of selectedCourses) {
       if (
-        course.department_id !== student.department_id ||
-        course.semester !== student.semester ||
-        course.academic_year !== student.academic_year
+        course.degree_id !== student.degree_id ||
+        (course.specialization_id !== null &&
+          course.specialization_id !== student.specialization_id) ||
+        course.semester !== period.semester
       ) {
         throw new BadRequestException(
-          `Course ${course.course_code} is not offered for your semester, academic year, or department.`,
+          `Course ${course.course_code} is not offered for your semester, degree, or specialization.`,
         );
       }
     }
@@ -254,7 +261,7 @@ export class RegistrationsService {
   async getStudentRegistrationsForAdmin(studentId: number) {
     const student = await this.prisma.student.findUnique({
       where: { student_id: studentId },
-      include: { user: true, department: true },
+      include: { user: true, degree: { include: { department: true } } },
     });
     if (!student) {
       throw new NotFoundException(`Student with ID ${studentId} not found`);

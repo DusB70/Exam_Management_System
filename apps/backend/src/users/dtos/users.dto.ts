@@ -9,7 +9,6 @@ import {
   IsString,
   MinLength,
   ValidateNested,
-  Matches,
 } from 'class-validator';
 
 export class StudentProfileDto {
@@ -17,25 +16,19 @@ export class StudentProfileDto {
   @IsNotEmpty({ message: 'Registration number is required' })
   registrationNumber!: string;
 
+  @IsString()
+  @IsNotEmpty({ message: 'Index number is required' })
+  indexNumber!: string;
+
   @IsInt()
-  departmentId!: number;
+  degreeId!: number;
+
+  @IsInt()
+  @IsOptional()
+  specializationId?: number;
 
   @IsInt()
   academicYear!: number;
-
-  @IsString()
-  @Matches(/^(1\.1|1\.2|2\.1|2\.2|3\.1|3\.2|4\.1|4\.2)$/, {
-    message: 'Semester must be in format X.Y (1.1 to 4.2)',
-  })
-  semester!: string;
-
-  @IsDateString()
-  @IsOptional()
-  dateOfBirth?: string;
-
-  @IsString()
-  @IsOptional()
-  phoneNumber?: string;
 }
 
 export class LecturerProfileDto {
@@ -49,10 +42,6 @@ export class LecturerProfileDto {
   @IsString()
   @IsOptional()
   specialization?: string;
-
-  @IsString()
-  @IsOptional()
-  phoneNumber?: string;
 }
 
 export class CreateUserDto {
@@ -64,8 +53,28 @@ export class CreateUserDto {
   fullName!: string;
 
   @IsString()
+  @IsNotEmpty({ message: 'Name with initials is required' })
+  nameWithInitials!: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'NIC number is required' })
+  nicNo!: string;
+
+  @IsDateString({}, { message: 'Birthday must be a valid date' })
+  dateOfBirth!: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'Contact number is required' })
+  phoneNumber!: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'Address is required' })
+  address!: string;
+
+  @IsString()
   @MinLength(6, { message: 'Password must be at least 6 characters' })
-  password!: string;
+  @IsOptional()
+  password?: string;
 
   @IsInt()
   roleId!: number;
@@ -93,6 +102,26 @@ export class UpdateUserDto {
   @IsString()
   @IsOptional()
   fullName?: string;
+
+  @IsString()
+  @IsOptional()
+  nameWithInitials?: string;
+
+  @IsString()
+  @IsOptional()
+  nicNo?: string;
+
+  @IsDateString()
+  @IsOptional()
+  dateOfBirth?: string;
+
+  @IsString()
+  @IsOptional()
+  phoneNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  address?: string;
 
   @IsString()
   @MinLength(6, { message: 'Password must be at least 6 characters' })

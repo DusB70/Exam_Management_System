@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import UserDialog from '../../../components/users/user-dialog';
-import { Search, UserPlus, ChevronLeft, ChevronRight } from 'lucide-react';
+import StudentImportDialog from '../../../components/users/student-import-dialog';
+import { Search, UserPlus, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
 
 const fetchUsers = async (page: number, search: string, roleId: string, status: string) => {
   const params: any = {
@@ -28,6 +29,7 @@ export default function UsersManagementPage() {
   // Dialog State
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   // Fetch Users using React Query
   const { data, isLoading, refetch } = useQuery({
@@ -83,13 +85,22 @@ export default function UsersManagementPage() {
             Manage academic students, lecturers, division staff, and administrators
           </p>
         </div>
-        <button
-          onClick={handleCreate}
-          className="inline-flex items-center gap-2 px-5 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition shadow-lg shadow-primary/20 self-start sm:self-auto text-sm"
-        >
-          <UserPlus className="h-4.5 w-4.5" />
-          Add User Account
-        </button>
+        <div className="flex flex-wrap gap-3 self-start sm:self-auto">
+          <button
+            onClick={() => setImportDialogOpen(true)}
+            className="inline-flex items-center gap-2 px-5 py-3 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition border border-border/80 text-sm"
+          >
+            <Upload className="h-4.5 w-4.5" />
+            Import Students
+          </button>
+          <button
+            onClick={handleCreate}
+            className="inline-flex items-center gap-2 px-5 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition shadow-lg shadow-primary/20 text-sm"
+          >
+            <UserPlus className="h-4.5 w-4.5" />
+            Add User Account
+          </button>
+        </div>
       </div>
 
       {/* Filters Bar */}
@@ -264,6 +275,13 @@ export default function UsersManagementPage() {
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         user={selectedUser}
+        onSuccess={refetch}
+      />
+
+      {/* Bulk Import Dialog */}
+      <StudentImportDialog
+        open={importDialogOpen}
+        onClose={() => setImportDialogOpen(false)}
         onSuccess={refetch}
       />
     </div>

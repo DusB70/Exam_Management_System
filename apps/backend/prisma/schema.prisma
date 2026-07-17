@@ -18,19 +18,24 @@ model Role {
 }
 
 model User {
-  user_id        Int            @id @default(autoincrement())
-  full_name      String         @db.VarChar(150)
-  email          String         @unique @db.VarChar(150)
-  password_hash  String
-  role_id        Int
-  is_active      Boolean?       @default(true)
-  created_at     DateTime?      @default(now()) @db.Timestamp(6)
-  audit_logs     AuditLog[]
-  recorded_marks ExamMark[]
-  lecturer       Lecturer?
-  refresh_tokens RefreshToken[]
-  student        Student?
-  role           Role           @relation(fields: [role_id], references: [role_id], onUpdate: NoAction)
+  user_id            Int            @id @default(autoincrement())
+  full_name          String         @db.VarChar(150)
+  name_with_initials String         @db.VarChar(100)
+  email              String         @unique @db.VarChar(150)
+  password_hash      String
+  role_id            Int
+  is_active          Boolean?       @default(true)
+  nic_no             String         @unique @db.VarChar(20)
+  date_of_birth      DateTime       @db.Date
+  phone_number       String         @db.VarChar(20)
+  address            String         @db.VarChar(255)
+  created_at         DateTime?      @default(now()) @db.Timestamp(6)
+  audit_logs         AuditLog[]
+  recorded_marks     ExamMark[]
+  lecturer           Lecturer?
+  refresh_tokens     RefreshToken[]
+  student            Student?
+  role               Role           @relation(fields: [role_id], references: [role_id], onUpdate: NoAction)
 
   @@map("users")
 }
@@ -42,7 +47,7 @@ model Department {
   created_at      DateTime?  @default(now()) @db.Timestamp(6)
   courses         Course[]
   lecturers       Lecturer[]
-  students        Student[]
+  degrees         Degree[]
 
   @@map("departments")
 }
@@ -51,16 +56,16 @@ model Student {
   student_id          Int                  @id @default(autoincrement())
   user_id             Int                  @unique
   registration_number String               @unique @db.VarChar(50)
-  department_id       Int
+  index_number        String               @unique @db.VarChar(50)
+  degree_id           Int
+  specialization_id   Int?
   academic_year       Int
-  semester            String               @db.VarChar(10)
-  date_of_birth       DateTime?            @db.Date
-  phone_number        String?              @db.VarChar(20)
   registrations       CourseRegistration[]
   exam_marks          ExamMark[]
   course_grades       StudentCourseGrade[]
   semester_gpas       StudentSemesterGpa[]
-  department          Department           @relation(fields: [department_id], references: [department_id])
+  degree              Degree               @relation(fields: [degree_id], references: [degree_id])
+  specialization      Specialization?      @relation(fields: [specialization_id], references: [specialization_id])
   user                User                 @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
 
   @@map("students")
@@ -72,7 +77,6 @@ model Lecturer {
   employee_number String           @unique @db.VarChar(50)
   department_id   Int
   specialization  String?          @db.VarChar(100)
-  phone_number    String?          @db.VarChar(20)
   courses         CourseLecturer[]
   department      Department       @relation(fields: [department_id], references: [department_id])
   user            User             @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
@@ -80,20 +84,49 @@ model Lecturer {
   @@map("lecturers")
 }
 
+model Degree {
+  degree_id       Int              @id @default(autoincrement())
+  degree_name     String           @unique @db.VarChar(150)
+  degree_code     String           @unique @db.VarChar(20)
+  department_id   Int
+  department      Department       @relation(fields: [department_id], references: [department_id], onDelete: Cascade)
+  students        Student[]
+  specializations Specialization[]
+  courses         Course[]
+
+  @@map("degrees")
+}
+
+model Specialization {
+  specialization_id   Int       @id @default(autoincrement())
+  specialization_name String    @db.VarChar(150)
+  specialization_code String    @db.VarChar(20)
+  degree_id           Int
+  degree              Degree    @relation(fields: [degree_id], references: [degree_id], onDelete: Cascade)
+  students            Student[]
+  courses             Course[]
+
+  @@unique([degree_id, specialization_code])
+  @@map("specializations")
+}
+
 model Course {
-  course_id     Int                  @id @default(autoincrement())
-  course_code   String               @unique @db.VarChar(20)
-  course_name   String               @db.VarChar(150)
-  credit_value  Decimal              @db.Decimal(3, 1)
-  department_id Int
-  semester      String               @db.VarChar(10)
-  academic_year Int
-  created_at    DateTime?            @default(now()) @db.Timestamp(6)
-  lecturers     CourseLecturer[]
-  registrations CourseRegistration[]
-  department    Department           @relation(fields: [department_id], references: [department_id])
-  exams         Exam[]
-  course_grades StudentCourseGrade[]
+  course_id         Int                  @id @default(autoincrement())
+  course_code       String               @unique @db.VarChar(20)
+  course_name       String               @db.VarChar(150)
+  credit_value      Decimal              @db.Decimal(3, 1)
+  department_id     Int
+  degree_id         Int
+  specialization_id Int?
+  semester          String               @db.VarChar(10)
+  created_at        DateTime?            @default(now()) @db.Timestamp(6)
+  lecturers         CourseLecturer[]
+  registrations     CourseRegistration[]
+  department        Department           @relation(fields: [department_id], references: [department_id])
+  degree            Degree               @relation(fields: [degree_id], references: [degree_id])
+  specialization    Specialization?      @relation(fields: [specialization_id], references: [specialization_id])
+  exams             Exam[]
+  course_grades     StudentCourseGrade[]
 
   @@map("courses")
 }

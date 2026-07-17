@@ -98,9 +98,6 @@ export default function LoginPage() {
 
       <div className="w-full max-w-5xl space-y-10 z-10">
         <div className="text-center space-y-3">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold border border-primary/15">
-            Development Mode Enabled
-          </div>
           <h2 className="text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
             Welcome to EMS Portal
           </h2>

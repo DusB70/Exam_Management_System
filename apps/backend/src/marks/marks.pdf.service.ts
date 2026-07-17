@@ -130,7 +130,11 @@ export class MarksPdfService {
         .font('Helvetica-Bold')
         .text('Academic Year:', 330, startY + 18)
         .font('Helvetica')
-        .text(`Batch ${exam.course.academic_year} (Sem ${exam.course.semester})`, 420, startY + 18)
+        .text(
+          `Batch ${marks[0]?.student?.academic_year || 'N/A'} (Sem ${exam.course.semester})`,
+          420,
+          startY + 18,
+        )
         .font('Helvetica-Bold')
         .text('Total Entries:', 330, startY + 36)
         .font('Helvetica')

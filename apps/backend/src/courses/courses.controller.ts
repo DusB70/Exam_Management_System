@@ -29,12 +29,16 @@ export class CoursesController {
     @Query('departmentId') departmentId?: string,
     @Query('semester') semester?: string,
     @Query('academicYear') academicYear?: string,
+    @Query('degreeId') degreeId?: string,
+    @Query('specializationId') specializationId?: string,
   ) {
     const parsedPage = parseInt(page, 10) || 1;
     const parsedLimit = parseInt(limit, 10) || 10;
     const parsedDeptId = departmentId ? parseInt(departmentId, 10) : undefined;
     const parsedSemester = semester || undefined;
     const parsedYear = academicYear ? parseInt(academicYear, 10) : undefined;
+    const parsedDegreeId = degreeId ? parseInt(degreeId, 10) : undefined;
+    const parsedSpecId = specializationId ? parseInt(specializationId, 10) : undefined;
 
     const data = await this.coursesService.findAll(
       parsedPage,
@@ -43,6 +47,8 @@ export class CoursesController {
       parsedDeptId,
       parsedSemester,
       parsedYear,
+      parsedDegreeId,
+      parsedSpecId,
     );
 
     return {
