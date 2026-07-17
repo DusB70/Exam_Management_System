@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ExamMark } from '@prisma/client';
 import { BulkRecordMarksDto } from './dtos/marks.dto';
+import * as XLSX from 'xlsx';
 
 @Injectable()
 export class MarksService {
@@ -65,6 +66,49 @@ export class MarksService {
   }
 
   async getExamsForCourse(courseId: number) {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+    });
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    // Ensure default CA exam exists
+    const caExam = await this.prisma.exam.findFirst({
+      where: { course_id: courseId, exam_type: 'CA' },
+    });
+    if (!caExam) {
+      await this.prisma.exam.create({
+        data: {
+          course_id: courseId,
+          exam_type: 'CA',
+          exam_title: 'Continuous Assessment (CA)',
+          total_marks: 100,
+          exam_date: new Date(),
+          start_time: new Date(1970, 0, 1, 9, 0, 0),
+          end_time: new Date(1970, 0, 1, 12, 0, 0),
+        },
+      });
+    }
+
+    // Ensure default FINAL exam exists
+    const finalExam = await this.prisma.exam.findFirst({
+      where: { course_id: courseId, exam_type: 'FINAL' },
+    });
+    if (!finalExam) {
+      await this.prisma.exam.create({
+        data: {
+          course_id: courseId,
+          exam_type: 'FINAL',
+          exam_title: 'Final Examination',
+          total_marks: 100,
+          exam_date: new Date(),
+          start_time: new Date(1970, 0, 1, 9, 0, 0),
+          end_time: new Date(1970, 0, 1, 12, 0, 0),
+        },
+      });
+    }
+
     return this.prisma.exam.findMany({
       where: { course_id: courseId },
       orderBy: { exam_date: 'asc' },
@@ -539,5 +583,84 @@ export class MarksService {
       totalUniqueStudents: allStudentIds.size,
       courseDistribution,
     };
+  }
+
+  async generateStudentListExcel(courseId: number, executorUserId: number, isLecturer: boolean) {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+      include: {
+        lecturers: {
+          include: {
+            lecturer: {
+              include: {
+                user: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    // 1. Verify lecturer course assignment
+    if (isLecturer) {
+      const lecturer = await this.getLecturerByUserId(executorUserId);
+      const isAssigned = await this.prisma.courseLecturer.findUnique({
+        where: {
+          course_id_lecturer_id: {
+            course_id: courseId,
+            lecturer_id: lecturer.lecturer_id,
+          },
+        },
+      });
+      if (!isAssigned) {
+        throw new BadRequestException('You are not authorized to access this course.');
+      }
+    }
+
+    // 2. Get students registered for this course
+    const students = await this.getStudentsRegisteredForCourse(courseId);
+
+    // Get the batch (academic year of the first student, or default to current year)
+    const batch = students[0]?.academic_year || new Date().getFullYear();
+
+    const rows: any[][] = [
+      ['Student List'],
+      ['Course Code:', course.course_code],
+      ['Course Name:', course.course_name],
+      ['Batch:', `Batch ${batch}`],
+      [],
+      ['Registration Number', 'Index Number', 'Full Name', 'Email'],
+    ];
+
+    students.forEach((s) => {
+      rows.push([
+        s.registration_number,
+        s.index_number,
+        s.user?.full_name || '',
+        s.user?.email || '',
+      ]);
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+
+    // Apply column widths
+    worksheet['!cols'] = [
+      { wch: 25 }, // Registration Number
+      { wch: 25 }, // Index Number
+      { wch: 40 }, // Full Name
+      { wch: 35 }, // Email
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Enrolled Students');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const fileName = `${course.course_name.replace(/[^a-zA-Z0-9-]/g, '_')}_${course.course_code.replace(/[^a-zA-Z0-9-]/g, '_')}_Batch_${batch}.xlsx`;
+
+    return { buffer, fileName };
   }
 }

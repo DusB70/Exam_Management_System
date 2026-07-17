@@ -36,6 +36,7 @@ export default function MarksRegistryPage() {
 
   // Lecturer View States
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
+  const [selectedAssessmentType, setSelectedAssessmentType] = useState<string>('');
   const [selectedExamId, setSelectedExamId] = useState<string>('');
   const [marksDraft, setMarksDraft] = useState<{ [studentId: number]: string }>({});
   const [isUploadingExcel, setIsUploadingExcel] = useState(false);
@@ -74,7 +75,7 @@ export default function MarksRegistryPage() {
   const myCourses = Array.isArray(myCoursesData) ? myCoursesData : STABLE_EMPTY_ARRAY;
 
   // 2. Fetch exams for selected course
-  const { data: courseExamsData, isLoading: isExamsLoading } = useQuery({
+  const { data: courseExamsData } = useQuery({
     queryKey: ['course-exams', selectedCourseId],
     queryFn: async () => {
       const response = await apiClient.get(`/marks/courses/${selectedCourseId}/exams`);
@@ -83,6 +84,23 @@ export default function MarksRegistryPage() {
     enabled: isLecturer && !!selectedCourseId,
   });
   const courseExams = Array.isArray(courseExamsData) ? courseExamsData : STABLE_EMPTY_ARRAY;
+
+  const filteredExams = courseExams.filter((x: any) => {
+    if (!selectedAssessmentType) return false;
+    if (selectedAssessmentType === 'CA') {
+      return x.exam_type.toUpperCase() === 'CA';
+    } else {
+      return x.exam_type.toUpperCase() === 'FINAL';
+    }
+  });
+
+  useEffect(() => {
+    if (filteredExams.length > 0) {
+      setSelectedExamId(filteredExams[0].exam_id.toString());
+    } else {
+      setSelectedExamId('');
+    }
+  }, [selectedAssessmentType, courseExams, filteredExams]);
 
   // 3. Fetch registered students for selected course
   const { data: courseStudentsData, isLoading: isStudentsLoading } = useQuery({
@@ -579,6 +597,7 @@ export default function MarksRegistryPage() {
                 value={selectedCourseId}
                 onChange={(e) => {
                   setSelectedCourseId(e.target.value);
+                  setSelectedAssessmentType('');
                   setSelectedExamId('');
                 }}
                 disabled={isCoursesLoading}
@@ -596,22 +615,27 @@ export default function MarksRegistryPage() {
             {selectedCourseId && (
               <div>
                 <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                  Select Exam / Assessment
+                  Select Assessment Type
                 </label>
                 <select
-                  value={selectedExamId}
-                  onChange={(e) => setSelectedExamId(e.target.value)}
-                  disabled={isExamsLoading}
-                  className="w-full px-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground disabled:opacity-50"
+                  value={selectedAssessmentType}
+                  onChange={(e) => {
+                    setSelectedAssessmentType(e.target.value);
+                    setSelectedExamId('');
+                  }}
+                  className="w-full px-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
                 >
-                  <option value="">Choose exam...</option>
-                  {courseExams.map((x: any) => (
-                    <option key={x.exam_id} value={x.exam_id} className="bg-card">
-                      {x.exam_title} ({x.exam_type} - Max {x.total_marks})
-                    </option>
-                  ))}
+                  <option value="">Choose type...</option>
+                  <option value="CA">Continuous Assessment (CA)</option>
+                  <option value="FINAL">Final Examination</option>
                 </select>
               </div>
+            )}
+
+            {selectedCourseId && selectedAssessmentType && filteredExams.length === 0 && (
+              <p className="text-xs text-destructive font-semibold mt-2">
+                ⚠️ No assessment registered of this type (CA/Final) for this course.
+              </p>
             )}
           </div>
 

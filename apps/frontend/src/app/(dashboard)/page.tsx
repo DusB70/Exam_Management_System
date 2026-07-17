@@ -14,6 +14,7 @@ import {
   Search,
   Loader2,
   Shield,
+  FileSpreadsheet,
 } from 'lucide-react';
 import Link from 'next/link';
 import { UserRole } from '@ems/shared';
@@ -32,6 +33,7 @@ export default function DashboardOverview() {
   const [lecturerActiveTab, setLecturerActiveTab] = useState<'courses' | 'students'>('courses');
   const [selectedLecturerCourseId, setSelectedLecturerCourseId] = useState<string>('');
   const [studentsSearchQuery, setStudentsSearchQuery] = useState<string>('');
+  const [isDownloadingExcel, setIsDownloadingExcel] = useState<boolean>(false);
 
   // Admin stats query
   const { data: stats, isLoading: isStatsLoading } = useQuery({
@@ -54,6 +56,19 @@ export default function DashboardOverview() {
     },
     enabled: user?.role === UserRole.EXAM_DIVISION_STAFF,
   });
+
+  // Staff pending approvals query
+  const { data: pendingApprovalsData, isLoading: isPendingApprovalsLoading } = useQuery({
+    queryKey: ['pending-approvals-staff'],
+    queryFn: async () => {
+      const response = await apiClient.get('/marks/pending-approvals');
+      return response.data?.data || [];
+    },
+    enabled: user?.role === UserRole.EXAM_DIVISION_STAFF,
+  });
+  const pendingApprovals = Array.isArray(pendingApprovalsData)
+    ? pendingApprovalsData
+    : STABLE_EMPTY_ARRAY;
 
   // Lecturer assigned courses query
   const { data: lecturerCoursesData, isLoading: isLecturerCoursesLoading } = useQuery({
@@ -128,6 +143,41 @@ export default function DashboardOverview() {
       color: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
     },
   ];
+
+  const handleDownloadStudentListExcel = async (courseId: string) => {
+    if (!courseId) return;
+    setIsDownloadingExcel(true);
+    try {
+      const selectedCourse = lecturerCourses.find((c: any) => c.course_id.toString() === courseId);
+      const courseCode = selectedCourse?.course_code || 'course';
+      const response = await apiClient.get(`/marks/courses/${courseId}/students/excel`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+
+      // Extract filename
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = `Student_List_${courseCode}.xlsx`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+    } catch (err) {
+      console.error('Failed to download student list:', err);
+      alert('Failed to download student list Excel file.');
+    } finally {
+      setIsDownloadingExcel(false);
+    }
+  };
 
   const handleSwitchRole = async (role: UserRole) => {
     if (user?.role === role || isSwitching) return;
@@ -493,6 +543,65 @@ export default function DashboardOverview() {
               </div>
             )}
           </div>
+
+          {/* Pending Marksheet Approvals section */}
+          <div className="bg-card/20 border border-border/60 p-6 rounded-3xl backdrop-blur-sm space-y-6">
+            <div>
+              <h3 className="text-lg font-bold text-foreground">Pending Marksheet Approvals</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Review and approve marks submitted by lecturers to publish overall grades
+              </p>
+            </div>
+
+            {isPendingApprovalsLoading ? (
+              <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">
+                <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
+                Loading pending marksheets...
+              </div>
+            ) : pendingApprovals.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground text-xs border border-dashed border-border/60 rounded-2xl">
+                No submitted marksheets are pending approval.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {pendingApprovals.map((exam: any) => (
+                  <div
+                    key={exam.exam_id}
+                    className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-start">
+                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md uppercase">
+                          {exam.course?.course_code}
+                        </span>
+                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-md uppercase">
+                          {exam.exam_type}
+                        </span>
+                      </div>
+                      <h4 className="font-bold text-sm text-foreground pt-1 truncate">
+                        {exam.exam_title}
+                      </h4>
+                      <p className="text-xs text-muted-foreground">
+                        Course: {exam.course?.course_name}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        Date: {new Date(exam.exam_date).toLocaleDateString()} | Max Marks:{' '}
+                        {exam.total_marks}
+                      </p>
+                    </div>
+                    <div className="border-t border-border/60 pt-4 mt-6 flex items-center justify-between">
+                      <Link
+                        href="/marks"
+                        className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                      >
+                        Go to Review Queue &rarr;
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       );
     }
@@ -693,19 +802,33 @@ export default function DashboardOverview() {
                 {selectedLecturerCourseId ? (
                   <div className="space-y-4 animate-fadeIn">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-t border-border/60 pt-4">
-                      <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
-                        <span>
-                          Roster for{' '}
-                          {
-                            lecturerCourses.find(
-                              (c: any) => c.course_id.toString() === selectedLecturerCourseId,
-                            )?.course_name
-                          }
-                        </span>
-                        <span className="px-2 py-0.5 text-xs bg-primary/15 text-primary border border-primary/25 rounded-full font-bold">
-                          {enrolledStudents.length} Enrolled
-                        </span>
-                      </h4>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
+                          <span>
+                            Roster for{' '}
+                            {
+                              lecturerCourses.find(
+                                (c: any) => c.course_id.toString() === selectedLecturerCourseId,
+                              )?.course_name
+                            }
+                          </span>
+                          <span className="px-2 py-0.5 text-xs bg-primary/15 text-primary border border-primary/25 rounded-full font-bold">
+                            {enrolledStudents.length} Enrolled
+                          </span>
+                        </h4>
+                        <button
+                          onClick={() => handleDownloadStudentListExcel(selectedLecturerCourseId)}
+                          disabled={isDownloadingExcel}
+                          className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors shadow-sm disabled:opacity-50"
+                        >
+                          {isDownloadingExcel ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <FileSpreadsheet className="h-3.5 w-3.5" />
+                          )}
+                          Download Student List (Excel)
+                        </button>
+                      </div>
                       <div className="relative w-full sm:w-72">
                         <input
                           type="text"

@@ -61,6 +61,30 @@ export class MarksController {
     };
   }
 
+  @Get('courses/:courseId/students/excel')
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async downloadStudentListExcel(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+    @Res() res: Response,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const { buffer, fileName } = await this.marksService.generateStudentListExcel(
+      courseId,
+      executorUserId,
+      isLecturer,
+    );
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=${fileName}`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
+
   @Get('courses/:courseId/exams')
   @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
   async getExamsForCourse(@Param('courseId', ParseIntPipe) courseId: number) {
