@@ -139,11 +139,18 @@ export class ResultsService {
       orderBy: { semester: 'asc' },
     });
 
-    // Fetch published Course Grades
+    // Fetch published Course Grades OR courses with published CA marks
     const grades = await this.prisma.studentCourseGrade.findMany({
       where: {
         student_id: student.student_id,
-        is_published: true,
+        OR: [
+          { is_published: true },
+          {
+            course: {
+              ca_published: true,
+            },
+          },
+        ],
       },
       include: {
         course: {
@@ -152,6 +159,7 @@ export class ResultsService {
             course_name: true,
             credit_value: true,
             semester: true,
+            ca_published: true,
           },
         },
       },
@@ -360,8 +368,14 @@ export class ResultsService {
           .lineTo(545, currentY)
           .stroke();
 
-        const totalMarksFormatted = g.total_marks.toFixed(1);
-        const gradePointFormatted = g.grade_point.toFixed(2);
+        const isPublished = g.is_published;
+        const totalMarksFormatted = isPublished ? g.total_marks.toFixed(1) : 'N/A';
+        const gradeText = isPublished
+          ? g.result_status === 'PROVISIONAL'
+            ? `${g.grade} (P)`
+            : g.grade
+          : 'Pending';
+        const gradePointFormatted = isPublished ? g.grade_point.toFixed(2) : 'N/A';
         const creditsFormatted = parseFloat(g.course.credit_value.toString()).toFixed(1);
 
         doc.text(g.course.course_code, 60, currentY + 6);
@@ -372,7 +386,7 @@ export class ResultsService {
         });
         doc.text(creditsFormatted, 340, currentY + 6, { width: 50, align: 'center' });
         doc.text(totalMarksFormatted, 400, currentY + 6, { width: 50, align: 'center' });
-        doc.text(g.grade, 460, currentY + 6, { width: 40, align: 'center' });
+        doc.text(gradeText, 460, currentY + 6, { width: 40, align: 'center' });
         doc.text(gradePointFormatted, 510, currentY + 6, { width: 30, align: 'center' });
 
         currentY += 20;
@@ -478,14 +492,19 @@ export class ResultsService {
     ];
 
     for (const g of grades) {
+      const isPublished = g.is_published;
       rows.push([
         `Sem ${g.course.semester}`,
         g.course.course_code,
         g.course.course_name,
         parseFloat(g.course.credit_value.toString()),
-        g.total_marks,
-        g.grade,
-        g.grade_point,
+        isPublished ? g.total_marks : 'N/A',
+        isPublished
+          ? g.result_status === 'PROVISIONAL'
+            ? `${g.grade} (Provisional)`
+            : g.grade
+          : 'Pending',
+        isPublished ? g.grade_point : 'N/A',
       ]);
     }
 

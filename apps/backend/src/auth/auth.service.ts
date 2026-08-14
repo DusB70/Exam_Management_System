@@ -80,6 +80,8 @@ export class AuthService {
         role: user.role.role_name as UserRole,
         address: user.address,
         phoneNumber: user.phone_number,
+        isHead: user.lecturer?.is_head ?? false,
+        isDean: user.lecturer?.is_dean ?? false,
       },
     };
   }

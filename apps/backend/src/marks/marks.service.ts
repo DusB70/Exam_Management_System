@@ -1,7 +1,12 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { ExamMark } from '@prisma/client';
+import { ExamMark, Prisma } from '@prisma/client';
 import { BulkRecordMarksDto } from './dtos/marks.dto';
 import * as XLSX from 'xlsx';
 
@@ -606,16 +611,18 @@ export class MarksService {
 
     if (isLecturer) {
       const lecturer = await this.getLecturerByUserId(lecturerUserId);
-      const isAssigned = await this.prisma.courseLecturer.findUnique({
-        where: {
-          course_id_lecturer_id: {
-            course_id: courseId,
-            lecturer_id: lecturer.lecturer_id,
+      if (!lecturer.is_head && !lecturer.is_dean) {
+        const isAssigned = await this.prisma.courseLecturer.findUnique({
+          where: {
+            course_id_lecturer_id: {
+              course_id: courseId,
+              lecturer_id: lecturer.lecturer_id,
+            },
           },
-        },
-      });
-      if (!isAssigned) {
-        throw new BadRequestException('You are not authorized to grade this course.');
+        });
+        if (!isAssigned) {
+          throw new BadRequestException('You are not authorized to grade this course.');
+        }
       }
     }
 
@@ -857,10 +864,20 @@ export class MarksService {
     });
 
     if (data.submissionType) {
+      let dbStatus = '';
+      if (data.submissionType === 'PROVISIONAL') {
+        dbStatus = 'SUBMITTED_PROVISIONAL';
+      } else if (data.submissionType === 'FINAL') {
+        dbStatus = 'SUBMITTED_FINAL';
+      } else {
+        dbStatus = 'DRAFT';
+      }
+
       await this.prisma.course.update({
         where: { course_id: courseId },
         data: {
-          result_submission_status: data.submissionType,
+          result_submission_status: dbStatus,
+          rejection_reason: null,
         },
       });
 
@@ -1038,5 +1055,324 @@ export class MarksService {
     }
 
     return { grade: 'F', gradePoint: 0.0 };
+  }
+
+  // =========================================================================
+  // DEPARTMENT HEAD / DEAN RESULTS APPROVALS
+  // =========================================================================
+
+  async getHeadPendingApprovals(lecturerUserId: number) {
+    const lecturer = await this.prisma.lecturer.findUnique({
+      where: { user_id: lecturerUserId },
+    });
+    if (!lecturer || (!lecturer.is_head && !lecturer.is_dean)) {
+      throw new ForbiddenException('Only department heads or deans can access this.');
+    }
+
+    const whereClause: Prisma.CourseWhereInput = {
+      result_submission_status: {
+        in: ['SUBMITTED_PROVISIONAL', 'SUBMITTED_FINAL'],
+      },
+    };
+
+    if (lecturer.is_head && !lecturer.is_dean) {
+      whereClause.department_id = lecturer.department_id;
+    }
+
+    return this.prisma.course.findMany({
+      where: whereClause,
+      include: {
+        department: true,
+        lecturers: {
+          include: {
+            lecturer: {
+              include: {
+                user: {
+                  select: {
+                    full_name: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async headApproveCourse(courseId: number, lecturerUserId: number) {
+    const lecturer = await this.prisma.lecturer.findUnique({
+      where: { user_id: lecturerUserId },
+    });
+    if (!lecturer || (!lecturer.is_head && !lecturer.is_dean)) {
+      throw new ForbiddenException('Only department heads or deans can approve.');
+    }
+
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+    });
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    if (lecturer.is_head && !lecturer.is_dean && course.department_id !== lecturer.department_id) {
+      throw new ForbiddenException('You can only approve courses from your department.');
+    }
+
+    if (course.result_submission_status === 'SUBMITTED_PROVISIONAL') {
+      await this.prisma.$transaction([
+        this.prisma.course.update({
+          where: { course_id: courseId },
+          data: {
+            result_submission_status: 'PUBLISHED_PROVISIONAL',
+            rejection_reason: null,
+          },
+        }),
+        this.prisma.studentCourseGrade.updateMany({
+          where: { course_id: courseId },
+          data: {
+            is_published: true,
+            result_status: 'PROVISIONAL',
+            is_locked: false,
+          },
+        }),
+      ]);
+    } else if (course.result_submission_status === 'SUBMITTED_FINAL') {
+      await this.prisma.course.update({
+        where: { course_id: courseId },
+        data: {
+          result_submission_status: 'SUBMITTED_TO_STAFF',
+          rejection_reason: null,
+        },
+      });
+    } else {
+      throw new BadRequestException('Course is not in a submittable state for approval.');
+    }
+
+    return { success: true };
+  }
+
+  async headRejectCourse(courseId: number, reason: string, lecturerUserId: number) {
+    const lecturer = await this.prisma.lecturer.findUnique({
+      where: { user_id: lecturerUserId },
+    });
+    if (!lecturer || (!lecturer.is_head && !lecturer.is_dean)) {
+      throw new ForbiddenException('Only department heads or deans can reject.');
+    }
+
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+    });
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    if (lecturer.is_head && !lecturer.is_dean && course.department_id !== lecturer.department_id) {
+      throw new ForbiddenException('You can only reject courses from your department.');
+    }
+
+    if (!reason || reason.trim() === '') {
+      throw new BadRequestException('A reason for rejection must be provided.');
+    }
+
+    await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        result_submission_status: 'REJECTED_BY_HEAD',
+        rejection_reason: reason.trim(),
+      },
+    });
+
+    return { success: true };
+  }
+
+  async publishCourseCA(courseId: number, lecturerUserId: number) {
+    const lecturer = await this.getLecturerByUserId(lecturerUserId);
+    const isAssigned = await this.prisma.courseLecturer.findUnique({
+      where: {
+        course_id_lecturer_id: {
+          course_id: courseId,
+          lecturer_id: lecturer.lecturer_id,
+        },
+      },
+    });
+    if (!isAssigned) {
+      throw new ForbiddenException('You are not assigned to teach this course.');
+    }
+
+    await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        ca_published: true,
+      },
+    });
+
+    return { success: true };
+  }
+
+  // =========================================================================
+  // EXAM DIVISION STAFF QUEUES
+  // =========================================================================
+
+  async getStaffReviewQueue() {
+    return this.prisma.course.findMany({
+      where: {
+        result_submission_status: 'SUBMITTED_TO_STAFF',
+      },
+      include: {
+        department: true,
+        lecturers: {
+          include: {
+            lecturer: {
+              include: {
+                user: {
+                  select: {
+                    full_name: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async getStaffReceivedQueue() {
+    return this.prisma.course.findMany({
+      where: {
+        result_submission_status: 'RECEIVED_BY_STAFF',
+      },
+      include: {
+        department: true,
+        lecturers: {
+          include: {
+            lecturer: {
+              include: {
+                user: {
+                  select: {
+                    full_name: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async getStaffApprovedDirectory() {
+    return this.prisma.course.findMany({
+      where: {
+        result_submission_status: 'APPROVED',
+      },
+      include: {
+        department: true,
+        lecturers: {
+          include: {
+            lecturer: {
+              include: {
+                user: {
+                  select: {
+                    full_name: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async staffReceiveCourse(courseId: number) {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+    });
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+    if (course.result_submission_status !== 'SUBMITTED_TO_STAFF') {
+      throw new BadRequestException('Course final marks are not submitted to staff yet.');
+    }
+
+    await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        result_submission_status: 'RECEIVED_BY_STAFF',
+        rejection_reason: null,
+      },
+    });
+
+    return { success: true };
+  }
+
+  async staffRejectCourse(courseId: number, reason: string) {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+    });
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+    if (
+      course.result_submission_status !== 'SUBMITTED_TO_STAFF' &&
+      course.result_submission_status !== 'RECEIVED_BY_STAFF'
+    ) {
+      throw new BadRequestException('Course is not in a rejectable state for staff.');
+    }
+    if (!reason || reason.trim() === '') {
+      throw new BadRequestException('A reason for rejection must be provided.');
+    }
+
+    await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        result_submission_status: 'REJECTED_BY_STAFF',
+        rejection_reason: reason.trim(),
+      },
+    });
+
+    return { success: true };
+  }
+
+  async staffApproveCourse(courseId: number) {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+    });
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+    if (course.result_submission_status !== 'RECEIVED_BY_STAFF') {
+      throw new BadRequestException('Course must be marked as received before final approval.');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.course.update({
+        where: { course_id: courseId },
+        data: {
+          result_submission_status: 'APPROVED',
+          rejection_reason: null,
+        },
+      }),
+      this.prisma.studentCourseGrade.updateMany({
+        where: { course_id: courseId },
+        data: {
+          is_published: true,
+          result_status: 'FINAL',
+          is_locked: true,
+        },
+      }),
+    ]);
+
+    return { success: true };
   }
 }

@@ -348,4 +348,142 @@ export class MarksController {
 
     res.end(buffer);
   }
+
+  // ==========================================
+  // DEPARTMENT HEAD & DEAN ENDPOINTS
+  // ==========================================
+
+  @Get('head/pending-approvals')
+  @Roles(UserRole.LECTURER)
+  async getHeadPendingApprovals(@GetUser('id') lecturerUserId: number) {
+    const data = await this.marksService.getHeadPendingApprovals(lecturerUserId);
+    return {
+      success: true,
+      message: 'Head/Dean pending approvals retrieved successfully',
+      data,
+    };
+  }
+
+  @Post('courses/:courseId/head-approve')
+  @Roles(UserRole.LECTURER)
+  @HttpCode(HttpStatus.OK)
+  async headApproveCourse(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @GetUser('id') lecturerUserId: number,
+  ) {
+    const result = await this.marksService.headApproveCourse(courseId, lecturerUserId);
+    return {
+      success: true,
+      message: 'Course evaluation sheet approved successfully',
+      data: result,
+    };
+  }
+
+  @Post('courses/:courseId/head-reject')
+  @Roles(UserRole.LECTURER)
+  @HttpCode(HttpStatus.OK)
+  async headRejectCourse(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Body() body: { reason: string },
+    @GetUser('id') lecturerUserId: number,
+  ) {
+    const result = await this.marksService.headRejectCourse(courseId, body.reason, lecturerUserId);
+    return {
+      success: true,
+      message: 'Course evaluation sheet rejected successfully',
+      data: result,
+    };
+  }
+
+  @Post('courses/:courseId/publish-ca')
+  @Roles(UserRole.LECTURER)
+  @HttpCode(HttpStatus.OK)
+  async publishCourseCA(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @GetUser('id') lecturerUserId: number,
+  ) {
+    const result = await this.marksService.publishCourseCA(courseId, lecturerUserId);
+    return {
+      success: true,
+      message:
+        'Course Continuous Assessment (CA) marks published directly to students successfully',
+      data: result,
+    };
+  }
+
+  // ==========================================
+  // STAFF COURSE QUEUES & ACTIONS
+  // ==========================================
+
+  @Get('staff/review-queue')
+  @Roles(UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  async getStaffReviewQueue() {
+    const data = await this.marksService.getStaffReviewQueue();
+    return {
+      success: true,
+      message: 'Staff review queue retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('staff/received-queue')
+  @Roles(UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  async getStaffReceivedQueue() {
+    const data = await this.marksService.getStaffReceivedQueue();
+    return {
+      success: true,
+      message: 'Staff received queue retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('staff/approved-directory')
+  @Roles(UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  async getStaffApprovedDirectory() {
+    const data = await this.marksService.getStaffApprovedDirectory();
+    return {
+      success: true,
+      message: 'Staff approved directory retrieved successfully',
+      data,
+    };
+  }
+
+  @Post('courses/:courseId/staff-receive')
+  @Roles(UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  @HttpCode(HttpStatus.OK)
+  async staffReceiveCourse(@Param('courseId', ParseIntPipe) courseId: number) {
+    const result = await this.marksService.staffReceiveCourse(courseId);
+    return {
+      success: true,
+      message: 'Course final marksheet marked as received successfully',
+      data: result,
+    };
+  }
+
+  @Post('courses/:courseId/staff-reject')
+  @Roles(UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  @HttpCode(HttpStatus.OK)
+  async staffRejectCourse(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Body() body: { reason: string },
+  ) {
+    const result = await this.marksService.staffRejectCourse(courseId, body.reason);
+    return {
+      success: true,
+      message: 'Course final marksheet rejected successfully',
+      data: result,
+    };
+  }
+
+  @Post('courses/:courseId/staff-approve')
+  @Roles(UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  @HttpCode(HttpStatus.OK)
+  async staffApproveCourse(@Param('courseId', ParseIntPipe) courseId: number) {
+    const result = await this.marksService.staffApproveCourse(courseId);
+    return {
+      success: true,
+      message: 'Course final marksheet approved and published successfully',
+      data: result,
+    };
+  }
 }

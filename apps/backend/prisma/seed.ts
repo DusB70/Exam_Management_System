@@ -30,7 +30,8 @@ async function main() {
   console.log('✅ Roles seeded');
 
   // ─── 2. Departments ──────────────────────────────────────────────────────
-  const departments = [
+  // Seed parent departments first
+  const parentDepartments = [
     { department_name: 'Bio system technology', department_code: 'BST' },
     { department_name: 'Engineering technology', department_code: 'ET' },
     { department_name: 'Information and communication technology', department_code: 'ICT' },
@@ -38,13 +39,42 @@ async function main() {
 
   const seededDepts: Record<string, any> = {};
 
-  for (const dept of departments) {
+  for (const dept of parentDepartments) {
     const d = await prisma.department.upsert({
       where: { department_code: dept.department_code },
       update: { department_name: dept.department_name },
       create: dept,
     });
     seededDepts[dept.department_code] = d;
+  }
+
+  // Seed child departments
+  const childDepartments = [
+    {
+      department_name: 'Electrical and Electronic Technology',
+      department_code: 'EET',
+      parent_code: 'ET',
+    },
+    { department_name: 'Materials Technology', department_code: 'MT', parent_code: 'ET' },
+    { department_name: 'Bio Process Technology', department_code: 'BPT', parent_code: 'BST' },
+    { department_name: 'Food Technology', department_code: 'FT', parent_code: 'BST' },
+  ];
+
+  for (const child of childDepartments) {
+    const parent = seededDepts[child.parent_code];
+    const d = await prisma.department.upsert({
+      where: { department_code: child.department_code },
+      update: {
+        department_name: child.department_name,
+        parent_department_id: parent.department_id,
+      },
+      create: {
+        department_name: child.department_name,
+        department_code: child.department_code,
+        parent_department_id: parent.department_id,
+      },
+    });
+    seededDepts[child.department_code] = d;
   }
   console.log('✅ Departments seeded');
 
@@ -85,16 +115,39 @@ async function main() {
   console.log('✅ Degrees seeded');
 
   // ─── 4. Specializations ──────────────────────────────────────────────────
+  // Clear any existing specializations first to avoid outdated definitions
+  await prisma.specialization.deleteMany();
+
   const specializations = [
-    { specialization_name: 'Software Technology', specialization_code: 'ST', degree_code: 'BICT' },
-    { specialization_name: 'Network Technology', specialization_code: 'NT', degree_code: 'BICT' },
-    { specialization_name: 'Civil Technology', specialization_code: 'CT', degree_code: 'BET' },
-    { specialization_name: 'Mechanical Technology', specialization_code: 'MT', degree_code: 'BET' },
-    { specialization_name: 'Food Technology', specialization_code: 'FT', degree_code: 'BBST' },
+    {
+      specialization_name: 'Electrical and Electronic Technology',
+      specialization_code: 'EET',
+      degree_code: 'BET',
+      dept_code: 'EET',
+    },
+    {
+      specialization_name: 'Materials Technology',
+      specialization_code: 'MT',
+      degree_code: 'BET',
+      dept_code: 'MT',
+    },
+    {
+      specialization_name: 'Bio Process Technology',
+      specialization_code: 'BPT',
+      degree_code: 'BBST',
+      dept_code: 'BPT',
+    },
+    {
+      specialization_name: 'Food Technology',
+      specialization_code: 'FT',
+      degree_code: 'BBST',
+      dept_code: 'FT',
+    },
   ];
 
   for (const spec of specializations) {
     const deg = seededDegrees[spec.degree_code];
+    const dept = seededDepts[spec.dept_code];
     await prisma.specialization.upsert({
       where: {
         degree_id_specialization_code: {
@@ -102,11 +155,15 @@ async function main() {
           specialization_code: spec.specialization_code,
         },
       },
-      update: { specialization_name: spec.specialization_name },
+      update: {
+        specialization_name: spec.specialization_name,
+        department_id: dept.department_id,
+      },
       create: {
         specialization_name: spec.specialization_name,
         specialization_code: spec.specialization_code,
         degree_id: deg.degree_id,
+        department_id: dept.department_id,
       },
     });
   }

@@ -33,6 +33,7 @@ export class SpecializationsController {
             department: true,
           },
         },
+        department: true,
       },
       orderBy: { specialization_name: 'asc' },
     });
@@ -52,6 +53,15 @@ export class SpecializationsController {
       throw new BadRequestException('Target degree does not exist.');
     }
 
+    if (dto.departmentId) {
+      const deptExists = await this.prisma.department.findUnique({
+        where: { department_id: dto.departmentId },
+      });
+      if (!deptExists) {
+        throw new BadRequestException('Target department does not exist.');
+      }
+    }
+
     const exists = await this.prisma.specialization.findFirst({
       where: {
         degree_id: dto.degreeId,
@@ -69,6 +79,7 @@ export class SpecializationsController {
         specialization_name: dto.specializationName,
         specialization_code: dto.specializationCode.toUpperCase(),
         degree_id: dto.degreeId,
+        department_id: dto.departmentId || null,
       },
     });
 
@@ -108,6 +119,15 @@ export class SpecializationsController {
       throw new BadRequestException('Target degree does not exist.');
     }
 
+    if (dto.departmentId) {
+      const deptExists = await this.prisma.department.findUnique({
+        where: { department_id: dto.departmentId },
+      });
+      if (!deptExists) {
+        throw new BadRequestException('Target department does not exist.');
+      }
+    }
+
     const exists = await this.prisma.specialization.findFirst({
       where: {
         degree_id: dto.degreeId,
@@ -127,6 +147,7 @@ export class SpecializationsController {
         specialization_name: dto.specializationName,
         specialization_code: dto.specializationCode.toUpperCase(),
         degree_id: dto.degreeId,
+        department_id: dto.departmentId || null,
       },
     });
 

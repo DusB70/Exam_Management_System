@@ -204,6 +204,8 @@ export class UsersService {
             employee_number: lecturerProfile.employeeNumber,
             department_id: lecturerProfile.departmentId,
             specialization: lecturerProfile.specialization || null,
+            is_head: lecturerProfile.isHead || false,
+            is_dean: lecturerProfile.isDean || false,
           },
         });
       }
@@ -375,11 +377,15 @@ export class UsersService {
             employee_number: lecturerProfile.employeeNumber,
             department_id: lecturerProfile.departmentId,
             specialization: lecturerProfile.specialization || null,
+            is_head: lecturerProfile.isHead || false,
+            is_dean: lecturerProfile.isDean || false,
           },
           update: {
             employee_number: lecturerProfile.employeeNumber,
             department_id: lecturerProfile.departmentId,
             specialization: lecturerProfile.specialization || null,
+            is_head: lecturerProfile.isHead || false,
+            is_dean: lecturerProfile.isDean || false,
           },
         });
       } else {

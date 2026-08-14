@@ -1,25 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
-import { AxiosError } from 'axios';
-import { ApiResponse } from '@ems/shared';
 import {
   BookOpen,
-  Calendar,
   AlertTriangle,
-  CheckCircle2,
-  Upload,
   Loader2,
   Award,
   BookMarked,
   FileSpreadsheet,
-  GraduationCap,
-  Sparkles,
   Download,
-  Search,
 } from 'lucide-react';
 import { UserRole } from '@ems/shared';
 
@@ -32,23 +24,9 @@ export default function ResultsAndImportsPage() {
 
   // Notification states
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Staff Publisher Form State
-  const [publishYear, setPublishYear] = useState<string>(new Date().getFullYear().toString());
-  const [publishSemester, setPublishSemester] = useState<string>('1.1');
-
-  // Staff Import Files State
-  const [studentsFile, setStudentsFile] = useState<File | null>(null);
-  const [marksFile, setMarksFile] = useState<File | null>(null);
-  const [importExamId, setImportExamId] = useState<string>('');
-
-  // Staff Student PDF Search State
-  const [studentSearch, setStudentSearch] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
-  const [isDownloadingPdfMap, setIsDownloadingPdfMap] = useState<Record<number, boolean>>({});
 
   // ==========================================
   // STUDENT PORTAL QUERIES
@@ -63,134 +41,6 @@ export default function ResultsAndImportsPage() {
     },
     enabled: isStudent,
   });
-
-  // ==========================================
-  // STAFF LOOKUP DATA
-  // ==========================================
-
-  // Fetch all exams (to populate marks import select)
-  const { data: examsList = [], isLoading: isExamsLoading } = useQuery({
-    queryKey: ['admin-exams-list'],
-    queryFn: async () => {
-      const response = await apiClient.get('/marks/pending-approvals');
-      return response.data?.data || [];
-    },
-    enabled: isStaffOrAdmin,
-  });
-
-  // Fetch searched student users
-  const { data: searchedStudents = [], isLoading: isSearchLoading } = useQuery({
-    queryKey: ['staff-students-search', searchQuery],
-    queryFn: async () => {
-      if (!searchQuery) return [];
-      const response = await apiClient.get('/users', {
-        params: {
-          roleId: 4, // Student role ID
-          search: searchQuery,
-          page: 1,
-          limit: 10,
-        },
-      });
-      return response.data?.data?.items || [];
-    },
-    enabled: isStaffOrAdmin && !!searchQuery,
-  });
-
-  // ==========================================
-  // MUTATIONS (PUBLISH & BULK UPLOADS)
-  // ==========================================
-
-  // Publish results mutation
-  const publishMutation = useMutation({
-    mutationFn: async (payload: { academicYear: number; semester: string }) => {
-      await apiClient.post('/results/publish', payload);
-    },
-    onSuccess: () => {
-      setSuccessMsg('Semester results compiled and published successfully!');
-      setErrorMsg(null);
-    },
-    onError: (err: AxiosError<ApiResponse>) => {
-      setErrorMsg(err.response?.data?.message || 'Failed to publish results.');
-      setSuccessMsg(null);
-    },
-  });
-
-  // Import students mutation
-  const importStudentsMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      const response = await apiClient.post('/imports/students', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      return response.data;
-    },
-    onSuccess: (data) => {
-      setSuccessMsg(data.message || 'Students imported successfully.');
-      setErrorMsg(null);
-      setStudentsFile(null);
-    },
-    onError: (err: AxiosError<ApiResponse>) => {
-      setErrorMsg(err.response?.data?.message || 'Failed to import students registry.');
-      setSuccessMsg(null);
-    },
-  });
-
-  // Import marks mutation
-  const importMarksMutation = useMutation({
-    mutationFn: async ({ examId, file }: { examId: number; file: File }) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      const response = await apiClient.post(`/imports/exams/${examId}/marks`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      return response.data;
-    },
-    onSuccess: (data) => {
-      setSuccessMsg(data.message || 'Marksheet marks imported successfully.');
-      setErrorMsg(null);
-      setMarksFile(null);
-      setImportExamId('');
-    },
-    onError: (err: AxiosError<ApiResponse>) => {
-      setErrorMsg(err.response?.data?.message || 'Failed to import exam marksheet.');
-      setSuccessMsg(null);
-    },
-  });
-
-  // ==========================================
-  // EVENT HANDLERS
-  // ==========================================
-
-  const handlePublish = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!publishYear || !publishSemester) return;
-    if (
-      confirm(
-        `Are you sure you want to compile and publish results for Year ${publishYear} Semester ${publishSemester}? This will lock the marksheet entries permanently.`,
-      )
-    ) {
-      publishMutation.mutate({
-        academicYear: parseInt(publishYear, 10),
-        semester: publishSemester,
-      });
-    }
-  };
-
-  const handleStudentsUpload = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!studentsFile) return;
-    importStudentsMutation.mutate(studentsFile);
-  };
-
-  const handleMarksUpload = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!marksFile || !importExamId) return;
-    importMarksMutation.mutate({
-      examId: parseInt(importExamId, 10),
-      file: marksFile,
-    });
-  };
 
   const handleDownloadMyPdf = async () => {
     setIsDownloadingPdf(true);
@@ -232,26 +82,6 @@ export default function ResultsAndImportsPage() {
     }
   };
 
-  const handleDownloadStaffPdf = async (studentId: number, studentName: string) => {
-    setIsDownloadingPdfMap((prev) => ({ ...prev, [studentId]: true }));
-    try {
-      const response = await apiClient.get(`/results/student/${studentId}/pdf`, {
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `transcript_${studentName.replace(/\s+/g, '_')}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode?.removeChild(link);
-    } catch {
-      setErrorMsg('Failed to download student PDF transcript.');
-    } finally {
-      setIsDownloadingPdfMap((prev) => ({ ...prev, [studentId]: false }));
-    }
-  };
-
   // Resolve Student GPA metrics
   const gpas = reportCard?.gpas || [];
   const grades = reportCard?.grades || [];
@@ -279,13 +109,6 @@ export default function ResultsAndImportsPage() {
         <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-2xl font-medium flex gap-2 items-center">
           <AlertTriangle className="h-4.5 w-4.5 shrink-0" />
           <span>{errorMsg}</span>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm rounded-2xl font-medium flex gap-2 items-center">
-          <CheckCircle2 className="h-4.5 w-4.5 shrink-0" />
-          <span>{successMsg}</span>
         </div>
       )}
 
@@ -437,38 +260,73 @@ export default function ResultsAndImportsPage() {
                           <th className="px-6 py-4">Code</th>
                           <th className="px-6 py-4">Module Name</th>
                           <th className="px-6 py-4">Credits</th>
+                          <th className="px-6 py-4 text-center">CA Marks</th>
+                          <th className="px-6 py-4 text-center">Final Exam</th>
                           <th className="px-6 py-4 text-center">Grade Letter</th>
                           <th className="px-6 py-4 text-right">Grade Point</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/60 text-sm font-medium">
-                        {grades.map((grade: any) => (
-                          <tr
-                            key={grade.grade_id}
-                            className="hover:bg-secondary/15 transition-colors"
-                          >
-                            <td className="px-6 py-4 text-muted-foreground">
-                              Sem {grade.course?.semester}
-                            </td>
-                            <td className="px-6 py-4 font-bold font-mono text-primary text-xs uppercase">
-                              {grade.course?.course_code}
-                            </td>
-                            <td className="px-6 py-4 font-semibold text-foreground">
-                              {grade.course?.course_name}
-                            </td>
-                            <td className="px-6 py-4 font-mono text-muted-foreground">
-                              {parseFloat(grade.course?.credit_value)}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className="px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-md font-extrabold text-xs">
-                                {grade.grade}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-right font-mono font-bold text-foreground">
-                              {grade.grade_point.toFixed(2)}
-                            </td>
-                          </tr>
-                        ))}
+                        {grades.map((grade: any) => {
+                          const showCAOnly =
+                            !grade.course?.is_published && grade.course?.ca_published;
+                          return (
+                            <tr
+                              key={grade.grade_id}
+                              className="hover:bg-secondary/15 transition-colors"
+                            >
+                              <td className="px-6 py-4 text-muted-foreground">
+                                Sem {grade.course?.semester}
+                              </td>
+                              <td className="px-6 py-4 font-bold font-mono text-primary text-xs uppercase">
+                                {grade.course?.course_code}
+                              </td>
+                              <td className="px-6 py-4 font-semibold text-foreground">
+                                {grade.course?.course_name}
+                              </td>
+                              <td className="px-6 py-4 font-mono text-muted-foreground">
+                                {parseFloat(grade.course?.credit_value)}
+                              </td>
+                              <td className="px-6 py-4 text-center font-mono font-bold text-foreground">
+                                {grade.continuous_assessment_marks !== null
+                                  ? grade.continuous_assessment_marks.toFixed(1)
+                                  : '-'}
+                              </td>
+                              <td className="px-6 py-4 text-center font-mono font-bold">
+                                {showCAOnly ? (
+                                  <span className="text-xs text-muted-foreground italic font-normal">
+                                    Unpublished
+                                  </span>
+                                ) : grade.final_exam_marks !== null ? (
+                                  grade.final_exam_marks.toFixed(1)
+                                ) : (
+                                  '-'
+                                )}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                {showCAOnly ? (
+                                  <span className="px-2 py-0.5 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded text-xs font-bold uppercase">
+                                    CA Published
+                                  </span>
+                                ) : (
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <span className="px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-md font-extrabold text-xs">
+                                      {grade.grade}
+                                    </span>
+                                    {grade.result_status === 'PROVISIONAL' && (
+                                      <span className="px-1.5 py-0.5 bg-blue-500/15 text-blue-400 border border-blue-500/25 rounded text-[10px] font-bold uppercase">
+                                        Provisional
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-6 py-4 text-right font-mono font-bold text-foreground">
+                                {showCAOnly ? '-' : grade.grade_point.toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -696,272 +554,13 @@ export default function ResultsAndImportsPage() {
       {/* STAFF / ADMINISTRATOR VIEWS */}
       {/* ========================================================================= */}
       {isStaffOrAdmin && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          {/* Results Publishing Form */}
-          <div className="lg:col-span-1 bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-md space-y-4">
-            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-              <Calendar className="h-4.5 w-4.5 text-primary" />
-              Publishing Controls
-            </h3>
-
-            <form onSubmit={handlePublish} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                  Academic Year
-                </label>
-                <input
-                  type="number"
-                  value={publishYear}
-                  onChange={(e) => setPublishYear(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                  Semester (e.g. 1.1)
-                </label>
-                <select
-                  value={publishSemester}
-                  onChange={(e) => setPublishSemester(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
-                >
-                  {['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2'].map((s) => (
-                    <option key={s} value={s} className="bg-card">
-                      Semester {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                type="submit"
-                disabled={publishMutation.isPending}
-                className="w-full py-3 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/95 transition flex items-center justify-center gap-2 text-sm shadow-lg shadow-primary/10"
-              >
-                {publishMutation.isPending ? (
-                  <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                ) : (
-                  <>
-                    <Sparkles className="h-4.5 w-4.5" />
-                    Compile & Publish
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-
-          {/* Bulk Spreadsheet Uploads */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Student Search & PDF Download Card */}
-            <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-md space-y-4">
-              <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <Search className="h-4.5 w-4.5 text-primary" />
-                Student Academic Report Downloader
-              </h3>
-              <p className="text-xs text-muted-foreground leading-normal">
-                Search for a student by name or registration number to download their official PDF
-                transcript card.
-              </p>
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Enter name or registration number..."
-                  value={studentSearch}
-                  onChange={(e) => setStudentSearch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      setSearchQuery(studentSearch);
-                    }
-                  }}
-                  className="flex-1 px-4 py-2.5 bg-secondary/30 border border-border rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-primary/60 text-foreground"
-                />
-                <button
-                  onClick={() => setSearchQuery(studentSearch)}
-                  className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-1.5"
-                >
-                  <Search className="h-3.5 w-3.5" />
-                  Search
-                </button>
-              </div>
-
-              {isSearchLoading ? (
-                <div className="flex justify-center py-4">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : searchQuery && searchedStudents.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-2">
-                  No matching students found.
-                </p>
-              ) : searchedStudents.length > 0 ? (
-                <div className="border border-border/50 rounded-xl overflow-hidden text-xs">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-secondary/10 border-b border-border/60 font-bold text-muted-foreground">
-                        <th className="p-3">Student Name</th>
-                        <th className="p-3">Reg No</th>
-                        <th className="p-3">Department</th>
-                        <th className="p-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/40 font-medium">
-                      {searchedStudents.map((u: any) => {
-                        const sId = u.student?.student_id;
-                        const regNo = u.student?.registration_number;
-                        const dept = u.student?.department?.department_code || 'N/A';
-                        if (!sId) return null;
-
-                        return (
-                          <tr key={u.user_id} className="hover:bg-secondary/5">
-                            <td className="p-3 text-foreground">{u.full_name}</td>
-                            <td className="p-3 text-muted-foreground font-mono">{regNo}</td>
-                            <td className="p-3 text-muted-foreground">{dept}</td>
-                            <td className="p-3 text-right">
-                              <button
-                                onClick={() => handleDownloadStaffPdf(sId, u.full_name)}
-                                disabled={isDownloadingPdfMap[sId]}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-primary/10 border border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground rounded-lg transition-colors font-semibold disabled:opacity-50"
-                              >
-                                {isDownloadingPdfMap[sId] ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <Download className="h-3 w-3" />
-                                )}
-                                Download PDF
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </div>
-
-            {/* Student Import Card */}
-            <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-md space-y-4">
-              <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <GraduationCap className="h-4.5 w-4.5 text-primary" />
-                Bulk Student Registry Import
-              </h3>
-              <p className="text-xs text-muted-foreground leading-normal">
-                Upload an Excel/CSV spreadsheet to import students in bulk. Required columns in row
-                1:{' '}
-                <code className="text-primary font-mono bg-primary/5 px-1 py-0.5 rounded font-bold">
-                  fullName
-                </code>
-                ,{' '}
-                <code className="text-primary font-mono bg-primary/5 px-1 py-0.5 rounded font-bold">
-                  email
-                </code>
-                ,{' '}
-                <code className="text-primary font-mono bg-primary/5 px-1 py-0.5 rounded font-bold">
-                  registrationNumber
-                </code>
-                ,{' '}
-                <code className="text-primary font-mono bg-primary/5 px-1 py-0.5 rounded font-bold">
-                  departmentCode
-                </code>
-                ,{' '}
-                <code className="text-primary font-mono bg-primary/5 px-1 py-0.5 rounded font-bold">
-                  academicYear
-                </code>
-                ,{' '}
-                <code className="text-primary font-mono bg-primary/5 px-1 py-0.5 rounded font-bold">
-                  semester
-                </code>
-                .
-              </p>
-
-              <form onSubmit={handleStudentsUpload} className="flex flex-wrap items-center gap-3">
-                <input
-                  type="file"
-                  accept=".xlsx, .xls, .csv"
-                  onChange={(e) => setStudentsFile(e.target.files?.[0] || null)}
-                  className="px-4 py-2 bg-secondary/30 border border-border rounded-xl text-xs"
-                />
-                <button
-                  type="submit"
-                  disabled={!studentsFile || importStudentsMutation.isPending}
-                  className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  {importStudentsMutation.isPending ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Upload className="h-3.5 w-3.5" />
-                  )}
-                  Upload Students
-                </button>
-              </form>
-            </div>
-
-            {/* Marks Import Card */}
-            <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-md space-y-4">
-              <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <FileSpreadsheet className="h-4.5 w-4.5 text-primary" />
-                Bulk Exam Marks Import
-              </h3>
-              <p className="text-xs text-muted-foreground leading-normal">
-                Upload a spreadsheet to import marks for a specific assessment. Required columns in
-                row 1:{' '}
-                <code className="text-primary font-mono bg-primary/5 px-1 py-0.5 rounded font-bold">
-                  registrationNumber
-                </code>
-                ,{' '}
-                <code className="text-primary font-mono bg-primary/5 px-1 py-0.5 rounded font-bold">
-                  marksObtained
-                </code>
-                .
-              </p>
-
-              <form onSubmit={handleMarksUpload} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                      Select Exam Target
-                    </label>
-                    <select
-                      value={importExamId}
-                      onChange={(e) => setImportExamId(e.target.value)}
-                      disabled={isExamsLoading}
-                      className="w-full px-4 py-2 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary transition text-xs text-foreground"
-                    >
-                      <option value="">Select target exam...</option>
-                      {examsList.map((exam: any) => (
-                        <option key={exam.exam_id} value={exam.exam_id} className="bg-card">
-                          {exam.course?.course_code} - {exam.exam_title}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex items-end">
-                    <input
-                      type="file"
-                      accept=".xlsx, .xls, .csv"
-                      onChange={(e) => setMarksFile(e.target.files?.[0] || null)}
-                      className="w-full px-4 py-2 bg-secondary/30 border border-border rounded-xl text-xs"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={!marksFile || !importExamId || importMarksMutation.isPending}
-                  className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  {importMarksMutation.isPending ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Upload className="h-3.5 w-3.5" />
-                  )}
-                  Upload Marksheet
-                </button>
-              </form>
-            </div>
-          </div>
+        <div className="p-10 text-center bg-card/25 border border-border/80 rounded-3xl backdrop-blur-md">
+          <BookMarked className="h-10 w-10 text-muted-foreground/60 mx-auto mb-3" />
+          <h3 className="text-sm font-bold text-foreground">Staff Results Portal</h3>
+          <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+            Results approval workflows, grading queues, and spreadsheet imports are managed in the
+            Marks Registry portal.
+          </p>
         </div>
       )}
     </div>

@@ -48,6 +48,8 @@ const UserFormSchema = BaseUserFormSchema.extend({
       employeeNumber: z.string().optional().or(z.literal('')),
       departmentId: z.coerce.number().optional(),
       specialization: z.string().optional().or(z.literal('')),
+      isHead: z.boolean().optional().default(false),
+      isDean: z.boolean().optional().default(false),
     })
     .optional(),
 }).superRefine((data, ctx) => {
@@ -198,6 +200,8 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
               employeeNumber: user.lecturer.employee_number,
               departmentId: user.lecturer.department_id,
               specialization: user.lecturer.specialization || '',
+              isHead: user.lecturer.is_head || false,
+              isDean: user.lecturer.is_dean || false,
             }
           : undefined,
       });
@@ -225,6 +229,8 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
           employeeNumber: '',
           departmentId: 0,
           specialization: '',
+          isHead: false,
+          isDean: false,
         },
       });
     }
@@ -687,6 +693,38 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
                       {...register('lecturerProfile.specialization')}
                       className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
                     />
+                  </div>
+
+                  <div className="md:col-span-2 flex flex-wrap gap-6 pt-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="isHead"
+                        {...register('lecturerProfile.isHead')}
+                        className="h-4.5 w-4.5 rounded border-border bg-secondary text-primary focus:ring-2 focus:ring-primary/60"
+                      />
+                      <label
+                        htmlFor="isHead"
+                        className="text-sm font-semibold text-muted-foreground select-none cursor-pointer"
+                      >
+                        Is Department Head
+                      </label>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="isDean"
+                        {...register('lecturerProfile.isDean')}
+                        className="h-4.5 w-4.5 rounded border-border bg-secondary text-primary focus:ring-2 focus:ring-primary/60"
+                      />
+                      <label
+                        htmlFor="isDean"
+                        className="text-sm font-semibold text-muted-foreground select-none cursor-pointer"
+                      >
+                        Is Dean of Faculty
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>

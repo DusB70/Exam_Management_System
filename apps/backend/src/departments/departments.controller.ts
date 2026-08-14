@@ -50,10 +50,20 @@ export class DepartmentsController {
       throw new BadRequestException('Department name or code already exists.');
     }
 
+    if (dto.parentDepartmentId) {
+      const parentExists = await this.prisma.department.findUnique({
+        where: { department_id: dto.parentDepartmentId },
+      });
+      if (!parentExists) {
+        throw new BadRequestException('Parent department not found.');
+      }
+    }
+
     const dept = await this.prisma.department.create({
       data: {
         department_name: dto.departmentName,
         department_code: dto.departmentCode.toUpperCase(),
+        parent_department_id: dto.parentDepartmentId || null,
       },
     });
 
@@ -84,6 +94,24 @@ export class DepartmentsController {
       throw new BadRequestException('Department not found.');
     }
 
+    if (dto.parentDepartmentId === id) {
+      throw new BadRequestException('A department cannot be its own parent.');
+    }
+
+    if (dto.parentDepartmentId) {
+      const parentExists = await this.prisma.department.findUnique({
+        where: { department_id: dto.parentDepartmentId },
+      });
+      if (!parentExists) {
+        throw new BadRequestException('Parent department not found.');
+      }
+      if (parentExists.parent_department_id === id) {
+        throw new BadRequestException(
+          'Circular parent-child department relationship is not allowed.',
+        );
+      }
+    }
+
     const exists = await this.prisma.department.findFirst({
       where: {
         OR: [
@@ -102,6 +130,7 @@ export class DepartmentsController {
       data: {
         department_name: dto.departmentName,
         department_code: dto.departmentCode.toUpperCase(),
+        parent_department_id: dto.parentDepartmentId || null,
       },
     });
 
@@ -126,6 +155,15 @@ export class DepartmentsController {
     const dept = await this.prisma.department.findUnique({ where: { department_id: id } });
     if (!dept) {
       throw new BadRequestException('Department not found.');
+    }
+
+    const childrenCount = await this.prisma.department.count({
+      where: { parent_department_id: id },
+    });
+    if (childrenCount > 0) {
+      throw new BadRequestException(
+        'Cannot delete department because it has child sub-departments.',
+      );
     }
 
     const degreesCount = await this.prisma.degree.count({ where: { department_id: id } });

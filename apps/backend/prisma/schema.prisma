@@ -41,13 +41,17 @@ model User {
 }
 
 model Department {
-  department_id   Int        @id @default(autoincrement())
-  department_name String     @unique @db.VarChar(100)
-  department_code String     @unique @db.VarChar(20)
-  created_at      DateTime?  @default(now()) @db.Timestamp(6)
-  courses         Course[]
-  lecturers       Lecturer[]
-  degrees         Degree[]
+  department_id        Int              @id @default(autoincrement())
+  department_name      String           @unique @db.VarChar(100)
+  department_code      String           @unique @db.VarChar(20)
+  parent_department_id Int?
+  created_at           DateTime?        @default(now()) @db.Timestamp(6)
+  parent_department    Department?      @relation("DepartmentHierarchy", fields: [parent_department_id], references: [department_id], onDelete: Restrict, onUpdate: NoAction)
+  child_departments    Department[]     @relation("DepartmentHierarchy")
+  courses              Course[]
+  lecturers            Lecturer[]
+  degrees              Degree[]
+  specializations      Specialization[]
 
   @@map("departments")
 }
@@ -80,6 +84,8 @@ model Lecturer {
   employee_number String           @unique @db.VarChar(50)
   department_id   Int
   specialization  String?          @db.VarChar(100)
+  is_head         Boolean          @default(false)
+  is_dean         Boolean          @default(false)
   courses         CourseLecturer[]
   department      Department       @relation(fields: [department_id], references: [department_id])
   user            User             @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
@@ -101,11 +107,13 @@ model Degree {
 }
 
 model Specialization {
-  specialization_id   Int       @id @default(autoincrement())
-  specialization_name String    @db.VarChar(150)
-  specialization_code String    @db.VarChar(20)
+  specialization_id   Int         @id @default(autoincrement())
+  specialization_name String      @db.VarChar(150)
+  specialization_code String      @db.VarChar(20)
   degree_id           Int
-  degree              Degree    @relation(fields: [degree_id], references: [degree_id], onDelete: Cascade)
+  department_id       Int?
+  degree              Degree      @relation(fields: [degree_id], references: [degree_id], onDelete: Cascade)
+  department          Department? @relation(fields: [department_id], references: [department_id], onDelete: SetNull, onUpdate: NoAction)
   students            Student[]
   courses             Course[]
 
@@ -131,6 +139,8 @@ model Course {
   course_grades     StudentCourseGrade[]
   marks_config             Json?
   result_submission_status String?              @db.VarChar(20)
+  rejection_reason         String?              @db.Text
+  ca_published             Boolean              @default(false)
 
   @@map("courses")
 }

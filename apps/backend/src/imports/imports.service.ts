@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { XlsxParserService } from './xlsx-parser.service';
 import * as bcrypt from 'bcrypt';
+import * as XLSX from 'xlsx';
 
 interface StudentImportRow {
   nameWithInitials: string;
@@ -17,11 +18,6 @@ interface StudentImportRow {
   academicYear: number;
   degreeCode: string;
   specializationCode?: string;
-}
-
-interface MarkImportRow {
-  registrationNumber: string;
-  marksObtained: number;
 }
 
 @Injectable()
@@ -224,56 +220,104 @@ export class ImportsService {
     }
 
     // Verify marksheet is not locked
-    const lockedCount = await this.prisma.examMark.count({
-      where: {
-        exam_id: examId,
-        grading_status: { in: ['SUBMITTED', 'APPROVED'] },
-      },
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: exam.course_id },
     });
-    if (lockedCount > 0) {
+    const isLocked =
+      course?.result_submission_status &&
+      !['DRAFT', 'REJECTED_BY_HEAD', 'REJECTED_BY_STAFF', 'PUBLISHED_PROVISIONAL'].includes(
+        course.result_submission_status,
+      );
+
+    if (isLocked) {
       throw new BadRequestException(
         'Marksheet has already been submitted or approved and is locked.',
       );
     }
 
-    const rows = this.xlsxParser.parseBuffer<MarkImportRow>(buffer);
-    if (rows.length === 0) {
-      throw new BadRequestException('Import file is empty.');
+    // Parse Excel dynamically
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    if (workbook.SheetNames.length === 0) {
+      throw new BadRequestException('The uploaded spreadsheet contains no worksheets.');
+    }
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const sheetData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+    // Find the header row
+    let headerRowIndex = -1;
+    for (let i = 0; i < sheetData.length; i++) {
+      const row = sheetData[i];
+      if (
+        row.some(
+          (cell) =>
+            typeof cell === 'string' &&
+            (cell.toLowerCase().includes('registrationnumber') ||
+              cell.toLowerCase().includes('registration number')),
+        )
+      ) {
+        headerRowIndex = i;
+        break;
+      }
+    }
+
+    if (headerRowIndex === -1) {
+      throw new BadRequestException(
+        'Could not find header row with "Registration Number" or "registrationNumber" column.',
+      );
+    }
+
+    const headers = sheetData[headerRowIndex].map((h) => String(h).trim());
+    const regNoIndex = headers.findIndex(
+      (h) =>
+        h.toLowerCase().includes('registrationnumber') ||
+        h.toLowerCase().includes('registration number'),
+    );
+    const marksIndex = headers.findIndex(
+      (h) =>
+        h.toLowerCase() === 'marks' ||
+        h.toLowerCase().includes('marksobtained') ||
+        h.toLowerCase().includes('marks obtained'),
+    );
+
+    if (regNoIndex === -1) {
+      throw new BadRequestException('Missing registration number column.');
+    }
+    if (marksIndex === -1) {
+      throw new BadRequestException(
+        'Missing "marks" column. Please add a column named "marks" with the student marks.',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
       const importedMarks = [];
 
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const rowNum = i + 2;
+      for (let i = headerRowIndex + 1; i < sheetData.length; i++) {
+        const row = sheetData[i];
+        if (row.length === 0 || !row[regNoIndex]) continue;
 
-        const { registrationNumber, marksObtained } = row;
+        const registrationNumber = String(row[regNoIndex]).trim();
+        const scoreStr = String(row[marksIndex]).trim();
 
-        if (!registrationNumber || marksObtained === undefined || marksObtained === null) {
-          throw new BadRequestException(
-            `Row ${rowNum}: Both columns (registrationNumber, marksObtained) are required.`,
-          );
-        }
+        if (!registrationNumber || scoreStr === '') continue;
 
-        const score = Number(marksObtained);
+        const score = parseFloat(scoreStr);
         if (isNaN(score) || score < 0) {
-          throw new BadRequestException(`Row ${rowNum}: Marks obtained must be a positive number.`);
+          throw new BadRequestException(`Row ${i + 1}: Marks obtained must be a positive number.`);
         }
 
         if (score > exam.total_marks) {
           throw new BadRequestException(
-            `Row ${rowNum}: Score ${score} exceeds exam maximum marks (${exam.total_marks}).`,
+            `Row ${i + 1}: Score ${score} exceeds exam maximum marks (${exam.total_marks}).`,
           );
         }
 
         // 1. Find Student
         const student = await tx.student.findUnique({
-          where: { registration_number: registrationNumber.trim() },
+          where: { registration_number: registrationNumber },
         });
         if (!student) {
           throw new BadRequestException(
-            `Row ${rowNum}: Student with registration number "${registrationNumber}" not found.`,
+            `Row ${i + 1}: Student with registration number "${registrationNumber}" not found.`,
           );
         }
 
@@ -288,7 +332,7 @@ export class ImportsService {
         });
         if (!isRegistered) {
           throw new BadRequestException(
-            `Row ${rowNum}: Student "${registrationNumber}" is not registered for this exam's course.`,
+            `Row ${i + 1}: Student "${registrationNumber}" is not registered for this exam's course.`,
           );
         }
 

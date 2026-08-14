@@ -42,6 +42,14 @@ export class LecturerProfileDto {
   @IsString()
   @IsOptional()
   specialization?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isHead?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  isDean?: boolean;
 }
 
 export class CreateUserDto {

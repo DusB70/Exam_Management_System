@@ -53,7 +53,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           { name: 'Academic Structure', href: '/academic-structure', icon: GraduationCap },
           { name: 'Courses & Batches', href: '/courses', icon: BookOpen },
           { name: 'Marks Registry', href: '/marks', icon: FileSpreadsheet },
-          { name: 'Result Sheets', href: '/results', icon: FileBarChart },
           { name: 'Student Requests', href: '/requests', icon: FileSpreadsheet },
           { name: 'System Backup', href: '/backup', icon: Database },
           { name: 'System Logs', href: '/logs', icon: Activity },
@@ -64,7 +63,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           { name: 'Academic Structure', href: '/academic-structure', icon: GraduationCap },
           { name: 'Courses & Batches', href: '/courses', icon: BookOpen },
           { name: 'Marks Registry', href: '/marks', icon: FileSpreadsheet },
-          { name: 'Result Sheets', href: '/results', icon: FileBarChart },
           { name: 'Student Requests', href: '/requests', icon: FileSpreadsheet },
         ];
       case UserRole.LECTURER:

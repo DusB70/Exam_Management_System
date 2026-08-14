@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateDepartmentDto {
   @IsString()
@@ -10,6 +10,10 @@ export class CreateDepartmentDto {
   @IsNotEmpty({ message: 'Department code is required' })
   @MaxLength(20)
   departmentCode!: string;
+
+  @IsInt()
+  @IsOptional()
+  parentDepartmentId?: number;
 }
 
 export class CreateDegreeDto {
@@ -40,4 +44,8 @@ export class CreateSpecializationDto {
 
   @IsInt()
   degreeId!: number;
+
+  @IsInt()
+  @IsOptional()
+  departmentId?: number;
 }

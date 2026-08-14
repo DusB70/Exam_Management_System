@@ -8,6 +8,8 @@ interface User {
   role: UserRole;
   address?: string;
   phoneNumber?: string;
+  isHead?: boolean;
+  isDean?: boolean;
 }
 
 interface AuthState {
