@@ -5,6 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PeriodStatus } from './dtos/registration-periods.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DegreeCourseStatus } from './dtos/courses.dto';
 
 describe('CoursesService', () => {
   let service: CoursesService;
@@ -24,6 +25,9 @@ describe('CoursesService', () => {
       delete: jest.fn(),
     },
     degree: {
+      findUnique: jest.fn(),
+    },
+    department: {
       findUnique: jest.fn(),
     },
     lecturer: {
@@ -72,8 +76,7 @@ describe('CoursesService', () => {
         course_id: 1,
         course_code: 'CS-101',
       });
-      mockPrismaService.degree.findUnique.mockResolvedValue({
-        degree_id: 1,
+      mockPrismaService.department.findUnique.mockResolvedValue({
         department_id: 2,
       });
 
@@ -81,7 +84,8 @@ describe('CoursesService', () => {
         courseCode: 'CS-101',
         courseName: 'Intro to CS',
         creditValue: 3,
-        degreeId: 1,
+        departmentId: 2,
+        degrees: [{ degreeId: 1, status: DegreeCourseStatus.COMPULSORY }],
         semester: '1.1',
       };
 
@@ -91,8 +95,7 @@ describe('CoursesService', () => {
 
     it('should create course and log audit action', async () => {
       mockPrismaService.course.findUnique.mockResolvedValue(null);
-      mockPrismaService.degree.findUnique.mockResolvedValue({
-        degree_id: 1,
+      mockPrismaService.department.findUnique.mockResolvedValue({
         department_id: 2,
       });
       mockPrismaService.course.create.mockResolvedValue({
@@ -106,7 +109,8 @@ describe('CoursesService', () => {
         courseCode: 'CS-101',
         courseName: 'Intro to CS',
         creditValue: 3,
-        degreeId: 1,
+        departmentId: 2,
+        degrees: [{ degreeId: 1, status: DegreeCourseStatus.COMPULSORY }],
         semester: '1.1',
       };
 

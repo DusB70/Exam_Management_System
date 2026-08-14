@@ -6,7 +6,7 @@ import { Sun, Moon } from 'lucide-react';
 type Theme = 'light' | 'dark';
 
 export default function ThemeSwitcher() {
-  const [theme, setTheme] = useState<Theme>('dark');
+  const [theme, setTheme] = useState<Theme>('light');
 
   // Initialize theme from localStorage on client side
   useEffect(() => {
@@ -14,8 +14,7 @@ export default function ThemeSwitcher() {
     if (savedTheme === 'light' || savedTheme === 'dark') {
       setTheme(savedTheme);
     } else {
-      const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setTheme(systemPrefersDark ? 'dark' : 'light');
+      setTheme('light');
     }
   }, []);
 

@@ -54,6 +54,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           { name: 'Courses & Batches', href: '/courses', icon: BookOpen },
           { name: 'Marks Registry', href: '/marks', icon: FileSpreadsheet },
           { name: 'Result Sheets', href: '/results', icon: FileBarChart },
+          { name: 'Student Requests', href: '/requests', icon: FileSpreadsheet },
           { name: 'System Backup', href: '/backup', icon: Database },
           { name: 'System Logs', href: '/logs', icon: Activity },
         ];
@@ -64,10 +65,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           { name: 'Courses & Batches', href: '/courses', icon: BookOpen },
           { name: 'Marks Registry', href: '/marks', icon: FileSpreadsheet },
           { name: 'Result Sheets', href: '/results', icon: FileBarChart },
+          { name: 'Student Requests', href: '/requests', icon: FileSpreadsheet },
         ];
       case UserRole.LECTURER:
         return [
           ...common,
+          { name: 'Student Directory', href: '/students', icon: Users },
           { name: 'Marks Registry', href: '/marks', icon: FileSpreadsheet },
           { name: 'Reports Panel', href: '/reports', icon: FileBarChart },
         ];
@@ -76,6 +79,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ...common,
           { name: 'Course Registration', href: '/registration', icon: BookOpen },
           { name: 'My Academic Results', href: '/results', icon: FileBarChart },
+          { name: 'Forms & Requests', href: '/requests', icon: FileSpreadsheet },
           { name: 'My Profile', href: '/profile', icon: UserIcon },
         ];
       default:

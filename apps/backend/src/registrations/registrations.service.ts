@@ -47,11 +47,16 @@ export class RegistrationsService {
     // Get all courses offered for the student's degree, specialization, and semester
     const courses = await this.prisma.course.findMany({
       where: {
-        degree_id: student.degree_id,
+        degrees: {
+          some: {
+            degree_id: student.degree_id,
+          },
+        },
         semester: activePeriod.semester,
         OR: [{ specialization_id: null }, { specialization_id: student.specialization_id }],
       },
       include: {
+        department: true,
         lecturers: {
           include: {
             lecturer: {
@@ -88,7 +93,11 @@ export class RegistrationsService {
         course: {
           include: {
             department: true,
-            degree: true,
+            degrees: {
+              include: {
+                degree: true,
+              },
+            },
             specialization: true,
             lecturers: {
               include: {
@@ -138,8 +147,17 @@ export class RegistrationsService {
 
     // Verify all selected courses match student's degree, specialization, and semester
     for (const course of selectedCourses) {
+      const courseDegree = await this.prisma.courseDegree.findUnique({
+        where: {
+          course_id_degree_id: {
+            course_id: course.course_id,
+            degree_id: student.degree_id,
+          },
+        },
+      });
+
       if (
-        course.degree_id !== student.degree_id ||
+        !courseDegree ||
         (course.specialization_id !== null &&
           course.specialization_id !== student.specialization_id) ||
         course.semester !== period.semester

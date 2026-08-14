@@ -20,18 +20,12 @@ const CourseFormSchema = z.object({
     .number()
     .min(0, 'Credit value must be at least 0')
     .max(10, 'Credit value cannot exceed 10'),
-  degreeId: z.coerce.number().int().min(1, 'Degree is required'),
-  specializationId: z.coerce.number().int().optional().nullable().or(z.literal('')),
   semester: z
     .string()
     .regex(
       /^(1\.1|1\.2|2\.1|2\.2|3\.1|3\.2|4\.1|4\.2)$/,
       'Semester must be format X.Y (1.1 to 4.2)',
     ),
-  lecturerId: z.preprocess(
-    (val) => (val === '' || val === undefined ? 0 : Number(val)),
-    z.number().int().optional(),
-  ),
 });
 
 type CourseFormInput = z.infer<typeof CourseFormSchema>;
@@ -43,26 +37,28 @@ interface CourseDialogProps {
   onSuccess: () => void;
 }
 
-const fetchDegrees = async () => {
-  const response = await apiClient.get('/degrees');
-  return response.data?.data || [];
-};
-
 export default function CourseDialog({ open, onClose, course, onSuccess }: CourseDialogProps) {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | string>('');
+  const [selectedDegrees, setSelectedDegrees] = useState<{ degreeId: number; status: string }[]>(
+    [],
+  );
   const isEdit = !!course;
 
-  const { data: degrees = [] } = useQuery({
-    queryKey: ['degrees'],
-    queryFn: fetchDegrees,
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments-lookup'],
+    queryFn: async () => {
+      const response = await apiClient.get('/departments');
+      return response.data?.data || [];
+    },
     enabled: open,
   });
 
-  const { data: lecturers = [] } = useQuery({
-    queryKey: ['lecturers-lookup'],
+  const { data: degrees = [] } = useQuery({
+    queryKey: ['degrees-lookup'],
     queryFn: async () => {
-      const response = await apiClient.get('/lecturers');
+      const response = await apiClient.get('/degrees');
       return response.data?.data || [];
     },
     enabled: open,
@@ -72,21 +68,14 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
     register,
     handleSubmit,
     reset,
-    watch,
     formState: { errors },
   } = useForm<CourseFormInput>({
     resolver: zodResolver(CourseFormSchema),
     defaultValues: {
       creditValue: 3,
       semester: '1.1',
-      lecturerId: 0,
-      specializationId: '',
     },
   });
-
-  const selectedDegreeId = watch('degreeId');
-  const currentDegree = degrees.find((d: any) => d.degree_id === Number(selectedDegreeId));
-  const availableSpecializations = currentDegree?.specializations || [];
 
   useEffect(() => {
     if (course && open) {
@@ -94,32 +83,66 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
         courseCode: course.course_code,
         courseName: course.course_name,
         creditValue: parseFloat(course.credit_value),
-        degreeId: course.degree_id,
-        specializationId: course.specialization_id || '',
         semester: course.semester,
-        lecturerId: course.lecturers?.[0]?.lecturer_id || 0,
       });
+      setSelectedDepartmentId(course.department_id || '');
+      setSelectedDegrees(
+        course.degrees?.map((cd: any) => ({
+          degreeId: cd.degree_id,
+          status: cd.status,
+        })) || [],
+      );
     } else if (open) {
       reset({
         courseCode: '',
         courseName: '',
         creditValue: 3,
-        degreeId: degrees[0]?.degree_id || 1,
-        specializationId: '',
         semester: '1.1',
-        lecturerId: 0,
       });
+      setSelectedDegrees([]);
+      if (departments.length > 0) {
+        setSelectedDepartmentId(departments[0].department_id);
+      } else {
+        setSelectedDepartmentId('');
+      }
     }
-  }, [course, open, reset, degrees]);
+  }, [course, open, reset, departments]);
+
+  const handleDepartmentChange = (deptId: string) => {
+    setSelectedDepartmentId(deptId);
+  };
+
+  const handleDegreeCheckboxChange = (degreeId: number, checked: boolean) => {
+    if (checked) {
+      setSelectedDegrees((prev) => [...prev, { degreeId, status: 'COMPULSORY' }]);
+    } else {
+      setSelectedDegrees((prev) => prev.filter((d) => d.degreeId !== degreeId));
+    }
+  };
+
+  const handleDegreeStatusChange = (degreeId: number, status: string) => {
+    setSelectedDegrees((prev) => prev.map((d) => (d.degreeId === degreeId ? { ...d, status } : d)));
+  };
 
   const onSubmit = async (data: CourseFormInput) => {
     setError(null);
+    if (!selectedDepartmentId) {
+      setError('Offering department is required.');
+      return;
+    }
+    if (selectedDegrees.length === 0) {
+      setError('At least one applicable degree program must be selected.');
+      return;
+    }
+
     setIsSubmitting(true);
 
-    const payload: any = { ...data };
-    if (!payload.specializationId || payload.specializationId === '') {
-      payload.specializationId = null;
-    }
+    const payload = {
+      ...data,
+      departmentId: Number(selectedDepartmentId),
+      degrees: selectedDegrees,
+      specializationId: null,
+    };
 
     try {
       if (isEdit) {
@@ -168,7 +191,7 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
                 type="text"
                 placeholder="e.g. CS-101"
                 {...register('courseCode')}
-                className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm uppercase"
+                className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm uppercase font-mono"
               />
               {errors.courseCode && (
                 <p className="mt-1 text-xs text-destructive">{errors.courseCode.message}</p>
@@ -183,7 +206,7 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
                 type="number"
                 step="0.5"
                 {...register('creditValue')}
-                className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm"
+                className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm font-mono"
               />
               {errors.creditValue && (
                 <p className="mt-1 text-xs text-destructive">{errors.creditValue.message}</p>
@@ -205,62 +228,13 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
               )}
             </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                Degree Program
-              </label>
-              <select
-                {...register('degreeId')}
-                className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
-              >
-                {degrees.map((deg: any) => (
-                  <option key={deg.degree_id} value={deg.degree_id} className="bg-card">
-                    {deg.degree_name} ({deg.degree_code})
-                  </option>
-                ))}
-              </select>
-              {errors.degreeId && (
-                <p className="mt-1 text-xs text-destructive">{errors.degreeId.message}</p>
-              )}
-            </div>
-
-            {selectedDegreeId && Number(selectedDegreeId) > 0 && (
-              <div className="md:col-span-2 animate-fadeIn">
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                  Allocated Specialization (Optional)
-                </label>
-                {availableSpecializations.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic bg-secondary/15 p-3.5 rounded-xl border border-border/60">
-                    No specializations defined for this degree. (This course will be a general core
-                    unit).
-                  </p>
-                ) : (
-                  <select
-                    {...register('specializationId')}
-                    className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
-                  >
-                    <option value="">No Specialization (Core Unit for All Students)</option>
-                    {availableSpecializations.map((spec: any) => (
-                      <option
-                        key={spec.specialization_id}
-                        value={spec.specialization_id}
-                        className="bg-card"
-                      >
-                        {spec.specialization_name} ({spec.specialization_code})
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            )}
-
             <div>
               <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
                 Semester Offered
               </label>
               <select
                 {...register('semester')}
-                className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground animate-fadeIn"
+                className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
               >
                 <option value="1.1">Semester 1.1</option>
                 <option value="1.2">Semester 1.2</option>
@@ -276,23 +250,119 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
               )}
             </div>
 
-            <div className="md:col-span-2">
+            <div>
               <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                Assigned Lecturer (Optional)
+                Offering Department
               </label>
               <select
-                {...register('lecturerId')}
+                value={selectedDepartmentId}
+                onChange={(e) => handleDepartmentChange(e.target.value)}
                 className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
               >
-                <option value="0">Assign Later (None)</option>
-                {lecturers.map((lec: any) => (
-                  <option key={lec.lecturer_id} value={lec.lecturer_id}>
-                    {lec.user?.full_name} ({lec.employee_number || 'No EMP ID'})
+                <option value="">Select Offering Department</option>
+                {departments.map((dept: any) => (
+                  <option key={dept.department_id} value={dept.department_id}>
+                    {dept.department_name} ({dept.department_code})
                   </option>
                 ))}
               </select>
-              {errors.lecturerId && (
-                <p className="mt-1 text-xs text-destructive">{errors.lecturerId.message}</p>
+            </div>
+
+            <div className="md:col-span-2 space-y-2">
+              <label className="block text-xs font-semibold text-muted-foreground">
+                Applicable Degree Programs (Faculty of Technology)
+              </label>
+              {departments.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic bg-secondary/15 p-3.5 rounded-xl border border-border/60">
+                  No departments defined in the academic structure.
+                </p>
+              ) : (
+                <div className="space-y-4 max-h-56 overflow-y-auto pr-1">
+                  {departments.map((dept: any) => {
+                    const deptDegrees = degrees.filter(
+                      (deg: any) => deg.department_id === dept.department_id,
+                    );
+
+                    return (
+                      <div key={dept.department_id} className="space-y-2 pb-2">
+                        <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/40 pb-1 mb-2">
+                          {dept.department_name} ({dept.department_code})
+                        </div>
+                        {deptDegrees.length === 0 ? (
+                          <p className="text-xs text-muted-foreground/60 italic pl-2 pb-2">
+                            No degree programs defined.
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {deptDegrees.map((deg: any) => {
+                              const isChecked = selectedDegrees.some(
+                                (sd) => sd.degreeId === deg.degree_id,
+                              );
+                              const currentStatus =
+                                selectedDegrees.find((sd) => sd.degreeId === deg.degree_id)
+                                  ?.status || 'COMPULSORY';
+
+                              return (
+                                <div
+                                  key={deg.degree_id}
+                                  className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-2xl border transition-all duration-300 gap-3 ${
+                                    isChecked
+                                      ? 'bg-primary/5 border-primary/45 shadow-sm shadow-primary/5'
+                                      : 'bg-secondary/10 border-border/40 hover:border-border/60 hover:bg-secondary/15'
+                                  }`}
+                                >
+                                  <label className="flex items-center gap-3 cursor-pointer text-sm font-semibold text-foreground select-none flex-1 min-w-0">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) =>
+                                        handleDegreeCheckboxChange(deg.degree_id, e.target.checked)
+                                      }
+                                      className="h-5 w-5 rounded-lg border-border/80 text-primary focus:ring-primary/60 bg-secondary/30 transition-transform active:scale-95"
+                                    />
+                                    <span className="truncate pr-2">
+                                      {deg.degree_name} ({deg.degree_code})
+                                    </span>
+                                  </label>
+                                  {isChecked && (
+                                    <div className="flex bg-secondary/50 p-1 rounded-xl border border-border/60 w-full sm:w-auto shrink-0 transition-all">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleDegreeStatusChange(deg.degree_id, 'COMPULSORY')
+                                        }
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
+                                          currentStatus === 'COMPULSORY'
+                                            ? 'bg-card text-foreground shadow-sm border border-border/40 font-extrabold'
+                                            : 'text-muted-foreground hover:text-foreground border border-transparent'
+                                        }`}
+                                      >
+                                        Compulsory
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleDegreeStatusChange(deg.degree_id, 'OPTIONAL')
+                                        }
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
+                                          currentStatus === 'OPTIONAL'
+                                            ? 'bg-card text-foreground shadow-sm border border-border/40 font-extrabold'
+                                            : 'text-muted-foreground hover:text-foreground border border-transparent'
+                                        }`}
+                                      >
+                                        Optional
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>

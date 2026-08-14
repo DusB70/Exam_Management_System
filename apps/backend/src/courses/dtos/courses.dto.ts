@@ -7,7 +7,24 @@ import {
   Max,
   Min,
   Matches,
+  IsArray,
+  ValidateNested,
+  IsEnum,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export enum DegreeCourseStatus {
+  COMPULSORY = 'COMPULSORY',
+  OPTIONAL = 'OPTIONAL',
+}
+
+export class CourseDegreeDto {
+  @IsInt()
+  degreeId!: number;
+
+  @IsEnum(DegreeCourseStatus)
+  status!: DegreeCourseStatus;
+}
 
 export class CreateCourseDto {
   @IsString()
@@ -24,7 +41,12 @@ export class CreateCourseDto {
   creditValue!: number;
 
   @IsInt()
-  degreeId!: number;
+  departmentId!: number;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CourseDegreeDto)
+  degrees!: CourseDegreeDto[];
 
   @IsInt()
   @IsOptional()
@@ -59,7 +81,13 @@ export class UpdateCourseDto {
 
   @IsInt()
   @IsOptional()
-  degreeId?: number;
+  departmentId?: number;
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CourseDegreeDto)
+  degrees?: CourseDegreeDto[];
 
   @IsInt()
   @IsOptional()

@@ -16,6 +16,8 @@ import {
   ArrowRight,
   Mail,
   Lock,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 const DEVELOPMENT_USERS = [
@@ -68,6 +70,7 @@ const DEVELOPMENT_USERS = [
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [signingInRole, setSigningInRole] = useState<string | null>(null);
@@ -178,14 +181,26 @@ export default function LoginPage() {
                 </label>
                 <div className="relative">
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+                    className="w-full pl-10 pr-10 py-3 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
                     required
                   />
                   <Lock className="absolute left-3.5 top-3.5 h-4.5 w-4.5 text-muted-foreground/60" />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-3.5 text-muted-foreground/60 hover:text-foreground transition cursor-pointer"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4.5 w-4.5" />
+                    ) : (
+                      <Eye className="h-4.5 w-4.5" />
+                    )}
+                  </button>
                 </div>
               </div>
 

@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Body,
   Param,
   ParseIntPipe,
@@ -58,6 +60,134 @@ export class MarksController {
       success: true,
       message: 'Course registered students retrieved successfully',
       data: students,
+    };
+  }
+
+  @Get('courses/:courseId/grid')
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async getCourseGridData(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const data = await this.marksService.getCourseGridData(courseId, executorUserId, isLecturer);
+    return {
+      success: true,
+      message: 'Course grading grid data retrieved successfully',
+      data,
+    };
+  }
+
+  @Post('courses/:courseId/config')
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async updateCourseConfig(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Body() config: any,
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const course = await this.marksService.updateCourseConfig(
+      courseId,
+      config,
+      executorUserId,
+      isLecturer,
+    );
+    return {
+      success: true,
+      message: 'Course configuration updated successfully',
+      data: course,
+    };
+  }
+
+  @Post('courses/:courseId/exams')
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async createCourseExam(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Body() body: { exam_type: string; exam_title: string; total_marks: number },
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const exam = await this.marksService.createCourseExam(
+      courseId,
+      body,
+      executorUserId,
+      isLecturer,
+    );
+    return {
+      success: true,
+      message: 'Course assessment added successfully',
+      data: exam,
+    };
+  }
+
+  @Patch('courses/:courseId/exams/:examId')
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async updateCourseExam(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Param('examId', ParseIntPipe) examId: number,
+    @Body() body: { exam_title?: string; total_marks?: number },
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const exam = await this.marksService.updateCourseExam(
+      courseId,
+      examId,
+      body,
+      executorUserId,
+      isLecturer,
+    );
+    return {
+      success: true,
+      message: 'Course assessment updated successfully',
+      data: exam,
+    };
+  }
+
+  @Delete('courses/:courseId/exams/:examId')
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async deleteCourseExam(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Param('examId', ParseIntPipe) examId: number,
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    await this.marksService.deleteCourseExam(courseId, examId, executorUserId, isLecturer);
+    return {
+      success: true,
+      message: 'Course assessment deleted successfully',
+    };
+  }
+
+  @Post('courses/:courseId/submit-grid')
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async submitCourseGrid(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Body()
+    body: {
+      marks: { studentId: number; examMarks: { [examId: string]: number } }[];
+      submissionType?: 'PROVISIONAL' | 'FINAL' | 'UPDATED' | null;
+    },
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const result = await this.marksService.submitCourseGrid(
+      courseId,
+      body,
+      executorUserId,
+      isLecturer,
+    );
+    return {
+      success: true,
+      message: body.submissionType
+        ? `Course evaluation marks submitted as ${body.submissionType} successfully`
+        : 'Course evaluation marks saved as draft successfully',
+      data: result,
     };
   }
 

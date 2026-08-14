@@ -168,10 +168,14 @@ export class ReportsService {
         const availableCoursesCount = await this.prisma.course.count({
           where: {
             semester: batchSemester,
-            degree: {
-              students: {
-                some: {
-                  academic_year: batch,
+            degrees: {
+              some: {
+                degree: {
+                  students: {
+                    some: {
+                      academic_year: batch,
+                    },
+                  },
                 },
               },
             },

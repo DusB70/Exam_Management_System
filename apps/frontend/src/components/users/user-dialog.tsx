@@ -15,7 +15,16 @@ const BaseUserFormSchema = z.object({
   fullName: z.string().min(1, 'Full name is required'),
   nameWithInitials: z.string().min(1, 'Name with initials is required'),
   nicNo: z.string().min(1, 'NIC number is required'),
-  dateOfBirth: z.string().min(1, 'Birthday is required'),
+  dateOfBirth: z
+    .string()
+    .min(1, 'Birthday is required')
+    .refine((val) => {
+      if (!val) return false;
+      const birthDate = new Date(val);
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      return birthDate <= today;
+    }, 'Birthday cannot be in the future'),
   phoneNumber: z.string().min(1, 'Contact number is required'),
   address: z.string().min(1, 'Address is required'),
   password: z.string().optional(),
@@ -468,6 +477,7 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
                   </label>
                   <input
                     type="date"
+                    max={new Date().toISOString().split('T')[0]}
                     {...register('dateOfBirth')}
                     className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
                   />
@@ -586,7 +596,7 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
                     )}
                   </div>
 
-                  {selectedDegreeId && Number(selectedDegreeId) > 0 && (
+                  {Number(selectedDegreeId) > 0 && (
                     <div className="md:col-span-2">
                       <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
                         Degree Specialization (Optional)

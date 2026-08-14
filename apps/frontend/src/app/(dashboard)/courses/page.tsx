@@ -221,7 +221,7 @@ export default function CoursesManagementPage() {
         </div>
         {isAdminOrStaff && (
           <div className="flex flex-wrap gap-3">
-            {activeTab === 'courses' ? (
+            {activeTab === 'courses' && (
               <button
                 onClick={handleCreateCourse}
                 className="inline-flex items-center gap-2 px-5 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition shadow-lg shadow-primary/20 text-sm"
@@ -229,7 +229,8 @@ export default function CoursesManagementPage() {
                 <Plus className="h-4.5 w-4.5" />
                 Add Course
               </button>
-            ) : (
+            )}
+            {activeTab === 'periods' && (
               <button
                 onClick={() => setPeriodDialogOpen(true)}
                 className="inline-flex items-center gap-2 px-5 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition shadow-lg shadow-primary/20 text-sm"
@@ -423,9 +424,26 @@ export default function CoursesManagementPage() {
                           Sem {course.semester}
                         </td>
                         <td className="px-6 py-4.5 text-xs font-semibold text-muted-foreground">
-                          {course.degree?.degree_code}
-                          {course.specialization &&
-                            ` - ${course.specialization.specialization_code}`}
+                          {course.degrees && course.degrees.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {course.degrees.map((cd: any) => (
+                                <span
+                                  key={cd.degree_id}
+                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                                    cd.status === 'COMPULSORY'
+                                      ? 'bg-primary/10 text-primary border-primary/20'
+                                      : 'bg-secondary text-secondary-foreground border-border/80'
+                                  }`}
+                                  title={cd.degree?.degree_name}
+                                >
+                                  {cd.degree?.degree_code} ({cd.status === 'COMPULSORY' ? 'C' : 'O'}
+                                  )
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground italic">No degree assigned</span>
+                          )}
                         </td>
                         {isAdminOrStaff && (
                           <td className="px-6 py-4.5 text-right space-x-1.5 whitespace-nowrap">

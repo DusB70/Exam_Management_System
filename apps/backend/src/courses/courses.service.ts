@@ -38,7 +38,11 @@ export class CoursesService {
     }
 
     if (degreeId) {
-      where.degree_id = degreeId;
+      where.degrees = {
+        some: {
+          degree_id: degreeId,
+        },
+      };
     }
 
     if (specializationId) {
@@ -56,7 +60,11 @@ export class CoursesService {
         take: limit,
         include: {
           department: true,
-          degree: true,
+          degrees: {
+            include: {
+              degree: true,
+            },
+          },
           specialization: true,
           lecturers: {
             include: {
@@ -91,7 +99,11 @@ export class CoursesService {
       where: { course_id: id },
       include: {
         department: true,
-        degree: true,
+        degrees: {
+          include: {
+            degree: true,
+          },
+        },
         specialization: true,
         lecturers: {
           include: {
@@ -117,7 +129,8 @@ export class CoursesService {
       courseCode,
       courseName,
       creditValue,
-      degreeId,
+      departmentId,
+      degrees,
       specializationId,
       semester,
       lecturerId,
@@ -131,12 +144,12 @@ export class CoursesService {
       throw new BadRequestException(`Course code ${courseCode} is already in use`);
     }
 
-    // Look up target Degree to obtain its department_id
-    const degreeObj = await this.prisma.degree.findUnique({
-      where: { degree_id: degreeId },
+    // Verify department exists
+    const deptObj = await this.prisma.department.findUnique({
+      where: { department_id: departmentId },
     });
-    if (!degreeObj) {
-      throw new NotFoundException(`Degree with ID ${degreeId} not found`);
+    if (!deptObj) {
+      throw new NotFoundException(`Department with ID ${departmentId} not found`);
     }
 
     const course = await this.prisma.$transaction(async (tx) => {
@@ -145,10 +158,15 @@ export class CoursesService {
           course_code: courseCode,
           course_name: courseName,
           credit_value: new Prisma.Decimal(creditValue),
-          department_id: degreeObj.department_id,
-          degree_id: degreeId,
+          department_id: departmentId,
           specialization_id: specializationId || null,
           semester,
+          degrees: {
+            create: degrees.map((d: any) => ({
+              degree_id: d.degreeId,
+              status: d.status,
+            })),
+          },
         },
       });
 
@@ -189,7 +207,8 @@ export class CoursesService {
       courseCode,
       courseName,
       creditValue,
-      degreeId,
+      departmentId,
+      degrees,
       specializationId,
       semester,
       lecturerId,
@@ -210,15 +229,8 @@ export class CoursesService {
     if (creditValue !== undefined) updateData.credit_value = new Prisma.Decimal(creditValue);
     if (semester) updateData.semester = semester;
 
-    if (degreeId) {
-      const degreeObj = await this.prisma.degree.findUnique({
-        where: { degree_id: degreeId },
-      });
-      if (!degreeObj) {
-        throw new NotFoundException(`Degree with ID ${degreeId} not found`);
-      }
-      updateData.degree = { connect: { degree_id: degreeId } };
-      updateData.department = { connect: { department_id: degreeObj.department_id } };
+    if (departmentId) {
+      updateData.department = { connect: { department_id: departmentId } };
     }
 
     if (specializationId !== undefined) {
@@ -234,6 +246,23 @@ export class CoursesService {
         where: { course_id: id },
         data: updateData,
       });
+
+      if (degrees !== undefined) {
+        // Clear previous degree assignments for this course
+        await tx.courseDegree.deleteMany({
+          where: { course_id: id },
+        });
+
+        if (degrees.length > 0) {
+          await tx.courseDegree.createMany({
+            data: degrees.map((d: any) => ({
+              course_id: id,
+              degree_id: d.degreeId,
+              status: d.status,
+            })),
+          });
+        }
+      }
 
       if (lecturerId !== undefined) {
         // Clear previous lecturer assignments for this course

@@ -16,6 +16,7 @@ import { ReportsModule } from './reports/reports.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ExamsModule } from './exams/exams.module';
 import { SystemModule } from './system/system.module';
+import { RequestsModule } from './requests/requests.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { SystemModule } from './system/system.module';
     NotificationsModule,
     ExamsModule,
     SystemModule,
+    RequestsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
