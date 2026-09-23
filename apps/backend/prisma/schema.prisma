@@ -64,6 +64,10 @@ model Student {
   degree_id           Int
   specialization_id   Int?
   academic_year       Int
+  batch               String?              @db.VarChar(50)
+  status              String               @default("ACTIVE") @db.VarChar(20)
+  enrollment_date     DateTime?            @db.Timestamp(6)
+  graduation_date     DateTime?            @db.Timestamp(6)
   registrations       CourseRegistration[]
   exam_marks          ExamMark[]
   course_grades       StudentCourseGrade[]
@@ -87,6 +91,8 @@ model Lecturer {
   is_head         Boolean          @default(false)
   is_dean         Boolean          @default(false)
   courses         CourseLecturer[]
+  first_marker_courses Course[]      @relation("FirstMarkerLecturer")
+  second_marker_courses Course[]     @relation("SecondMarkerLecturer")
   department      Department       @relation(fields: [department_id], references: [department_id])
   user            User             @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
 
@@ -94,14 +100,16 @@ model Lecturer {
 }
 
 model Degree {
-  degree_id       Int              @id @default(autoincrement())
-  degree_name     String           @unique @db.VarChar(150)
-  degree_code     String           @unique @db.VarChar(20)
-  department_id   Int
-  department      Department       @relation(fields: [department_id], references: [department_id], onDelete: Cascade)
-  students        Student[]
-  specializations Specialization[]
-  courses         CourseDegree[]
+  degree_id              Int                   @id @default(autoincrement())
+  degree_name            String                @unique @db.VarChar(150)
+  degree_code            String                @unique @db.VarChar(20)
+  department_id          Int
+  total_credits_required Float                 @default(0)
+  department             Department            @relation(fields: [department_id], references: [department_id], onDelete: Cascade)
+  students               Student[]
+  specializations        Specialization[]
+  courses                CourseDegree[]
+  semester_limits        DegreeSemesterLimit[]
 
   @@map("degrees")
 }
@@ -138,9 +146,21 @@ model Course {
   exams             Exam[]
   course_grades     StudentCourseGrade[]
   marks_config             Json?
-  result_submission_status String?              @db.VarChar(20)
+  result_submission_status String?              @db.VarChar(50)
   rejection_reason         String?              @db.Text
   ca_published             Boolean              @default(false)
+  first_marker_type        String?              @default("INTERNAL") @db.VarChar(20)
+  first_marker_lecturer_id Int?
+  first_marker_name        String?              @db.VarChar(150)
+  first_marker_email       String?              @db.VarChar(150)
+  second_marker_type       String?              @db.VarChar(20)
+  second_marker_lecturer_id Int?
+  second_marker_name       String?              @db.VarChar(150)
+  second_marker_email      String?              @db.VarChar(150)
+  first_marker_lecturer    Lecturer?            @relation("FirstMarkerLecturer", fields: [first_marker_lecturer_id], references: [lecturer_id], onDelete: SetNull, onUpdate: NoAction)
+  second_marker_lecturer   Lecturer?            @relation("SecondMarkerLecturer", fields: [second_marker_lecturer_id], references: [lecturer_id], onDelete: SetNull, onUpdate: NoAction)
+  timetables               ExamTimetable[]
+  publishing_progress      CoursePublishingProgress?
 
   @@map("courses")
 }
@@ -149,6 +169,7 @@ model CourseRegistration {
   registration_id   Int       @id @default(autoincrement())
   student_id        Int
   course_id         Int
+  attempt_type      String    @default("PROPER") @db.VarChar(20)
   registration_date DateTime? @default(now()) @db.Timestamp(6)
   course            Course    @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
   student           Student   @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
@@ -218,7 +239,9 @@ model CourseLecturer {
 model RegistrationPeriod {
   period_id     Int      @id @default(autoincrement())
   academic_year Int
+  batch         String?  @db.VarChar(50)
   semester      String   @db.VarChar(10)
+  window_type   String   @default("SEMESTER_REGISTRATION") @db.VarChar(50)
   start_date    DateTime @db.Timestamp(6)
   end_date      DateTime @db.Timestamp(6)
   status        String   @default("CLOSED") @db.VarChar(20)
@@ -366,3 +389,56 @@ model CourseDegree {
   @@id([course_id, degree_id])
   @@map("course_degrees")
 }
+
+model DegreeSemesterLimit {
+  limit_id      Int      @id @default(autoincrement())
+  degree_id     Int
+  academic_year Int
+  semester      String   @db.VarChar(10)
+  max_credits   Float
+  degree        Degree   @relation(fields: [degree_id], references: [degree_id], onDelete: Cascade)
+
+  @@unique([degree_id, academic_year, semester])
+  @@map("degree_semester_limits")
+}
+
+model ExamTimetable {
+  timetable_id Int       @id @default(autoincrement())
+  batch        String    @db.VarChar(50)
+  course_id    Int
+  exam_name    String?   @db.VarChar(150)
+  exam_date    DateTime  @db.Date
+  start_time   String    @db.VarChar(20)
+  end_time     String    @db.VarChar(20)
+  venue        String?   @db.VarChar(100)
+  is_published Boolean   @default(false)
+  is_dirty     Boolean   @default(false)
+  published_at DateTime? @db.Timestamp(6)
+  created_at   DateTime? @default(now()) @db.Timestamp(6)
+  updated_at   DateTime? @updatedAt @db.Timestamp(6)
+  course       Course    @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+
+  @@map("exam_timetables")
+}
+
+model CoursePublishingProgress {
+  progress_id              Int       @id @default(autoincrement())
+  course_id                Int       @unique
+  batch                    String?   @db.VarChar(50)
+  exam_held                String    @default("PENDING") @db.VarChar(20)
+  first_marking_collected  Boolean   @default(false)
+  first_marking_submitted  Boolean   @default(false)
+  first_marking_returned   Boolean   @default(false)
+  second_marking_collected Boolean   @default(false)
+  second_marking_submitted Boolean   @default(false)
+  second_marking_returned  Boolean   @default(false)
+  final_submitted          Boolean   @default(false)
+  head_approved            Boolean   @default(false)
+  exam_board               Boolean   @default(false)
+  results_published        Boolean   @default(false)
+  updated_at               DateTime? @updatedAt @db.Timestamp(6)
+  course                   Course    @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+
+  @@map("course_publishing_progress")
+}
+

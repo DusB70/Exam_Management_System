@@ -228,4 +228,136 @@ export class NotificationsService {
       this.logger.error(`Failed to send registration opened notifications: ${msg}`);
     }
   }
+
+  /**
+   * Notifies the 1st Marker when an exam is held and papers are ready for collection at the AR office.
+   */
+  async sendFirstMarkerExamHeldNotification(
+    markerEmail: string,
+    markerName: string,
+    courseCode: string,
+    courseName: string,
+  ): Promise<void> {
+    const subject = `Exam Held: Paper Packet Ready for Collection - ${courseCode}`;
+    const htmlContent = `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fff;padding:24px;border-radius:12px;border:1px solid #e2e8f0;">
+        <h2 style="color:#0f172a;margin-top:0;">Examination Conducted Notice</h2>
+        <p>Dear <strong>${markerName}</strong>,</p>
+        <p>The examination for <strong>${courseCode} — ${courseName}</strong> has been conducted.</p>
+        <div style="background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e2e8f0;margin:16px 0;">
+          <p style="margin:0;color:#334155;font-weight:600;">Paper Packet Action Required:</p>
+          <p style="margin:6px 0 0;color:#64748b;font-size:14px;">Please visit the Assistant Registrar (AR) Office to collect the examination paper packet and begin the 1st marking evaluation.</p>
+        </div>
+        <p style="color:#64748b;font-size:12px;margin-top:24px;">Metropolitan University of Technology — Examinations Division</p>
+      </div>
+    `.trim();
+
+    if (!this.client) {
+      this.logger.log(`[SIMULATED EMAIL] First Marker Exam Held -> ${markerEmail} (${courseCode})`);
+      return;
+    }
+
+    try {
+      await this.client.transactionalEmails.sendTransacEmail({
+        subject,
+        htmlContent,
+        sender: { name: this.senderName, email: this.senderEmail },
+        to: [{ email: markerEmail, name: markerName }],
+      });
+      this.logger.log(`First marker exam held email sent to ${markerEmail}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to send exam held email to ${markerEmail}: ${msg}`);
+    }
+  }
+
+  /**
+   * Notifies the 2nd Marker when the 1st marker returns papers to AR office, providing a Magic Link for evaluation.
+   */
+  async sendSecondMarkerMagicLinkNotification(
+    markerEmail: string,
+    markerName: string,
+    courseCode: string,
+    courseName: string,
+    magicLinkUrl: string,
+  ): Promise<void> {
+    const subject = `2nd Marking Paper Packet Ready & Access Link - ${courseCode}`;
+    const htmlContent = `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fff;padding:24px;border-radius:12px;border:1px solid #e2e8f0;">
+        <h2 style="color:#0f172a;margin-top:0;">2nd Marking Evaluation Request</h2>
+        <p>Dear <strong>${markerName}</strong>,</p>
+        <p>The paper packet for <strong>${courseCode} — ${courseName}</strong> has been returned to the Assistant Registrar (AR) Office by the 1st Marker and is ready for collection.</p>
+        <div style="background:#f0fdf4;padding:16px;border-radius:8px;border:1px solid #bbf7d0;margin:16px 0;">
+          <p style="margin:0;color:#166534;font-weight:700;">Action Required:</p>
+          <p style="margin:6px 0 12px;color:#15803d;font-size:14px;">1. Collect the paper packet from the AR Office.<br/>2. Use your secure Magic Link below to view 1st marker marks, download nominal student lists, and submit your 2nd marking results.</p>
+          <a href="${magicLinkUrl}" style="display:inline-block;background:#16a34a;color:#ffffff;font-weight:bold;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;">Access 2nd Marking Portal</a>
+        </div>
+        <p style="color:#64748b;font-size:12px;margin-top:24px;">Metropolitan University of Technology — Examinations Division</p>
+      </div>
+    `.trim();
+
+    if (!this.client) {
+      this.logger.log(
+        `[SIMULATED EMAIL] 2nd Marker Magic Link -> ${markerEmail} | URL: ${magicLinkUrl}`,
+      );
+      return;
+    }
+
+    try {
+      await this.client.transactionalEmails.sendTransacEmail({
+        subject,
+        htmlContent,
+        sender: { name: this.senderName, email: this.senderEmail },
+        to: [{ email: markerEmail, name: markerName }],
+      });
+      this.logger.log(`2nd marker magic link email sent to ${markerEmail}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to send 2nd marker magic link email to ${markerEmail}: ${msg}`);
+    }
+  }
+
+  /**
+   * Notifies the 1st Marker when 2nd marking is submitted so they can review side-by-side marks and finalize for HOD.
+   */
+  async sendFirstMarkerSecondMarkingDoneNotification(
+    markerEmail: string,
+    markerName: string,
+    courseCode: string,
+    courseName: string,
+  ): Promise<void> {
+    const subject = `2nd Marking Completed: Review & Finalize Results - ${courseCode}`;
+    const htmlContent = `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fff;padding:24px;border-radius:12px;border:1px solid #e2e8f0;">
+        <h2 style="color:#0f172a;margin-top:0;">2nd Marking Evaluation Completed</h2>
+        <p>Dear <strong>${markerName}</strong>,</p>
+        <p>The Second Marker has completed and submitted the 2nd marking evaluation for <strong>${courseCode} — ${courseName}</strong>.</p>
+        <div style="background:#eff6ff;padding:16px;border-radius:8px;border:1px solid #bfdbfe;margin:16px 0;">
+          <p style="margin:0;color:#1e40af;font-weight:700;">Final Review Action:</p>
+          <p style="margin:6px 0 0;color:#1d4ed8;font-size:14px;">Please log into the staff portal to review side-by-side marks, resolve any discrepancies, and submit the final evaluation to the Head of Department (HOD).</p>
+        </div>
+        <p style="color:#64748b;font-size:12px;margin-top:24px;">Metropolitan University of Technology — Examinations Division</p>
+      </div>
+    `.trim();
+
+    if (!this.client) {
+      this.logger.log(
+        `[SIMULATED EMAIL] First Marker 2nd Marking Complete -> ${markerEmail} (${courseCode})`,
+      );
+      return;
+    }
+
+    try {
+      await this.client.transactionalEmails.sendTransacEmail({
+        subject,
+        htmlContent,
+        sender: { name: this.senderName, email: this.senderEmail },
+        to: [{ email: markerEmail, name: markerName }],
+      });
+      this.logger.log(`First marker 2nd marking complete email sent to ${markerEmail}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to send 2nd marking complete email to ${markerEmail}: ${msg}`);
+    }
+  }
 }

@@ -11,8 +11,17 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { CoursesService } from './courses.service';
-import { CreateCourseDto, UpdateCourseDto, AssignLecturerDto } from './dtos/courses.dto';
-import { CreatePeriodDto, UpdatePeriodStatusDto } from './dtos/registration-periods.dto';
+import {
+  CreateCourseDto,
+  UpdateCourseDto,
+  AssignLecturerDto,
+  AssignMarkersDto,
+} from './dtos/courses.dto';
+import {
+  CreatePeriodDto,
+  UpdatePeriodStatusDto,
+  UpdatePeriodEndDateDto,
+} from './dtos/registration-periods.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { UserRole } from '@ems/shared';
@@ -94,6 +103,32 @@ export class CoursesController {
     return {
       success: true,
       message: `Registration period status updated to ${dto.status}`,
+      data: period,
+    };
+  }
+
+  @Patch('periods/:id/end-date')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async updatePeriodEndDate(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdatePeriodEndDateDto,
+    @GetUser('id') executorId: number,
+  ) {
+    const period = await this.coursesService.updatePeriodEndDate(id, dto.endDate, executorId);
+    return {
+      success: true,
+      message: 'Registration period end date updated successfully',
+      data: period,
+    };
+  }
+
+  @Delete('periods/:id')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async deletePeriod(@Param('id', ParseIntPipe) id: number, @GetUser('id') executorId: number) {
+    const period = await this.coursesService.deletePeriod(id, executorId);
+    return {
+      success: true,
+      message: 'Registration period deleted successfully',
       data: period,
     };
   }
@@ -182,6 +217,21 @@ export class CoursesController {
     return {
       success: true,
       message: 'Lecturer removed from course successfully',
+    };
+  }
+
+  @Put(':id/markers')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async assignCourseMarkers(
+    @Param('id', ParseIntPipe) courseId: number,
+    @Body() dto: AssignMarkersDto,
+    @GetUser('id') executorId: number,
+  ) {
+    const course = await this.coursesService.assignCourseMarkers(courseId, dto, executorId);
+    return {
+      success: true,
+      message: 'Course markers assigned successfully',
+      data: course,
     };
   }
 }

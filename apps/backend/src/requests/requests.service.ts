@@ -75,6 +75,61 @@ export class RequestsService {
       throw new BadRequestException('At least one missed course entry is required.');
     }
 
+    const now = new Date();
+
+    // Enforce 14-day medical submission rule
+    for (const sub of subjects) {
+      const code = (sub.course_code || sub.code || '').trim();
+      const dateVal = sub.date;
+
+      let examDate: Date | null = null;
+      if (dateVal) {
+        if (dateVal instanceof Date) {
+          examDate = dateVal;
+        } else {
+          const parts = String(dateVal).split(/[-/.]/);
+          if (parts.length === 3) {
+            if (parts[0].length === 4) {
+              examDate = new Date(
+                Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])),
+              );
+            } else {
+              examDate = new Date(
+                Date.UTC(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0])),
+              );
+            }
+          } else {
+            examDate = new Date(dateVal);
+          }
+        }
+      }
+
+      // Check DB for timetable entry matching course code
+      if (code) {
+        const timetable = await this.prisma.examTimetable.findFirst({
+          where: {
+            course: {
+              course_code: { equals: code, mode: 'insensitive' },
+            },
+          },
+          orderBy: { exam_date: 'desc' },
+        });
+        if (timetable && timetable.exam_date) {
+          examDate = timetable.exam_date;
+        }
+      }
+
+      if (examDate && !isNaN(examDate.getTime())) {
+        const diffMs = now.getTime() - examDate.getTime();
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (diffDays > 14) {
+          throw new BadRequestException(
+            `Medical submission deadline has expired for course '${code || 'selected course'}'. Medicals must be submitted within 14 days of the examination date (${diffDays} days elapsed).`,
+          );
+        }
+      }
+    }
+
     const medicalCertUrl = await this.saveFile(medicalCertFile);
     let requestLetterUrl = null;
     if (requestLetterFile) {

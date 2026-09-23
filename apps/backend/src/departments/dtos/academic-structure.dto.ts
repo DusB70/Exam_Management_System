@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, IsNumber } from 'class-validator';
 
 export class CreateDepartmentDto {
   @IsString()
@@ -29,6 +29,10 @@ export class CreateDegreeDto {
 
   @IsInt()
   departmentId!: number;
+
+  @IsNumber()
+  @IsOptional()
+  totalCreditsRequired?: number;
 }
 
 export class CreateSpecializationDto {
@@ -48,4 +52,16 @@ export class CreateSpecializationDto {
   @IsInt()
   @IsOptional()
   departmentId?: number;
+}
+
+export class CreateSemesterLimitDto {
+  @IsInt()
+  academicYear!: number;
+
+  @IsString()
+  @IsNotEmpty()
+  semester!: string;
+
+  @IsNumber()
+  maxCredits!: number;
 }

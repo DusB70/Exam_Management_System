@@ -1,4 +1,14 @@
-import { IsInt, IsString, IsNotEmpty, IsPositive, IsDateString, IsOptional } from 'class-validator';
+import {
+  IsInt,
+  IsString,
+  IsNotEmpty,
+  IsPositive,
+  IsDateString,
+  IsOptional,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateExamDto {
   @IsInt()
@@ -91,4 +101,63 @@ export class ScheduleExamDto {
   @IsPositive()
   @IsNotEmpty()
   hallId!: number;
+}
+
+export class TimetableItemDto {
+  @IsInt()
+  @IsNotEmpty()
+  courseId!: number;
+
+  @IsString()
+  @IsOptional()
+  examName?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  examDate!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  startTime!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  endTime!: string;
+
+  @IsString()
+  @IsOptional()
+  venue?: string;
+}
+
+export class SaveBatchTimetableDto {
+  @IsString()
+  @IsOptional()
+  batch?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TimetableItemDto)
+  @IsOptional()
+  items?: TimetableItemDto[];
+}
+
+export class UpdateProgressDto {
+  @IsString()
+  @IsOptional()
+  examHeld?: string; // PENDING, HELD, POSTPONED
+
+  @IsOptional()
+  firstMarkingCollected?: boolean;
+
+  @IsOptional()
+  firstMarkingReturned?: boolean;
+
+  @IsOptional()
+  secondMarkingCollected?: boolean;
+
+  @IsOptional()
+  secondMarkingReturned?: boolean;
+
+  @IsOptional()
+  examBoard?: boolean;
 }

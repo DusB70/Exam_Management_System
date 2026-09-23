@@ -14,7 +14,7 @@ import { AuditService } from '../audit/audit.service';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { UserRole } from '@ems/shared';
-import { CreateDegreeDto } from './dtos/academic-structure.dto';
+import { CreateDegreeDto, CreateSemesterLimitDto } from './dtos/academic-structure.dto';
 
 @Controller('degrees')
 @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
@@ -30,13 +30,40 @@ export class DegreesController {
       include: {
         department: true,
         specializations: true,
+        courses: {
+          include: {
+            course: true,
+          },
+        },
       },
       orderBy: { degree_name: 'asc' },
     });
+
+    const mapped = degrees.map((deg) => {
+      const compulsoryCredits = deg.courses
+        .filter((cd) => cd.status === 'COMPULSORY')
+        .reduce((sum, cd) => sum + Number(cd.course.credit_value), 0);
+
+      const totalCreditsRequired = Number(deg.total_credits_required || 0);
+      const optionalCreditsRequired = Math.max(0, totalCreditsRequired - compulsoryCredits);
+
+      return {
+        degree_id: deg.degree_id,
+        degree_name: deg.degree_name,
+        degree_code: deg.degree_code,
+        department_id: deg.department_id,
+        total_credits_required: deg.total_credits_required,
+        department: deg.department,
+        specializations: deg.specializations,
+        compulsory_credits: compulsoryCredits,
+        optional_credits_required: optionalCreditsRequired,
+      };
+    });
+
     return {
       success: true,
       message: 'Degrees retrieved successfully',
-      data: degrees,
+      data: mapped,
     };
   }
 
@@ -66,6 +93,7 @@ export class DegreesController {
         degree_name: dto.degreeName,
         degree_code: dto.degreeCode.toUpperCase(),
         department_id: dto.departmentId,
+        total_credits_required: dto.totalCreditsRequired || 0,
       },
     });
 
@@ -122,6 +150,8 @@ export class DegreesController {
         degree_name: dto.degreeName,
         degree_code: dto.degreeCode.toUpperCase(),
         department_id: dto.departmentId,
+        total_credits_required:
+          dto.totalCreditsRequired !== undefined ? dto.totalCreditsRequired : undefined,
       },
     });
 
@@ -174,6 +204,98 @@ export class DegreesController {
       success: true,
       message: 'Degree deleted successfully',
       data: degree,
+    };
+  }
+
+  @Get(':id/limits')
+  async getSemesterLimits(@Param('id', ParseIntPipe) id: number) {
+    const limits = await this.prisma.degreeSemesterLimit.findMany({
+      where: { degree_id: id },
+      orderBy: [{ academic_year: 'asc' }, { semester: 'asc' }],
+    });
+    return {
+      success: true,
+      message: 'Semester limits retrieved successfully',
+      data: limits,
+    };
+  }
+
+  @Post(':id/limits')
+  async setSemesterLimit(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateSemesterLimitDto,
+    @GetUser('id') executorId: number,
+  ) {
+    const degree = await this.prisma.degree.findUnique({ where: { degree_id: id } });
+    if (!degree) {
+      throw new BadRequestException('Degree not found.');
+    }
+
+    const limit = await this.prisma.degreeSemesterLimit.upsert({
+      where: {
+        degree_id_academic_year_semester: {
+          degree_id: id,
+          academic_year: dto.academicYear,
+          semester: dto.semester,
+        },
+      },
+      update: {
+        max_credits: dto.maxCredits,
+      },
+      create: {
+        degree_id: id,
+        academic_year: dto.academicYear,
+        semester: dto.semester,
+        max_credits: dto.maxCredits,
+      },
+    });
+
+    await this.auditService.logAction(
+      executorId,
+      'DEGREE_SEMESTER_LIMIT_SET',
+      'degree_semester_limits',
+      limit.limit_id.toString(),
+      null,
+      limit,
+    );
+
+    return {
+      success: true,
+      message: 'Semester limit configured successfully',
+      data: limit,
+    };
+  }
+
+  @Delete(':id/limits/:limitId')
+  async deleteSemesterLimit(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('limitId', ParseIntPipe) limitId: number,
+    @GetUser('id') executorId: number,
+  ) {
+    const limit = await this.prisma.degreeSemesterLimit.findFirst({
+      where: { limit_id: limitId, degree_id: id },
+    });
+    if (!limit) {
+      throw new BadRequestException('Semester limit not found for this degree.');
+    }
+
+    await this.prisma.degreeSemesterLimit.delete({
+      where: { limit_id: limitId },
+    });
+
+    await this.auditService.logAction(
+      executorId,
+      'DEGREE_SEMESTER_LIMIT_DELETE',
+      'degree_semester_limits',
+      limitId.toString(),
+      limit,
+      null,
+    );
+
+    return {
+      success: true,
+      message: 'Semester limit deleted successfully',
+      data: limit,
     };
   }
 }

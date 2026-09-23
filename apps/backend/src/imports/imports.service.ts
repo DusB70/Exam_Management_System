@@ -225,9 +225,13 @@ export class ImportsService {
     });
     const isLocked =
       course?.result_submission_status &&
-      !['DRAFT', 'REJECTED_BY_HEAD', 'REJECTED_BY_STAFF', 'PUBLISHED_PROVISIONAL'].includes(
-        course.result_submission_status,
-      );
+      ![
+        'DRAFT',
+        'REJECTED_BY_HEAD',
+        'REJECTED_BY_STAFF',
+        'PUBLISHED_PROVISIONAL',
+        'PROVISIONAL',
+      ].includes(course.result_submission_status);
 
     if (isLocked) {
       throw new BadRequestException(

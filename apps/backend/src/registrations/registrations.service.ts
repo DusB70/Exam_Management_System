@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { CourseRegistration, RegistrationPeriod } from '@prisma/client';
+import { CourseRegistration } from '@prisma/client';
 import { RegisterCoursesDto } from './dtos/registrations.dto';
 
 @Injectable()
@@ -22,11 +22,11 @@ export class RegistrationsService {
     return student;
   }
 
-  async getActivePeriodForStudent(userId: number): Promise<RegistrationPeriod | null> {
+  async getActivePeriodForStudent(userId: number): Promise<any> {
     const student = await this.getStudentByUserId(userId);
     const now = new Date();
 
-    return this.prisma.registrationPeriod.findFirst({
+    const period = await this.prisma.registrationPeriod.findFirst({
       where: {
         academic_year: student.academic_year,
         status: 'OPEN',
@@ -34,6 +34,21 @@ export class RegistrationsService {
         end_date: { gte: now },
       },
     });
+
+    if (!period) return null;
+
+    const limitObj = await this.prisma.degreeSemesterLimit.findFirst({
+      where: {
+        degree_id: student.degree_id,
+        academic_year: period.academic_year,
+        semester: period.semester,
+      },
+    });
+
+    return {
+      ...period,
+      max_credits: limitObj ? limitObj.max_credits : 22.0,
+    };
   }
 
   async getEligibleCourses(userId: number) {
@@ -57,6 +72,7 @@ export class RegistrationsService {
       },
       include: {
         department: true,
+        degrees: true,
         lecturers: {
           include: {
             lecturer: {
@@ -81,7 +97,15 @@ export class RegistrationsService {
     const registeredCourseIds = new Set(registrations.map((r) => r.course_id));
 
     // Filter courses that are not yet registered
-    return courses.filter((course) => !registeredCourseIds.has(course.course_id));
+    const filteredCourses = courses.filter((course) => !registeredCourseIds.has(course.course_id));
+
+    return filteredCourses.map((course) => {
+      const courseDegree = course.degrees.find((d) => d.degree_id === student.degree_id);
+      return {
+        ...course,
+        is_compulsory: courseDegree ? courseDegree.status === 'COMPULSORY' : false,
+      };
+    });
   }
 
   async getMyRegistrations(userId: number) {
@@ -184,9 +208,10 @@ export class RegistrationsService {
     );
 
     const totalCredits = existingCredits + newCredits;
-    if (totalCredits > 22.0) {
+    const maxCreditsAllowed = period.max_credits ?? 22.0;
+    if (totalCredits > maxCreditsAllowed) {
       throw new BadRequestException(
-        `Registration limits exceeded. Maximum credit load per semester is 22.0. Selected: ${totalCredits.toFixed(1)}`,
+        `Registration limits exceeded. Maximum credit load per semester is ${maxCreditsAllowed.toFixed(1)}. Selected: ${totalCredits.toFixed(1)}`,
       );
     }
 
@@ -213,6 +238,8 @@ export class RegistrationsService {
           data: {
             student_id: student.student_id,
             course_id: course.course_id,
+            attempt_type:
+              period.window_type === 'MEDICAL_REPEAT_REGISTRATION' ? 'REPEAT' : 'PROPER',
           },
         });
 

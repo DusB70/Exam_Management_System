@@ -18,8 +18,6 @@ import {
   Info,
 } from 'lucide-react';
 
-const MAX_CREDITS = 22.0;
-
 export default function CourseRegistrationPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
@@ -90,6 +88,9 @@ export default function CourseRegistrationPage() {
     },
   });
 
+  // Dynamic credits limit from active period
+  const maxCredits = activePeriod?.max_credits ?? 22.0;
+
   // Calculate credits
   const currentRegisteredCredits = myRegistrations.reduce(
     (sum: number, reg: any) => sum + parseFloat(reg.course.credit_value),
@@ -106,7 +107,16 @@ export default function CourseRegistrationPage() {
   );
 
   const totalCreditsCalculated = currentRegisteredCredits + selectedCredits;
-  const isCreditOverlimit = totalCreditsCalculated > MAX_CREDITS;
+  const isCreditOverlimit = totalCreditsCalculated > maxCredits;
+
+  React.useEffect(() => {
+    if (eligibleCourses && eligibleCourses.length > 0) {
+      const compulsoryIds = eligibleCourses
+        .filter((c: any) => c.is_compulsory)
+        .map((c: any) => c.course_id);
+      setSelectedCourseIds(compulsoryIds);
+    }
+  }, [eligibleCourses]);
 
   const handleToggleCourse = (courseId: number) => {
     setSelectedCourseIds((prev) =>
@@ -217,19 +227,19 @@ export default function CourseRegistrationPage() {
             <div className="flex justify-between text-xs font-bold text-muted-foreground mb-2">
               <span>WORKLOAD BUDGET</span>
               <span className={isCreditOverlimit ? 'text-destructive' : 'text-primary'}>
-                {totalCreditsCalculated.toFixed(1)} / {MAX_CREDITS.toFixed(1)} Credits
+                {totalCreditsCalculated.toFixed(1)} / {maxCredits.toFixed(1)} Credits
               </span>
             </div>
             <div className="h-2.5 w-full bg-secondary/40 rounded-full overflow-hidden">
               <div
-                style={{ width: `${Math.min((totalCreditsCalculated / MAX_CREDITS) * 100, 100)}%` }}
+                style={{ width: `${Math.min((totalCreditsCalculated / maxCredits) * 100, 100)}%` }}
                 className={`h-full transition-all duration-300 rounded-full ${
                   isCreditOverlimit ? 'bg-destructive' : 'bg-primary'
                 }`}
               />
             </div>
             <p className="text-[10px] text-muted-foreground/80 mt-2 font-medium">
-              Maximum allowable registration budget is 22.0 credits per semester.
+              Maximum allowable registration budget is {maxCredits.toFixed(1)} credits per semester.
             </p>
           </div>
         </div>
@@ -281,9 +291,20 @@ export default function CourseRegistrationPage() {
                   >
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md uppercase">
-                          {course.course_code}
-                        </span>
+                        <div className="flex gap-1.5 items-center">
+                          <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md uppercase">
+                            {course.course_code}
+                          </span>
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                              course.is_compulsory
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                : 'bg-secondary text-muted-foreground border-border/40'
+                            }`}
+                          >
+                            {course.is_compulsory ? 'Compulsory' : 'Optional'}
+                          </span>
+                        </div>
                         <span className="text-xs font-mono text-muted-foreground font-semibold">
                           {parseFloat(course.credit_value)} Credits
                         </span>

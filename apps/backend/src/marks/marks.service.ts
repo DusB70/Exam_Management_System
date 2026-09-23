@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { ExamMark, Prisma } from '@prisma/client';
 import { BulkRecordMarksDto } from './dtos/marks.dto';
 import * as XLSX from 'xlsx';
@@ -15,6 +16,7 @@ export class MarksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // Resolve Lecturer from user ID
@@ -657,6 +659,13 @@ export class MarksService {
 
     const courseGrades = await this.prisma.studentCourseGrade.findMany({
       where: { course_id: courseId },
+      include: {
+        student: {
+          include: {
+            user: true,
+          },
+        },
+      },
     });
 
     return {
@@ -664,7 +673,7 @@ export class MarksService {
       students,
       exams,
       marks,
-      courseGrades,
+      grades: courseGrades,
     };
   }
 
@@ -879,6 +888,12 @@ export class MarksService {
           result_submission_status: dbStatus,
           rejection_reason: null,
         },
+      });
+
+      await this.prisma.coursePublishingProgress.upsert({
+        where: { course_id: courseId },
+        update: { first_marking_submitted: true, final_submitted: true },
+        create: { course_id: courseId, first_marking_submitted: true, final_submitted: true },
       });
 
       await this.compileCourseGradesForSubmission(courseId, data.submissionType);
@@ -1151,6 +1166,12 @@ export class MarksService {
       throw new BadRequestException('Course is not in a submittable state for approval.');
     }
 
+    await this.prisma.coursePublishingProgress.upsert({
+      where: { course_id: courseId },
+      update: { head_approved: true },
+      create: { course_id: courseId, head_approved: true },
+    });
+
     return { success: true };
   }
 
@@ -1373,6 +1394,139 @@ export class MarksService {
       }),
     ]);
 
+    await this.prisma.coursePublishingProgress.upsert({
+      where: { course_id: courseId },
+      update: { results_published: true },
+      create: { course_id: courseId, results_published: true },
+    });
+
     return { success: true };
+  }
+
+  // =========================================================================
+  // SECOND MARKING MAGIC LINK & EVALUATION
+  // =========================================================================
+
+  async verifySecondMarkingToken(token: string) {
+    if (!token) {
+      throw new BadRequestException('Magic token is required.');
+    }
+
+    try {
+      const jsonStr = Buffer.from(token, 'base64url').toString('utf-8');
+      const payload = JSON.parse(jsonStr);
+
+      if (!payload.courseId || !payload.exp) {
+        throw new BadRequestException('Invalid magic token payload.');
+      }
+
+      if (Date.now() > payload.exp) {
+        throw new BadRequestException('Magic token has expired.');
+      }
+
+      const course = await this.prisma.course.findUnique({
+        where: { course_id: payload.courseId },
+        include: {
+          department: true,
+          first_marker_lecturer: { include: { user: true } },
+          second_marker_lecturer: { include: { user: true } },
+          publishing_progress: true,
+        },
+      });
+
+      if (!course) {
+        throw new NotFoundException('Course referenced in token not found.');
+      }
+
+      const students = await this.getStudentsRegisteredForCourse(course.course_id);
+      const grid = await this.getCourseGridData(course.course_id, 0, false);
+
+      return {
+        course,
+        students,
+        grid,
+        tokenEmail: payload.email,
+      };
+    } catch {
+      throw new BadRequestException('Invalid or corrupted magic token.');
+    }
+  }
+
+  async submitSecondMarking(
+    courseId: number,
+    dto: { marks: { studentId: number; examMarks: { [examId: string]: number } }[] },
+  ) {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+      include: {
+        first_marker_lecturer: { include: { user: true } },
+        second_marker_lecturer: { include: { user: true } },
+      },
+    });
+
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    // Save 2nd marking entries
+    await this.prisma.$transaction(async (tx) => {
+      for (const entry of dto.marks) {
+        for (const [examIdStr, score] of Object.entries(entry.examMarks)) {
+          const examId = parseInt(examIdStr);
+          if (isNaN(examId)) continue;
+
+          await tx.examMark.upsert({
+            where: {
+              student_id_exam_id: {
+                student_id: entry.studentId,
+                exam_id: examId,
+              },
+            },
+            update: {
+              marks_obtained: score,
+            },
+            create: {
+              student_id: entry.studentId,
+              exam_id: examId,
+              marks_obtained: score,
+              recorded_by_id: course.second_marker_lecturer?.user_id || 1,
+              grading_status: 'PENDING',
+            },
+          });
+        }
+      }
+    });
+
+    // Mark 2nd marking as submitted in publishing progress
+    await this.prisma.coursePublishingProgress.upsert({
+      where: { course_id: courseId },
+      update: { second_marking_submitted: true },
+      create: { course_id: courseId, second_marking_submitted: true },
+    });
+
+    // Trigger notification email to First Marker
+    const firstMarkerEmail =
+      course.first_marker_type === 'EXTERNAL'
+        ? course.first_marker_email
+        : course.first_marker_lecturer?.user?.email;
+    const firstMarkerName =
+      course.first_marker_type === 'EXTERNAL'
+        ? course.first_marker_name || 'First Marker'
+        : course.first_marker_lecturer?.user?.full_name || 'First Marker';
+
+    if (firstMarkerEmail) {
+      await this.notificationsService.sendFirstMarkerSecondMarkingDoneNotification(
+        firstMarkerEmail,
+        firstMarkerName,
+        course.course_code,
+        course.course_name,
+      );
+    }
+
+    return {
+      success: true,
+      message:
+        'Second marking submitted successfully. Notification sent to 1st Marker for final review.',
+    };
   }
 }

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
-import { Plus, Edit2, Trash2, Search } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Clock } from 'lucide-react';
 
 export default function AcademicStructurePage() {
   const queryClient = useQueryClient();
@@ -28,8 +28,21 @@ export default function AcademicStructurePage() {
     code: '',
     departmentId: 0,
     degreeId: 0,
+    totalCreditsRequired: 0,
   });
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Semester Limits Modal State
+  const [limitsModalOpen, setLimitsModalOpen] = useState(false);
+  const [limitDegree, setLimitDegree] = useState<any>(null);
+  const [limitsList, setLimitsList] = useState<any[]>([]);
+  const [limitsLoading, setLimitsLoading] = useState(false);
+  const [limitError, setLimitError] = useState<string | null>(null);
+
+  // Limit Form Fields
+  const [limitYear, setLimitYear] = useState<number>(2026);
+  const [limitSemester, setLimitSemester] = useState<string>('Semester 1');
+  const [limitCredits, setLimitCredits] = useState<number>(22);
 
   // Queries
   const { data: departments = [], isLoading: loadingDepts } = useQuery({
@@ -122,6 +135,7 @@ export default function AcademicStructurePage() {
       code: '',
       departmentId: departments[0]?.department_id || 0,
       degreeId: degrees[0]?.degree_id || 0,
+      totalCreditsRequired: 0,
     });
     setSelectedItem(null);
     setModalOpen(true);
@@ -139,6 +153,7 @@ export default function AcademicStructurePage() {
         code: item.department_code,
         departmentId: 0,
         degreeId: 0,
+        totalCreditsRequired: 0,
       });
     } else if (target === 'degree') {
       setFormData({
@@ -146,6 +161,7 @@ export default function AcademicStructurePage() {
         code: item.degree_code,
         departmentId: item.department_id,
         degreeId: 0,
+        totalCreditsRequired: item.total_credits_required || 0,
       });
     } else if (target === 'specialization') {
       setFormData({
@@ -153,6 +169,7 @@ export default function AcademicStructurePage() {
         code: item.specialization_code,
         departmentId: 0,
         degreeId: item.degree_id,
+        totalCreditsRequired: 0,
       });
     }
     setModalOpen(true);
@@ -161,6 +178,57 @@ export default function AcademicStructurePage() {
   const handleDelete = (target: 'department' | 'degree' | 'specialization', id: number) => {
     if (confirm(`Are you sure you want to delete this ${target}? This cannot be undone.`)) {
       deleteMutation.mutate({ target, id });
+    }
+  };
+
+  const handleOpenLimits = async (degree: any) => {
+    setLimitDegree(degree);
+    setLimitError(null);
+    setLimitsLoading(true);
+    setLimitsModalOpen(true);
+    setLimitYear(new Date().getFullYear());
+    setLimitSemester('Semester 1');
+    setLimitCredits(22);
+
+    try {
+      const res = await apiClient.get(`/degrees/${degree.degree_id}/limits`);
+      setLimitsList(res.data?.data || []);
+    } catch (err: any) {
+      setLimitError(err.response?.data?.message || 'Failed to fetch semester limits');
+    } finally {
+      setLimitsLoading(false);
+    }
+  };
+
+  const handleAddLimit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLimitError(null);
+    if (!limitDegree) return;
+
+    try {
+      await apiClient.post(`/degrees/${limitDegree.degree_id}/limits`, {
+        academicYear: Number(limitYear),
+        semester: limitSemester,
+        maxCredits: Number(limitCredits),
+      });
+      const updatedListRes = await apiClient.get(`/degrees/${limitDegree.degree_id}/limits`);
+      setLimitsList(updatedListRes.data?.data || []);
+    } catch (err: any) {
+      setLimitError(err.response?.data?.message || 'Failed to configure semester limit');
+    }
+  };
+
+  const handleDeleteLimit = async (limitId: number) => {
+    if (!confirm('Are you sure you want to delete this credit limit?')) return;
+    setLimitError(null);
+    if (!limitDegree) return;
+
+    try {
+      await apiClient.delete(`/degrees/${limitDegree.degree_id}/limits/${limitId}`);
+      const updatedListRes = await apiClient.get(`/degrees/${limitDegree.degree_id}/limits`);
+      setLimitsList(updatedListRes.data?.data || []);
+    } catch (err: any) {
+      setLimitError(err.response?.data?.message || 'Failed to delete semester limit');
     }
   };
 
@@ -176,6 +244,7 @@ export default function AcademicStructurePage() {
         degreeName: formData.name,
         degreeCode: formData.code,
         departmentId: Number(formData.departmentId),
+        totalCreditsRequired: Number(formData.totalCreditsRequired),
       };
     } else if (modalTarget === 'specialization') {
       payload = {
@@ -380,6 +449,13 @@ export default function AcademicStructurePage() {
                     </span>
                     <div className="flex gap-2">
                       <button
+                        onClick={() => handleOpenLimits(deg)}
+                        className="p-1.5 bg-secondary hover:bg-secondary/80 rounded-lg transition"
+                        title="Configure Semester Limits"
+                      >
+                        <Clock className="h-3.5 w-3.5 text-foreground" />
+                      </button>
+                      <button
                         onClick={() => handleOpenEdit('degree', deg)}
                         className="p-1.5 bg-secondary hover:bg-secondary/80 rounded-lg transition"
                       >
@@ -405,6 +481,24 @@ export default function AcademicStructurePage() {
                       Specializations:{' '}
                       <strong className="text-foreground">
                         {deg.specializations?.length || 0}
+                      </strong>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1.5 leading-none">
+                      Total Credits Required:{' '}
+                      <strong className="text-foreground">
+                        {parseFloat(deg.total_credits_required || 0).toFixed(1)} Credits
+                      </strong>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1.5 leading-none">
+                      Compulsory Credits:{' '}
+                      <strong className="text-foreground">
+                        {parseFloat(deg.compulsory_credits || 0).toFixed(1)} Credits
+                      </strong>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1.5 leading-none">
+                      Min Optional Credits Required:{' '}
+                      <strong className="text-foreground">
+                        {parseFloat(deg.optional_credits_required || 0).toFixed(1)} Credits
                       </strong>
                     </p>
                   </div>
@@ -528,28 +622,48 @@ export default function AcademicStructurePage() {
 
               {/* Conditional selectors */}
               {modalTarget === 'degree' && (
-                <div>
-                  <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                    Parent Department
-                  </label>
-                  <select
-                    value={formData.departmentId}
-                    onChange={(e) =>
-                      setFormData({ ...formData, departmentId: Number(e.target.value) })
-                    }
-                    className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
-                  >
-                    {departments.map((dept: any) => (
-                      <option
-                        key={dept.department_id}
-                        value={dept.department_id}
-                        className="bg-card"
-                      >
-                        {dept.department_name} ({dept.department_code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+                      Parent Department
+                    </label>
+                    <select
+                      value={formData.departmentId}
+                      onChange={(e) =>
+                        setFormData({ ...formData, departmentId: Number(e.target.value) })
+                      }
+                      className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+                    >
+                      {departments.map((dept: any) => (
+                        <option
+                          key={dept.department_id}
+                          value={dept.department_id}
+                          className="bg-card"
+                        >
+                          {dept.department_name} ({dept.department_code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+                      Total Credits Required to Complete Degree
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      step={0.5}
+                      placeholder="e.g. 120.0"
+                      value={formData.totalCreditsRequired || ''}
+                      onChange={(e) =>
+                        setFormData({ ...formData, totalCreditsRequired: Number(e.target.value) })
+                      }
+                      className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+                    />
+                  </div>
+                </>
               )}
 
               {modalTarget === 'specialization' && (
@@ -591,6 +705,150 @@ export default function AcademicStructurePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Semester limits Modal */}
+      {limitsModalOpen && limitDegree && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-card border border-border/80 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-6 py-4 border-b border-border/60 flex items-center justify-between bg-secondary/5">
+              <div>
+                <h3 className="font-bold text-lg">Semester Workload Limits</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Configure dynamic credit limits for {limitDegree.degree_name} (
+                  {limitDegree.degree_code})
+                </p>
+              </div>
+              <button
+                onClick={() => setLimitsModalOpen(false)}
+                className="p-1 hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-6">
+              {limitError && (
+                <div className="p-3.5 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl font-medium">
+                  {limitError}
+                </div>
+              )}
+
+              {/* Add New Limit Form */}
+              <form onSubmit={handleAddLimit} className="p-4 bg-secondary/15 rounded-2xl space-y-4">
+                <h4 className="text-xs font-bold text-foreground">Configure Limit</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-muted-foreground mb-1">
+                      Academic Year
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      value={limitYear}
+                      onChange={(e) => setLimitYear(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary transition text-xs text-foreground"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-muted-foreground mb-1">
+                      Semester
+                    </label>
+                    <select
+                      value={limitSemester}
+                      onChange={(e) => setLimitSemester(e.target.value)}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary transition text-xs text-foreground"
+                    >
+                      <option value="Semester 1">Semester 1</option>
+                      <option value="Semester 2">Semester 2</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-muted-foreground mb-1">
+                      Max Credits
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      step={0.5}
+                      value={limitCredits}
+                      onChange={(e) => setLimitCredits(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary transition text-xs text-foreground"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  className="w-full py-2 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/95 transition text-xs shadow-md shadow-primary/10"
+                >
+                  Save / Update Limit
+                </button>
+              </form>
+
+              {/* Current Limits List */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-foreground">Current Configured Limits</h4>
+                {limitsLoading ? (
+                  <div className="text-center py-4 text-xs text-muted-foreground">
+                    Loading limits...
+                  </div>
+                ) : limitsList.length === 0 ? (
+                  <div className="text-center py-4 text-xs text-muted-foreground border border-dashed border-border/80 rounded-xl">
+                    No limits configured yet. (Fallback default of 22.0 credits applies)
+                  </div>
+                ) : (
+                  <div className="border border-border/60 rounded-xl overflow-hidden shadow-inner bg-card">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-border/60 bg-secondary/15 text-muted-foreground font-bold">
+                          <th className="px-4 py-2">Year</th>
+                          <th className="px-4 py-2">Semester</th>
+                          <th className="px-4 py-2">Max Credits</th>
+                          <th className="px-4 py-2 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/40 font-medium">
+                        {limitsList.map((limit) => (
+                          <tr
+                            key={limit.limit_id}
+                            className="hover:bg-secondary/10 transition-colors"
+                          >
+                            <td className="px-4 py-2 text-foreground font-bold">
+                              {limit.academic_year}
+                            </td>
+                            <td className="px-4 py-2 text-muted-foreground">{limit.semester}</td>
+                            <td className="px-4 py-2 text-foreground font-bold">
+                              {limit.max_credits.toFixed(1)} Credits
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLimit(limit.limit_id)}
+                                className="p-1 hover:bg-destructive/10 hover:text-destructive rounded transition text-muted-foreground"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-border/60 bg-secondary/5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setLimitsModalOpen(false)}
+                className="px-4 py-2 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs"
+              >
+                Close Window
+              </button>
+            </div>
           </div>
         </div>
       )}

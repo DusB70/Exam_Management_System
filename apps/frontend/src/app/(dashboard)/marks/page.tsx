@@ -66,6 +66,8 @@ export default function MarksRegistryPage() {
   // Notifications
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isUploadingExcel, setIsUploadingExcel] = useState<boolean>(false);
+  void isUploadingExcel;
 
   // Staff Upgraded View States
   const [activeTab, setActiveTab] = useState<'review' | 'received' | 'approved' | 'combined'>(
@@ -133,6 +135,77 @@ export default function MarksRegistryPage() {
 
       // 2. Populate config
       const courseConfig = gridData.course?.marks_config || {};
+      const savedWeights = courseConfig.weights || {};
+
+      // Pre-calculate default weights summing to 100%
+      const defaultWeights: { [examId: number]: number } = {};
+      const caExams = (gridData.exams || []).filter((e: any) => e.exam_type.toUpperCase() === 'CA');
+      const finalExams = (gridData.exams || []).filter(
+        (e: any) => e.exam_type.toUpperCase() === 'FINAL',
+      );
+
+      if (caExams.length > 0 && finalExams.length > 0) {
+        let caSum = 0;
+        caExams.forEach((e: any, i: number) => {
+          if (i === caExams.length - 1) {
+            defaultWeights[e.exam_id] = parseFloat((40 - caSum).toFixed(1));
+          } else {
+            const w = parseFloat((40 / caExams.length).toFixed(1));
+            defaultWeights[e.exam_id] = w;
+            caSum += w;
+          }
+        });
+
+        let finalSum = 0;
+        finalExams.forEach((e: any, i: number) => {
+          if (i === finalExams.length - 1) {
+            defaultWeights[e.exam_id] = parseFloat((60 - finalSum).toFixed(1));
+          } else {
+            const w = parseFloat((60 / finalExams.length).toFixed(1));
+            defaultWeights[e.exam_id] = w;
+            finalSum += w;
+          }
+        });
+      } else if (caExams.length > 0) {
+        let caSum = 0;
+        caExams.forEach((e: any, i: number) => {
+          if (i === caExams.length - 1) {
+            defaultWeights[e.exam_id] = parseFloat((100 - caSum).toFixed(1));
+          } else {
+            const w = parseFloat((100 / caExams.length).toFixed(1));
+            defaultWeights[e.exam_id] = w;
+            caSum += w;
+          }
+        });
+      } else if (finalExams.length > 0) {
+        let finalSum = 0;
+        finalExams.forEach((e: any, i: number) => {
+          if (i === finalExams.length - 1) {
+            defaultWeights[e.exam_id] = parseFloat((100 - finalSum).toFixed(1));
+          } else {
+            const w = parseFloat((100 / finalExams.length).toFixed(1));
+            defaultWeights[e.exam_id] = w;
+            finalSum += w;
+          }
+        });
+      }
+
+      // Merge saved weights with defaults
+      const weights: { [examId: number]: number } = {};
+      const hasSavedWeights = Object.keys(savedWeights).length > 0;
+
+      (gridData.exams || []).forEach((exam: any) => {
+        const savedVal = savedWeights[exam.exam_id];
+        if (savedVal !== undefined && savedVal !== null) {
+          weights[exam.exam_id] = parseFloat(savedVal as string);
+        } else if (!hasSavedWeights) {
+          weights[exam.exam_id] = defaultWeights[exam.exam_id] || 0;
+        } else {
+          // If custom weights exist but this new assessment doesn't, start at 0%
+          weights[exam.exam_id] = 0;
+        }
+      });
+
       const defaultRanges = [
         { grade: 'A', min: 85.0 },
         { grade: 'A-', min: 80.0 },
@@ -146,7 +219,7 @@ export default function MarksRegistryPage() {
         { grade: 'F', min: 0.0 },
       ];
       setCustomConfig({
-        weights: courseConfig.weights || {},
+        weights,
         cutoffs: courseConfig.cutoffs || { ca: 40, final: 35 },
         grade_ranges: courseConfig.grade_ranges || defaultRanges,
       });
@@ -725,11 +798,12 @@ export default function MarksRegistryPage() {
                         ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                         : gridData.course?.result_submission_status?.startsWith('SUBMITTED')
                           ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
-                          : gridData.course?.result_submission_status === 'PUBLISHED_PROVISIONAL'
+                          : gridData.course?.result_submission_status === 'PUBLISHED_PROVISIONAL' ||
+                              gridData.course?.result_submission_status === 'PROVISIONAL'
                             ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                             : gridData.course?.result_submission_status?.startsWith('REJECTED')
                               ? 'bg-destructive/10 text-destructive border border-destructive/20'
-                              : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                     }`}
                   >
                     {gridData.course?.result_submission_status || 'DRAFT (UNSUBMITTED)'}
@@ -752,6 +826,7 @@ export default function MarksRegistryPage() {
                           'REJECTED_BY_HEAD',
                           'REJECTED_BY_STAFF',
                           'PUBLISHED_PROVISIONAL',
+                          'PROVISIONAL',
                         ].includes(gridData.course.result_submission_status))
                     }
                     className="px-4 py-2 bg-secondary text-secondary-foreground font-bold rounded-xl hover:bg-secondary/90 transition text-xs flex items-center gap-1.5 border border-border/60 disabled:opacity-40 cursor-pointer"
@@ -770,6 +845,7 @@ export default function MarksRegistryPage() {
                           'REJECTED_BY_HEAD',
                           'REJECTED_BY_STAFF',
                           'PUBLISHED_PROVISIONAL',
+                          'PROVISIONAL',
                         ].includes(gridData.course.result_submission_status))
                     }
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition text-xs flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
@@ -788,6 +864,7 @@ export default function MarksRegistryPage() {
                           'REJECTED_BY_HEAD',
                           'REJECTED_BY_STAFF',
                           'PUBLISHED_PROVISIONAL',
+                          'PROVISIONAL',
                         ].includes(gridData.course.result_submission_status))
                     }
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition text-xs flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
@@ -808,6 +885,7 @@ export default function MarksRegistryPage() {
                             'REJECTED_BY_HEAD',
                             'REJECTED_BY_STAFF',
                             'PUBLISHED_PROVISIONAL',
+                            'PROVISIONAL',
                           ].includes(gridData.course.result_submission_status))
                       }
                       className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
@@ -1092,7 +1170,7 @@ export default function MarksRegistryPage() {
 
                       <div>
                         <label className="block text-[10px] text-muted-foreground uppercase font-bold mb-1">
-                          Total Marks
+                          Total Marks for Final Grade
                         </label>
                         <input
                           type="number"
@@ -1276,6 +1354,7 @@ export default function MarksRegistryPage() {
                               'REJECTED_BY_HEAD',
                               'REJECTED_BY_STAFF',
                               'PUBLISHED_PROVISIONAL',
+                              'PROVISIONAL',
                             ].includes(status);
 
                           return (

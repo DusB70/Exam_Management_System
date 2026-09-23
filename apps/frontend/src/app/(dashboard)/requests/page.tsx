@@ -322,6 +322,22 @@ export default function RequestsPortalPage() {
     if (!medExamName) return alert('Please enter the examination name.');
     if (!medCertFile) return alert('Please upload the medical certificate.');
 
+    const now = new Date();
+    for (const sub of medSubjects) {
+      if (sub.date) {
+        const examDate = new Date(sub.date);
+        if (!isNaN(examDate.getTime())) {
+          const diffMs = now.getTime() - examDate.getTime();
+          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+          if (diffDays > 14) {
+            return alert(
+              `Medical submission deadline has expired for course '${sub.course_code || 'selected course'}'. Medicals must be submitted within 14 days of the examination date (${diffDays} days elapsed).`,
+            );
+          }
+        }
+      }
+    }
+
     const formData = new FormData();
     formData.append('exam_name', medExamName);
     formData.append('subjects', JSON.stringify(medSubjects));

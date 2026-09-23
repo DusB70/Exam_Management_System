@@ -17,6 +17,7 @@ import { MarksPdfService } from './marks.pdf.service';
 import { BulkRecordMarksDto } from './dtos/marks.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { UserRole } from '@ems/shared';
 
 @Controller('marks')
@@ -484,6 +485,37 @@ export class MarksController {
       success: true,
       message: 'Course final marksheet approved and published successfully',
       data: result,
+    };
+  }
+
+  // ==========================================
+  // SECOND MARKING MAGIC LINK & SUBMISSION
+  // ==========================================
+
+  @Post('second-marking/verify')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async verifySecondMarkingToken(@Body() body: { token: string }) {
+    const data = await this.marksService.verifySecondMarkingToken(body.token);
+    return {
+      success: true,
+      message: 'Magic link token verified successfully',
+      data,
+    };
+  }
+
+  @Post('second-marking/submit/:courseId')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async submitSecondMarking(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Body() body: { marks: { studentId: number; examMarks: { [examId: string]: number } }[] },
+  ) {
+    const data = await this.marksService.submitSecondMarking(courseId, body);
+    return {
+      success: true,
+      message: data.message,
+      data,
     };
   }
 }

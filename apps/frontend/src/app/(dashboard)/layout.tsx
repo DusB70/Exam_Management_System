@@ -19,6 +19,8 @@ import {
   User as UserIcon,
   Database,
   Activity,
+  ClipboardList,
+  Calendar,
 } from 'lucide-react';
 import { UserRole } from '@ems/shared';
 
@@ -50,8 +52,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return [
           ...common,
           { name: 'User Management', href: '/users', icon: Users },
+          { name: 'Student Directory', href: '/students', icon: GraduationCap },
           { name: 'Academic Structure', href: '/academic-structure', icon: GraduationCap },
           { name: 'Courses & Batches', href: '/courses', icon: BookOpen },
+          { name: 'Exam Console', href: '/exams', icon: ClipboardList },
           { name: 'Marks Registry', href: '/marks', icon: FileSpreadsheet },
           { name: 'Student Requests', href: '/requests', icon: FileSpreadsheet },
           { name: 'System Backup', href: '/backup', icon: Database },
@@ -60,8 +64,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       case UserRole.EXAM_DIVISION_STAFF:
         return [
           ...common,
+          { name: 'Student Directory', href: '/students', icon: Users },
           { name: 'Academic Structure', href: '/academic-structure', icon: GraduationCap },
           { name: 'Courses & Batches', href: '/courses', icon: BookOpen },
+          { name: 'Exam Console', href: '/exams', icon: ClipboardList },
           { name: 'Marks Registry', href: '/marks', icon: FileSpreadsheet },
           { name: 'Student Requests', href: '/requests', icon: FileSpreadsheet },
         ];
@@ -76,6 +82,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return [
           ...common,
           { name: 'Course Registration', href: '/registration', icon: BookOpen },
+          { name: 'Exam Timetable Calendar', href: '/exams', icon: Calendar },
           { name: 'My Academic Results', href: '/results', icon: FileBarChart },
           { name: 'Forms & Requests', href: '/requests', icon: FileSpreadsheet },
           { name: 'My Profile', href: '/profile', icon: UserIcon },

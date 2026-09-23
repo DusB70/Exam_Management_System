@@ -73,14 +73,35 @@ export class CoursesService {
                   user: {
                     select: {
                       full_name: true,
+                      email: true,
                     },
                   },
                 },
               },
             },
           },
+          first_marker_lecturer: {
+            include: {
+              user: {
+                select: {
+                  full_name: true,
+                  email: true,
+                },
+              },
+            },
+          },
+          second_marker_lecturer: {
+            include: {
+              user: {
+                select: {
+                  full_name: true,
+                  email: true,
+                },
+              },
+            },
+          },
         },
-        orderBy: { course_code: 'asc' },
+        orderBy: [{ semester: 'asc' }, { course_code: 'asc' }],
       }),
       this.prisma.course.count({ where }),
     ]);
@@ -428,7 +449,9 @@ export class CoursesService {
     const period = await this.prisma.registrationPeriod.create({
       data: {
         academic_year: academicYear,
+        batch: createPeriodDto.batch || undefined,
         semester,
+        window_type: createPeriodDto.windowType || 'SEMESTER_REGISTRATION',
         start_date: start,
         end_date: end,
         status: status || PeriodStatus.CLOSED,
@@ -512,5 +535,112 @@ export class CoursesService {
     }
 
     return period;
+  }
+
+  async updatePeriodEndDate(
+    periodId: number,
+    endDate: string,
+    executorId: number,
+  ): Promise<RegistrationPeriod> {
+    const existingPeriod = await this.prisma.registrationPeriod.findUnique({
+      where: { period_id: periodId },
+    });
+
+    if (!existingPeriod) {
+      throw new NotFoundException(`Registration period with ID ${periodId} not found`);
+    }
+
+    const newEnd = new Date(endDate);
+    if (newEnd <= existingPeriod.start_date) {
+      throw new BadRequestException('End date must be strictly after the start date');
+    }
+
+    const updated = await this.prisma.registrationPeriod.update({
+      where: { period_id: periodId },
+      data: { end_date: newEnd },
+    });
+
+    await this.auditService.logAction(
+      executorId,
+      'REGISTRATION_PERIOD_UPDATE_ENDDATE',
+      'registration_periods',
+      periodId.toString(),
+      existingPeriod,
+      updated,
+    );
+
+    return updated;
+  }
+
+  async deletePeriod(periodId: number, executorId: number): Promise<RegistrationPeriod> {
+    const existingPeriod = await this.prisma.registrationPeriod.findUnique({
+      where: { period_id: periodId },
+    });
+
+    if (!existingPeriod) {
+      throw new NotFoundException(`Registration period with ID ${periodId} not found`);
+    }
+
+    const deleted = await this.prisma.registrationPeriod.delete({
+      where: { period_id: periodId },
+    });
+
+    await this.auditService.logAction(
+      executorId,
+      'REGISTRATION_PERIOD_DELETE',
+      'registration_periods',
+      periodId.toString(),
+      existingPeriod,
+      null,
+    );
+
+    return deleted;
+  }
+
+  async assignCourseMarkers(courseId: number, dto: any, executorId: number) {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+    });
+
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    const updated = await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        first_marker_type: dto.firstMarkerType || 'INTERNAL',
+        first_marker_lecturer_id: dto.firstMarkerLecturerId || null,
+        first_marker_name: dto.firstMarkerName || null,
+        first_marker_email: dto.firstMarkerEmail || null,
+        second_marker_type: dto.secondMarkerType || null,
+        second_marker_lecturer_id: dto.secondMarkerLecturerId || null,
+        second_marker_name: dto.secondMarkerName || null,
+        second_marker_email: dto.secondMarkerEmail || null,
+      },
+      include: {
+        first_marker_lecturer: {
+          include: {
+            user: { select: { full_name: true, email: true } },
+          },
+        },
+        second_marker_lecturer: {
+          include: {
+            user: { select: { full_name: true, email: true } },
+          },
+        },
+      },
+    });
+
+    await this.auditService.logAction(
+      executorId,
+      'COURSE_ASSIGN_MARKERS',
+      'courses',
+      courseId.toString(),
+      course,
+      updated,
+    );
+
+    return updated;
   }
 }

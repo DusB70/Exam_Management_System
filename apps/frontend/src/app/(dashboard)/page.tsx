@@ -174,6 +174,16 @@ export default function DashboardOverview() {
     enabled: user?.role === UserRole.STUDENT,
   });
 
+  // Fetch student profile details (only for student)
+  const { data: profile } = useQuery({
+    queryKey: ['profile'],
+    queryFn: async () => {
+      const response = await apiClient.get('/profile');
+      return response.data?.data;
+    },
+    enabled: user?.role === UserRole.STUDENT,
+  });
+
   // Group courses by batch and semester
   const groupedCourses: { [batch: string]: { [semester: string]: any[] } } = {};
   lecturerCourses.forEach((course: any) => {
@@ -1004,6 +1014,7 @@ export default function DashboardOverview() {
         (sum: number, reg: any) => sum + parseFloat(reg.course.credit_value),
         0,
       );
+      const maxCredits = activePeriod?.max_credits ?? 22.0;
 
       const studentCards = [
         {
@@ -1022,7 +1033,7 @@ export default function DashboardOverview() {
         {
           title: 'Registered Workload',
           value: `${registeredCredits.toFixed(1)} Credits`,
-          desc: 'Total Workload Load (22.0 Max)',
+          desc: `Total Workload Load (${maxCredits.toFixed(1)} Max)`,
           icon: BookOpen,
           color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
         },
@@ -1074,6 +1085,80 @@ export default function DashboardOverview() {
               </div>
             ))}
           </div>
+
+          {/* Degree Progress & Workload Limits Card */}
+          {profile?.student?.degree && (
+            <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-sm space-y-6 animate-fadeIn">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/40 pb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-foreground">
+                    Degree Credit Requirements Overview
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Curriculum metrics for{' '}
+                    <strong>
+                      {profile.student.degree.degree_name} ({profile.student.degree.degree_code})
+                    </strong>
+                  </p>
+                </div>
+                {activePeriod && (
+                  <span className="px-3 py-1.5 bg-primary/10 text-primary border border-primary/20 rounded-xl text-xs font-bold font-mono">
+                    Semester Limit: {maxCredits.toFixed(1)} Credits Max
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Total Credits Card */}
+                <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                      Degree Total Completion Requirement
+                    </span>
+                    <p className="text-2xl font-extrabold text-foreground mt-2">
+                      {parseFloat(profile.student.degree.total_credits_required || 0).toFixed(1)}{' '}
+                      Credits
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-3">
+                    Total credits required to qualify for graduation.
+                  </p>
+                </div>
+
+                {/* Compulsory Credits Card */}
+                <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                      Compulsory Credits in Curriculum
+                    </span>
+                    <p className="text-2xl font-extrabold text-amber-405 text-amber-500 mt-2">
+                      {parseFloat(profile.student.degree.compulsory_credits || 0).toFixed(1)}{' '}
+                      Credits
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-3">
+                    Credits from core mandatory subjects in the degree syllabus.
+                  </p>
+                </div>
+
+                {/* Optional Credits Card */}
+                <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                      Minimum Optional Credits Required
+                    </span>
+                    <p className="text-2xl font-extrabold text-emerald-405 text-emerald-500 mt-2">
+                      {parseFloat(profile.student.degree.optional_credits_required || 0).toFixed(1)}{' '}
+                      Credits
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-3">
+                    Credits needed from elective optional subjects to fulfill requirements.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Available Modules Section */}
           <div className="bg-card/20 border border-border/60 p-6 rounded-3xl backdrop-blur-sm space-y-6">

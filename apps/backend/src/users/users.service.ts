@@ -181,6 +181,7 @@ export class UsersService {
             degree_id: studentProfile.degreeId,
             specialization_id: studentProfile.specializationId || null,
             academic_year: studentProfile.academicYear,
+            batch: studentProfile.batch || null,
           },
         });
       } else if (roleId === 3) {
@@ -340,6 +341,7 @@ export class UsersService {
             degree_id: studentProfile.degreeId,
             specialization_id: studentProfile.specializationId || null,
             academic_year: studentProfile.academicYear,
+            batch: studentProfile.batch || null,
           },
           update: {
             registration_number: studentProfile.registrationNumber,
@@ -347,6 +349,7 @@ export class UsersService {
             degree_id: studentProfile.degreeId,
             specialization_id: studentProfile.specializationId || null,
             academic_year: studentProfile.academicYear,
+            batch: studentProfile.batch || null,
           },
         });
       } else if (activeRole === 3) {
@@ -526,5 +529,215 @@ export class UsersService {
         },
       },
     });
+  }
+
+  async getStudentsForStaff(
+    page: number = 1,
+    limit: number = 10,
+    search?: string,
+    status?: string,
+    degreeId?: number,
+    academicYear?: number,
+  ) {
+    const where: Prisma.StudentWhereInput = {};
+
+    if (status && status !== 'ALL') {
+      where.status = status;
+    }
+
+    if (degreeId) {
+      where.degree_id = degreeId;
+    }
+
+    if (academicYear) {
+      where.academic_year = academicYear;
+    }
+
+    if (search) {
+      where.OR = [
+        { index_number: { contains: search, mode: 'insensitive' } },
+        { registration_number: { contains: search, mode: 'insensitive' } },
+        { user: { full_name: { contains: search, mode: 'insensitive' } } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.student.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          user: {
+            select: {
+              user_id: true,
+              full_name: true,
+              name_with_initials: true,
+              email: true,
+              phone_number: true,
+              nic_no: true,
+              is_active: true,
+            },
+          },
+          degree: {
+            include: {
+              department: true,
+            },
+          },
+          specialization: true,
+          semester_gpas: {
+            orderBy: { created_at: 'desc' },
+            take: 1,
+          },
+          _count: {
+            select: {
+              registrations: true,
+              course_grades: true,
+              grace_chance_applications: true,
+              recorrection_requests: true,
+              medical_submissions: true,
+            },
+          },
+        },
+        orderBy: { student_id: 'desc' },
+      }),
+      this.prisma.student.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async getStudentFullAcademicRecord(studentId: number) {
+    const student = await this.prisma.student.findUnique({
+      where: { student_id: studentId },
+      include: {
+        user: {
+          select: {
+            user_id: true,
+            full_name: true,
+            name_with_initials: true,
+            email: true,
+            nic_no: true,
+            date_of_birth: true,
+            phone_number: true,
+            address: true,
+            is_active: true,
+            created_at: true,
+          },
+        },
+        degree: {
+          include: {
+            department: true,
+          },
+        },
+        specialization: true,
+      },
+    });
+
+    if (!student) {
+      throw new NotFoundException(`Student with ID ${studentId} not found`);
+    }
+
+    const [
+      registrations,
+      courseGrades,
+      semesterGpas,
+      graceApplications,
+      recorrectionRequests,
+      medicalSubmissions,
+    ] = await Promise.all([
+      this.prisma.courseRegistration.findMany({
+        where: { student_id: studentId },
+        include: {
+          course: {
+            include: {
+              department: true,
+            },
+          },
+        },
+        orderBy: { registration_date: 'asc' },
+      }),
+      this.prisma.studentCourseGrade.findMany({
+        where: { student_id: studentId },
+        include: {
+          course: {
+            include: {
+              department: true,
+            },
+          },
+        },
+        orderBy: { course_id: 'asc' },
+      }),
+      this.prisma.studentSemesterGpa.findMany({
+        where: { student_id: studentId },
+        orderBy: [{ academic_year: 'asc' }, { semester: 'asc' }],
+      }),
+      this.prisma.graceChanceApplication.findMany({
+        where: { student_id: studentId },
+        orderBy: { created_at: 'desc' },
+      }),
+      this.prisma.recorrectionRequest.findMany({
+        where: { student_id: studentId },
+        orderBy: { created_at: 'desc' },
+      }),
+      this.prisma.medicalSubmission.findMany({
+        where: { student_id: studentId },
+        orderBy: { created_at: 'desc' },
+      }),
+    ]);
+
+    return {
+      student,
+      registrations,
+      courseGrades,
+      semesterGpas,
+      graceApplications,
+      recorrectionRequests,
+      medicalSubmissions,
+    };
+  }
+
+  async updateStudentAcademicStatus(
+    studentId: number,
+    status: string,
+    enrollmentDate?: string,
+    graduationDate?: string,
+    executorId?: number,
+  ) {
+    const student = await this.prisma.student.findUnique({
+      where: { student_id: studentId },
+    });
+
+    if (!student) {
+      throw new NotFoundException(`Student with ID ${studentId} not found`);
+    }
+
+    const updated = await this.prisma.student.update({
+      where: { student_id: studentId },
+      data: {
+        status,
+        enrollment_date: enrollmentDate ? new Date(enrollmentDate) : student.enrollment_date,
+        graduation_date: graduationDate ? new Date(graduationDate) : student.graduation_date,
+      },
+    });
+
+    if (executorId) {
+      await this.auditService.logAction(
+        executorId,
+        'STUDENT_STATUS_UPDATE',
+        'students',
+        studentId.toString(),
+        student,
+        updated,
+      );
+    }
+
+    return updated;
   }
 }

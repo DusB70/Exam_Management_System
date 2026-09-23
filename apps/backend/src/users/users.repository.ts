@@ -16,6 +16,11 @@ export class UsersRepository {
             degree: {
               include: {
                 department: true,
+                courses: {
+                  include: {
+                    course: true,
+                  },
+                },
               },
             },
             specialization: true,
@@ -40,6 +45,11 @@ export class UsersRepository {
             degree: {
               include: {
                 department: true,
+                courses: {
+                  include: {
+                    course: true,
+                  },
+                },
               },
             },
             specialization: true,

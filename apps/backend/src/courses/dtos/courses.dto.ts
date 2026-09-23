@@ -109,3 +109,37 @@ export class AssignLecturerDto {
   @IsInt()
   lecturerId!: number;
 }
+
+export class AssignMarkersDto {
+  @IsString()
+  @IsOptional()
+  firstMarkerType?: string;
+
+  @IsInt()
+  @IsOptional()
+  firstMarkerLecturerId?: number;
+
+  @IsString()
+  @IsOptional()
+  firstMarkerName?: string;
+
+  @IsString()
+  @IsOptional()
+  firstMarkerEmail?: string;
+
+  @IsString()
+  @IsOptional()
+  secondMarkerType?: string;
+
+  @IsInt()
+  @IsOptional()
+  secondMarkerLecturerId?: number;
+
+  @IsString()
+  @IsOptional()
+  secondMarkerName?: string;
+
+  @IsString()
+  @IsOptional()
+  secondMarkerEmail?: string;
+}

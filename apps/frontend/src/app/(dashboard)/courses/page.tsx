@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
 import CourseDialog from '../../../components/courses/course-dialog';
 import LecturerAssignmentDialog from '../../../components/courses/lecturer-assignment-dialog';
 import PeriodDialog from '../../../components/courses/period-dialog';
+import MarkerDialog from '../../../components/courses/marker-dialog';
+import UserDialog from '../../../components/users/user-dialog';
 import {
   Search,
   BookOpen,
@@ -14,12 +16,16 @@ import {
   Plus,
   ChevronLeft,
   ChevronRight,
-  GraduationCap,
   Trash2,
-  AlertCircle,
   Play,
   Pause,
   StopCircle,
+  Edit3,
+  UserCheck,
+  User,
+  UserPlus,
+  Check,
+  Users,
 } from 'lucide-react';
 import { UserRole } from '@ems/shared';
 
@@ -30,9 +36,9 @@ const fetchDepartments = async () => {
 };
 
 export default function CoursesManagementPage() {
-  const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'courses' | 'periods' | 'lecturers'>('courses');
+  const [lecturersSubTab, setLecturersSubTab] = useState<'examiners' | 'faculty'>('examiners');
 
   // Filters State for Courses
   const [coursePage, setCoursePage] = useState(1);
@@ -51,6 +57,16 @@ export default function CoursesManagementPage() {
 
   // Period Dialog States
   const [periodDialogOpen, setPeriodDialogOpen] = useState(false);
+  const [editingEndDatePeriodId, setEditingEndDatePeriodId] = useState<number | null>(null);
+  const [editingEndDateValue, setEditingEndDateValue] = useState<string>('');
+
+  // Marker Dialog States
+  const [markerDialogOpen, setMarkerDialogOpen] = useState(false);
+  const [markerCourse, setMarkerCourse] = useState<any>(null);
+
+  // User/Lecturer Dialog State for adding new lecturers
+  const [userDialogOpen, setUserDialogOpen] = useState(false);
+  const [selectedUserForEdit, setSelectedUserForEdit] = useState<any>(null);
 
   const isAdminOrStaff =
     user?.role === UserRole.ADMINISTRATOR || user?.role === UserRole.EXAM_DIVISION_STAFF;
@@ -61,7 +77,7 @@ export default function CoursesManagementPage() {
     queryFn: fetchDepartments,
   });
 
-  // Fetch Lecturers for Assignments Tab
+  // Fetch Lecturers for Assignments & Faculty Tab
   const {
     data: lecturersList = [],
     isLoading: isLecturersLoading,
@@ -75,14 +91,14 @@ export default function CoursesManagementPage() {
     enabled: activeTab === 'lecturers',
   });
 
-  // Fetch Courses Lookup
+  // Fetch Courses Lookup for assigning courses to lecturer
   const { data: coursesLookup = [] } = useQuery({
     queryKey: ['courses-lookup-list'],
     queryFn: async () => {
       const response = await apiClient.get('/reports/courses');
       return response.data?.data || [];
     },
-    enabled: activeTab === 'lecturers',
+    enabled: activeTab === 'lecturers' && lecturersSubTab === 'faculty',
   });
 
   const handleAssignCourseToLecturer = async (courseId: number, lecturerId: number) => {
@@ -116,7 +132,7 @@ export default function CoursesManagementPage() {
     },
   });
 
-  // Fetch Courses with filters
+  // Fetch Courses with filters (ordered by semester)
   const {
     data: courseData,
     isLoading: isCoursesLoading,
@@ -148,39 +164,43 @@ export default function CoursesManagementPage() {
       const response = await apiClient.get('/courses/periods');
       return response.data?.data || [];
     },
-    enabled: activeTab === 'periods',
   });
 
-  // Delete Course Mutation
-  const deleteCourseMutation = useMutation({
-    mutationFn: async (courseId: number) => {
-      await apiClient.delete(`/courses/${courseId}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['courses'] });
-    },
-  });
-
-  // Update Period Status Mutation
-  const updatePeriodStatusMutation = useMutation({
-    mutationFn: async ({ periodId, status }: { periodId: number; status: string }) => {
-      const response = await apiClient.patch(`/courses/periods/${periodId}/status`, { status });
-      return response.data?.data;
-    },
-    onSuccess: (updatedPeriod) => {
-      if (updatedPeriod) {
-        queryClient.setQueryData(['registration-periods'], (oldPeriods: any) => {
-          if (!Array.isArray(oldPeriods)) return [updatedPeriod];
-          return oldPeriods.map((p: any) =>
-            p.period_id === updatedPeriod.period_id ? updatedPeriod : p,
-          );
-        });
-      }
-      queryClient.invalidateQueries({ queryKey: ['registration-periods'] });
+  // Period Actions Handlers
+  const handlePeriodStatusChange = async (periodId: number, status: string) => {
+    try {
+      await apiClient.patch(`/courses/periods/${periodId}/status`, { status });
       refetchPeriods();
-    },
-  });
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to update period status');
+    }
+  };
 
+  const handleDeletePeriod = async (periodId: number) => {
+    if (confirm('Are you sure you want to delete this registration window?')) {
+      try {
+        await apiClient.delete(`/courses/periods/${periodId}`);
+        refetchPeriods();
+      } catch (err: any) {
+        alert(err.response?.data?.message || 'Failed to delete registration window.');
+      }
+    }
+  };
+
+  const handleSaveEndDate = async (periodId: number) => {
+    if (!editingEndDateValue) return;
+    try {
+      await apiClient.patch(`/courses/periods/${periodId}/end-date`, {
+        endDate: new Date(editingEndDateValue).toISOString(),
+      });
+      setEditingEndDatePeriodId(null);
+      refetchPeriods();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to update end date.');
+    }
+  };
+
+  // Course Actions
   const handleCreateCourse = () => {
     setSelectedCourse(null);
     setCourseDialogOpen(true);
@@ -191,113 +211,121 @@ export default function CoursesManagementPage() {
     setCourseDialogOpen(true);
   };
 
-  const handleDeleteCourse = (courseId: number) => {
-    if (confirm('Are you sure you want to delete this course? This action is irreversible.')) {
-      deleteCourseMutation.mutate(courseId);
+  const handleDeleteCourse = async (courseId: number) => {
+    if (confirm('Are you sure you want to delete this course? This action cannot be undone.')) {
+      try {
+        await apiClient.delete(`/courses/${courseId}`);
+        refetchCourses();
+      } catch (err: any) {
+        alert(err.response?.data?.message || 'Failed to delete course');
+      }
     }
   };
 
-  const handleAssignLecturers = (course: any) => {
-    setAssignmentCourse(course);
-    setLecturerAssignmentOpen(true);
-  };
-
-  const handlePeriodStatusChange = (periodId: number, status: string) => {
-    updatePeriodStatusMutation.mutate({ periodId, status });
+  const handleAddNewLecturer = () => {
+    setSelectedUserForEdit({ role_id: 3 }); // Preset to Lecturer role
+    setUserDialogOpen(true);
   };
 
   const courses = courseData?.items || [];
-  const totalCoursePages = courseData?.totalPages || 1;
+  const totalPages = courseData?.totalPages || 1;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fadeIn">
       {/* Title Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Courses & Semesters</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Courses & Curriculum Management</h1>
           <p className="text-muted-foreground mt-1.5 text-sm">
-            Manage course curriculum, instructor assignments, and academic enrollment windows
+            Manage course catalog, registration windows, semester structures, and lecturer/examiner
+            allocations.
           </p>
         </div>
+
         {isAdminOrStaff && (
-          <div className="flex flex-wrap gap-3">
+          <div className="flex items-center gap-3">
             {activeTab === 'courses' && (
               <button
                 onClick={handleCreateCourse}
-                className="inline-flex items-center gap-2 px-5 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition shadow-lg shadow-primary/20 text-sm"
+                className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
               >
-                <Plus className="h-4.5 w-4.5" />
-                Add Course
+                <Plus className="h-4 w-4" /> Add New Course
               </button>
             )}
             {activeTab === 'periods' && (
               <button
                 onClick={() => setPeriodDialogOpen(true)}
-                className="inline-flex items-center gap-2 px-5 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition shadow-lg shadow-primary/20 text-sm"
+                className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
               >
-                <Calendar className="h-4.5 w-4.5" />
-                Open Window
+                <Plus className="h-4 w-4" /> Open Registration Window
+              </button>
+            )}
+            {activeTab === 'lecturers' && (
+              <button
+                onClick={handleAddNewLecturer}
+                className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
+              >
+                <UserPlus className="h-4 w-4" /> Add New Lecturer
               </button>
             )}
           </div>
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-border/60 pb-px mb-6">
+      {/* Tabs Control */}
+      <div className="flex border-b border-border/60">
         <button
           onClick={() => setActiveTab('courses')}
-          className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+          className={`px-6 py-3 font-semibold text-sm border-b-2 transition flex items-center gap-2 cursor-pointer ${
             activeTab === 'courses'
-              ? 'border-primary text-primary font-bold'
+              ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground'
           }`}
         >
-          <BookOpen className="h-4 w-4" />
-          Course Catalog
+          <BookOpen className="h-4 w-4" /> Course Catalog ({courseData?.total || 0})
         </button>
         <button
           onClick={() => setActiveTab('periods')}
-          className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+          className={`px-6 py-3 font-semibold text-sm border-b-2 transition flex items-center gap-2 cursor-pointer ${
             activeTab === 'periods'
-              ? 'border-primary text-primary font-bold'
+              ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground'
           }`}
         >
-          <Calendar className="h-4 w-4" />
-          Registration Windows
+          <Calendar className="h-4 w-4" /> Registration Windows ({periods.length})
         </button>
         {isAdminOrStaff && (
           <button
             onClick={() => setActiveTab('lecturers')}
-            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+            className={`px-6 py-3 font-semibold text-sm border-b-2 transition flex items-center gap-2 cursor-pointer ${
               activeTab === 'lecturers'
-                ? 'border-primary text-primary font-bold'
+                ? 'border-primary text-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            <GraduationCap className="h-4 w-4" />
-            Lecturer Assignments
+            <UserCheck className="h-4 w-4" /> Lecturer & Examiner Allocations
           </button>
         )}
       </div>
 
-      {/* Tabs Content */}
+      {/* ========================================== */}
+      {/* TAB 1: COURSES CATALOG (ORDERED BY SEMESTER) */}
+      {/* ========================================== */}
       {activeTab === 'courses' && (
         <div className="space-y-6">
           {/* Filters Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 bg-card/20 border border-border/60 p-4 rounded-2xl backdrop-blur-md">
-            <div className="relative md:col-span-2">
+          <div className="bg-card/25 border border-border/80 p-5 rounded-2xl backdrop-blur-sm grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="relative">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search by code or title..."
+                placeholder="Search course code or title..."
                 value={courseSearch}
                 onChange={(e) => {
                   setCourseSearch(e.target.value);
                   setCoursePage(1);
                 }}
-                className="w-full pl-10 pr-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+                className="w-full pl-10 pr-4 py-2 bg-secondary/40 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-xs text-foreground"
               />
             </div>
 
@@ -308,30 +336,12 @@ export default function CoursesManagementPage() {
                   setDeptFilter(e.target.value);
                   setCoursePage(1);
                 }}
-                className="w-full px-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+                className="w-full px-4 py-2 bg-secondary/40 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-xs text-foreground"
               >
                 <option value="">All Departments</option>
-                {departments.map((dept: any) => (
-                  <option key={dept.department_id} value={dept.department_id} className="bg-card">
-                    {dept.department_code}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <select
-                value={semesterFilter}
-                onChange={(e) => {
-                  setSemesterFilter(e.target.value);
-                  setCoursePage(1);
-                }}
-                className="w-full px-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
-              >
-                <option value="">All Semesters</option>
-                {['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2'].map((s) => (
-                  <option key={s} value={s} className="bg-card">
-                    Semester {s}
+                {departments.map((d: any) => (
+                  <option key={d.department_id} value={d.department_id} className="bg-card">
+                    {d.department_name}
                   </option>
                 ))}
               </select>
@@ -344,14 +354,35 @@ export default function CoursesManagementPage() {
                   setDegreeFilter(e.target.value);
                   setCoursePage(1);
                 }}
-                className="w-full px-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+                className="w-full px-4 py-2 bg-secondary/40 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-xs text-foreground"
               >
-                <option value="">All Degrees</option>
+                <option value="">All Degree Programs</option>
                 {degrees.map((deg: any) => (
                   <option key={deg.degree_id} value={deg.degree_id} className="bg-card">
-                    {deg.degree_code}
+                    {deg.degree_code} - {deg.degree_name}
                   </option>
                 ))}
+              </select>
+            </div>
+
+            <div>
+              <select
+                value={semesterFilter}
+                onChange={(e) => {
+                  setSemesterFilter(e.target.value);
+                  setCoursePage(1);
+                }}
+                className="w-full px-4 py-2 bg-secondary/40 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-xs text-foreground"
+              >
+                <option value="">All Semesters (Ordered)</option>
+                <option value="1.1">Semester 1.1</option>
+                <option value="1.2">Semester 1.2</option>
+                <option value="2.1">Semester 2.1</option>
+                <option value="2.2">Semester 2.2</option>
+                <option value="3.1">Semester 3.1</option>
+                <option value="3.2">Semester 3.2</option>
+                <option value="4.1">Semester 4.1</option>
+                <option value="4.2">Semester 4.2</option>
               </select>
             </div>
           </div>
@@ -362,13 +393,12 @@ export default function CoursesManagementPage() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
+                    <th className="px-6 py-4">Semester</th>
                     <th className="px-6 py-4">Course Code</th>
                     <th className="px-6 py-4">Course Name</th>
-                    <th className="px-6 py-4">Lecturer</th>
+                    <th className="px-6 py-4">Department</th>
+                    <th className="px-6 py-4">Degrees</th>
                     <th className="px-6 py-4">Credits</th>
-                    <th className="px-6 py-4">Dept</th>
-                    <th className="px-6 py-4">Semester</th>
-                    <th className="px-6 py-4">Degree / Specialization</th>
                     {isAdminOrStaff && <th className="px-6 py-4 text-right">Actions</th>}
                   </tr>
                 </thead>
@@ -381,17 +411,17 @@ export default function CoursesManagementPage() {
                       >
                         <span className="inline-flex items-center gap-2">
                           <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></span>
-                          Loading courses list...
+                          Loading courses catalog (ordered by semester)...
                         </span>
                       </td>
                     </tr>
                   ) : courses.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={isAdminOrStaff ? 8 : 7}
+                        colSpan={isAdminOrStaff ? 7 : 6}
                         className="text-center py-20 text-muted-foreground"
                       >
-                        No courses found. Add courses to populate database.
+                        No courses found matching your criteria.
                       </td>
                     </tr>
                   ) : (
@@ -400,73 +430,46 @@ export default function CoursesManagementPage() {
                         key={course.course_id}
                         className="hover:bg-secondary/15 transition-colors"
                       >
-                        <td className="px-6 py-4.5 font-bold font-mono text-primary text-xs uppercase">
-                          {course.course_code}
-                        </td>
-                        <td className="px-6 py-4.5 font-semibold text-foreground">
-                          {course.course_name}
-                        </td>
-                        <td className="px-6 py-4.5 text-muted-foreground text-xs font-semibold">
-                          {course.lecturers && course.lecturers.length > 0
-                            ? course.lecturers
-                                .map((l: any) => l.lecturer?.user?.full_name)
-                                .filter(Boolean)
-                                .join(', ')
-                            : 'Assign Later'}
-                        </td>
-                        <td className="px-6 py-4.5 font-mono text-muted-foreground">
-                          {parseFloat(course.credit_value)}
-                        </td>
-                        <td className="px-6 py-4.5 text-xs text-muted-foreground uppercase">
-                          {course.department?.department_code}
-                        </td>
-                        <td className="px-6 py-4.5 font-mono text-muted-foreground">
+                        <td className="px-6 py-4.5 font-bold font-mono text-primary text-xs">
                           Sem {course.semester}
                         </td>
-                        <td className="px-6 py-4.5 text-xs font-semibold text-muted-foreground">
-                          {course.degrees && course.degrees.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {course.degrees.map((cd: any) => (
-                                <span
-                                  key={cd.degree_id}
-                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${
-                                    cd.status === 'COMPULSORY'
-                                      ? 'bg-primary/10 text-primary border-primary/20'
-                                      : 'bg-secondary text-secondary-foreground border-border/80'
-                                  }`}
-                                  title={cd.degree?.degree_name}
-                                >
-                                  {cd.degree?.degree_code} ({cd.status === 'COMPULSORY' ? 'C' : 'O'}
-                                  )
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground italic">No degree assigned</span>
-                          )}
+                        <td className="px-6 py-4.5 font-bold text-foreground font-mono">
+                          {course.course_code}
                         </td>
+                        <td className="px-6 py-4.5 text-foreground">{course.course_name}</td>
+                        <td className="px-6 py-4.5 text-xs text-muted-foreground uppercase font-semibold">
+                          {course.department?.department_code}
+                        </td>
+                        <td className="px-6 py-4.5">
+                          <div className="flex flex-wrap gap-1 max-w-xs">
+                            {course.degrees && course.degrees.length > 0 ? (
+                              course.degrees.map((d: any) => (
+                                <span
+                                  key={d.degree_id}
+                                  className="inline-block px-2 py-0.5 bg-secondary text-secondary-foreground rounded text-[10px] font-bold font-mono"
+                                >
+                                  {d.degree?.degree_code || d.degree_id}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs text-muted-foreground/60 italic">None</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4.5 font-mono text-xs">{course.credit_value}</td>
                         {isAdminOrStaff && (
-                          <td className="px-6 py-4.5 text-right space-x-1.5 whitespace-nowrap">
-                            <button
-                              onClick={() => handleAssignLecturers(course)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary/25 rounded-lg transition text-xs font-bold"
-                              title="Assign Lecturers"
-                            >
-                              <GraduationCap className="h-3.5 w-3.5" />
-                              Instructors
-                            </button>
+                          <td className="px-6 py-4.5 text-right space-x-2 whitespace-nowrap">
                             <button
                               onClick={() => handleEditCourse(course)}
-                              className="px-3 py-1.5 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/90 transition text-xs font-semibold"
+                              className="px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg transition text-xs font-semibold cursor-pointer"
                             >
                               Edit
                             </button>
                             <button
                               onClick={() => handleDeleteCourse(course.course_id)}
-                              className="p-1.5 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition"
-                              title="Delete Course"
+                              className="px-3 py-1.5 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-lg transition text-xs font-semibold cursor-pointer"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              Delete
                             </button>
                           </td>
                         )}
@@ -477,24 +480,24 @@ export default function CoursesManagementPage() {
               </table>
             </div>
 
-            {/* Pagination Bar */}
-            {totalCoursePages > 1 && (
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
               <div className="px-6 py-4 border-t border-border/80 flex items-center justify-between bg-secondary/10">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Page {coursePage} of {totalCoursePages}
+                <span className="text-xs text-muted-foreground">
+                  Page {coursePage} of {totalPages}
                 </span>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setCoursePage((p) => Math.max(p - 1, 1))}
+                    onClick={() => setCoursePage((p) => Math.max(1, p - 1))}
                     disabled={coursePage === 1}
-                    className="p-1.5 bg-secondary hover:bg-secondary/90 disabled:opacity-40 text-foreground rounded-lg transition border border-border/60"
+                    className="p-1.5 bg-secondary rounded-lg text-muted-foreground disabled:opacity-50 cursor-pointer"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => setCoursePage((p) => Math.min(p + 1, totalCoursePages))}
-                    disabled={coursePage === totalCoursePages}
-                    className="p-1.5 bg-secondary hover:bg-secondary/90 disabled:opacity-40 text-foreground rounded-lg transition border border-border/60"
+                    onClick={() => setCoursePage((p) => Math.min(totalPages, p + 1))}
+                    disabled={coursePage === totalPages}
+                    className="p-1.5 bg-secondary rounded-lg text-muted-foreground disabled:opacity-50 cursor-pointer"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>
@@ -505,30 +508,19 @@ export default function CoursesManagementPage() {
         </div>
       )}
 
+      {/* ========================================== */}
+      {/* TAB 2: REGISTRATION WINDOWS */}
+      {/* ========================================== */}
       {activeTab === 'periods' && (
-        <div className="space-y-6">
-          {/* Info Banner */}
-          <div className="p-4 bg-primary/5 border border-primary/15 rounded-2xl flex gap-3 text-sm text-muted-foreground">
-            <AlertCircle className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold text-foreground mb-0.5">Understanding Registration Windows</p>
-              <p>
-                To register for courses, students must have an <strong>OPEN</strong> window that
-                matches their semester. If the status is <strong>SUSPENDED</strong> or{' '}
-                <strong>CLOSED</strong>, registration is restricted. Only one window can be active
-                (OPEN) per academic year/semester combo.
-              </p>
-            </div>
-          </div>
-
-          {/* Periods Table */}
+        <div className="space-y-6 animate-fadeIn">
           <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
-                    <th className="px-6 py-4">Academic Year</th>
+                    <th className="px-6 py-4">Batch / Academic Year</th>
                     <th className="px-6 py-4">Semester</th>
+                    <th className="px-6 py-4">Window Type</th>
                     <th className="px-6 py-4">Start Date</th>
                     <th className="px-6 py-4">End Date</th>
                     <th className="px-6 py-4">Status</th>
@@ -539,7 +531,7 @@ export default function CoursesManagementPage() {
                   {isPeriodsLoading ? (
                     <tr>
                       <td
-                        colSpan={isAdminOrStaff ? 6 : 5}
+                        colSpan={isAdminOrStaff ? 7 : 6}
                         className="text-center py-20 text-muted-foreground"
                       >
                         <span className="inline-flex items-center gap-2">
@@ -551,7 +543,7 @@ export default function CoursesManagementPage() {
                   ) : periods.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={isAdminOrStaff ? 6 : 5}
+                        colSpan={isAdminOrStaff ? 7 : 6}
                         className="text-center py-20 text-muted-foreground"
                       >
                         No registration periods have been created yet.
@@ -572,17 +564,75 @@ export default function CoursesManagementPage() {
 
                       const isOpen = p.status === 'OPEN';
                       const isSuspended = p.status === 'SUSPENDED';
+                      const isMedicalRepeat =
+                        p.window_type === 'MEDICAL_REPEAT_REGISTRATION' ||
+                        p.window_type === 'PROPER_REPEAT_REGISTRATION';
+
+                      const isEditingEnd = editingEndDatePeriodId === p.period_id;
 
                       return (
                         <tr key={p.period_id} className="hover:bg-secondary/15 transition-colors">
-                          <td className="px-6 py-4.5 font-semibold text-foreground">
-                            {p.academic_year}
+                          <td className="px-6 py-4.5 font-semibold text-foreground font-mono">
+                            {p.batch ? `Batch ${p.batch}` : `Year ${p.academic_year}`}
                           </td>
                           <td className="px-6 py-4.5 font-mono text-muted-foreground">
                             Semester {p.semester}
                           </td>
+                          <td className="px-6 py-4.5">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold font-mono border ${
+                                isMedicalRepeat
+                                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                  : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                              }`}
+                            >
+                              {isMedicalRepeat ? 'Medical / Repeat' : 'Semester Registration'}
+                            </span>
+                          </td>
                           <td className="px-6 py-4.5 text-muted-foreground">{startStr}</td>
-                          <td className="px-6 py-4.5 text-muted-foreground">{endStr}</td>
+                          <td className="px-6 py-4.5 text-muted-foreground">
+                            {isEditingEnd ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="date"
+                                  value={editingEndDateValue}
+                                  onChange={(e) => setEditingEndDateValue(e.target.value)}
+                                  className="px-2 py-1 bg-background border border-border rounded text-xs text-foreground font-medium"
+                                />
+                                <button
+                                  onClick={() => handleSaveEndDate(p.period_id)}
+                                  className="p-1 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition cursor-pointer"
+                                  title="Save End Date"
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => setEditingEndDatePeriodId(null)}
+                                  className="p-1 bg-secondary text-muted-foreground rounded hover:text-foreground transition cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span>{endStr}</span>
+                                {isAdminOrStaff && (
+                                  <button
+                                    onClick={() => {
+                                      setEditingEndDatePeriodId(p.period_id);
+                                      setEditingEndDateValue(
+                                        new Date(p.end_date).toISOString().split('T')[0],
+                                      );
+                                    }}
+                                    className="p-1 text-muted-foreground hover:text-primary hover:bg-secondary/40 rounded transition cursor-pointer"
+                                    title="Edit End Date"
+                                  >
+                                    <Edit3 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </td>
                           <td className="px-6 py-4.5">
                             <span
                               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
@@ -610,7 +660,7 @@ export default function CoursesManagementPage() {
                               {!isOpen && (
                                 <button
                                   onClick={() => handlePeriodStatusChange(p.period_id, 'OPEN')}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition text-xs font-semibold"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition text-xs font-semibold cursor-pointer"
                                 >
                                   <Play className="h-3 w-3" />
                                   Open
@@ -619,7 +669,7 @@ export default function CoursesManagementPage() {
                               {isOpen && (
                                 <button
                                   onClick={() => handlePeriodStatusChange(p.period_id, 'SUSPENDED')}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 rounded-lg transition text-xs font-semibold"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 rounded-lg transition text-xs font-semibold cursor-pointer"
                                 >
                                   <Pause className="h-3 w-3" />
                                   Suspend
@@ -628,12 +678,20 @@ export default function CoursesManagementPage() {
                               {p.status !== 'CLOSED' && (
                                 <button
                                   onClick={() => handlePeriodStatusChange(p.period_id, 'CLOSED')}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg transition text-xs font-semibold"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg transition text-xs font-semibold cursor-pointer"
                                 >
                                   <StopCircle className="h-3 w-3" />
                                   Close
                                 </button>
                               )}
+                              <button
+                                onClick={() => handleDeletePeriod(p.period_id)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-lg transition text-xs font-semibold cursor-pointer"
+                                title="Delete Window"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                                Delete
+                              </button>
                             </td>
                           )}
                         </tr>
@@ -647,112 +705,288 @@ export default function CoursesManagementPage() {
         </div>
       )}
 
+      {/* ========================================== */}
+      {/* TAB 3: LECTURER & EXAMINER ALLOCATIONS */}
+      {/* ========================================== */}
       {activeTab === 'lecturers' && isAdminOrStaff && (
         <div className="space-y-6 animate-fadeIn">
-          {/* Lecturers Table */}
-          <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
-                    <th className="px-6 py-4">Lecturer Name</th>
-                    <th className="px-6 py-4">Email</th>
-                    <th className="px-6 py-4">Department</th>
-                    <th className="px-6 py-4">Assigned Courses</th>
-                    <th className="px-6 py-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60 text-sm font-medium">
-                  {isLecturersLoading ? (
-                    <tr>
-                      <td colSpan={5} className="text-center py-20 text-muted-foreground">
-                        <span className="inline-flex items-center gap-2">
-                          <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></span>
-                          Loading lecturers list...
-                        </span>
-                      </td>
+          {/* Sub-Navigation Bar */}
+          <div className="flex border-b border-border/60">
+            <button
+              onClick={() => setLecturersSubTab('examiners')}
+              className={`px-6 py-3 font-semibold text-sm border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                lecturersSubTab === 'examiners'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <UserCheck className="h-4 w-4" />
+              Course Examiner Allocations
+            </button>
+            <button
+              onClick={() => setLecturersSubTab('faculty')}
+              className={`px-6 py-3 font-semibold text-sm border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                lecturersSubTab === 'faculty'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Users className="h-4 w-4" />
+              Faculty Lecturers Directory & Management
+            </button>
+          </div>
+
+          {/* SUB-TAB 1: COURSE EXAMINER ALLOCATIONS */}
+          {lecturersSubTab === 'examiners' && (
+            <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
+              <div className="px-6 py-4 border-b border-border/60 bg-secondary/15 flex justify-between items-center">
+                <div>
+                  <h3 className="text-base font-bold text-foreground">
+                    Course Examiner Allocations
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Assign 1st Examiner (default course lecturer or external 1st marker) and 2nd
+                    Examiner (internal or external 2nd marker) per course subject.
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs sm:text-sm">
+                  <thead>
+                    <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
+                      <th className="px-6 py-4">Semester</th>
+                      <th className="px-6 py-4">Course Code & Name</th>
+                      <th className="px-6 py-4">Department</th>
+                      <th className="px-6 py-4">1st Examiner / Marker</th>
+                      <th className="px-6 py-4">2nd Examiner / Marker</th>
+                      <th className="px-6 py-4 text-right">Action</th>
                     </tr>
-                  ) : lecturersList.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="text-center py-20 text-muted-foreground">
-                        No lecturers found in the database.
-                      </td>
-                    </tr>
-                  ) : (
-                    lecturersList.map((lec: any) => (
-                      <tr key={lec.lecturer_id} className="hover:bg-secondary/15 transition-colors">
-                        <td className="px-6 py-4 font-bold text-foreground">
-                          {lec.user?.full_name}
-                        </td>
-                        <td className="px-6 py-4 text-muted-foreground text-xs">
-                          {lec.user?.email}
-                        </td>
-                        <td className="px-6 py-4 text-xs text-muted-foreground uppercase">
-                          {lec.department?.department_name}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-wrap gap-1.5 max-w-md">
-                            {lec.courses && lec.courses.length > 0 ? (
-                              lec.courses.map((c: any) => (
-                                <span
-                                  key={c.course?.course_id}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg text-xs font-bold font-mono"
-                                >
-                                  {c.course?.course_code}
-                                  <button
-                                    onClick={() =>
-                                      handleRemoveCourseFromLecturer(
-                                        c.course?.course_id,
-                                        lec.lecturer_id,
-                                      )
-                                    }
-                                    className="hover:text-destructive hover:bg-destructive/10 rounded p-0.5"
-                                    title="Unassign course"
-                                  >
-                                    ✕
-                                  </button>
-                                </span>
-                              ))
-                            ) : (
-                              <span className="text-xs text-muted-foreground/60 italic">
-                                No courses assigned
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <select
-                            onChange={(e) => {
-                              const courseId = parseInt(e.target.value, 10);
-                              if (courseId) {
-                                handleAssignCourseToLecturer(courseId, lec.lecturer_id);
-                                e.target.value = ''; // Reset select
-                              }
-                            }}
-                            className="px-3 py-1.5 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/90 transition text-xs font-semibold"
-                          >
-                            <option value="">+ Assign Course...</option>
-                            {coursesLookup
-                              .filter(
-                                (c: any) =>
-                                  !lec.courses?.some(
-                                    (ac: any) => ac.course?.course_id === c.course_id,
-                                  ),
-                              )
-                              .map((c: any) => (
-                                <option key={c.course_id} value={c.course_id}>
-                                  {c.course_code} - {c.course_name}
-                                </option>
-                              ))}
-                          </select>
+                  </thead>
+                  <tbody className="divide-y divide-border/60 font-medium">
+                    {isCoursesLoading ? (
+                      <tr>
+                        <td colSpan={6} className="text-center py-20 text-muted-foreground">
+                          <span className="inline-flex items-center gap-2">
+                            <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></span>
+                            Loading course marker allocations...
+                          </span>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : courses.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center py-20 text-muted-foreground">
+                          No courses found in the database.
+                        </td>
+                      </tr>
+                    ) : (
+                      courses.map((c: any) => {
+                        const isFirstExt = c.first_marker_type === 'EXTERNAL';
+                        const firstMarkerName = isFirstExt
+                          ? c.first_marker_name
+                            ? `${c.first_marker_name} (External)`
+                            : 'External Marker'
+                          : c.first_marker_lecturer?.user?.full_name ||
+                            c.lecturers?.[0]?.lecturer?.user?.full_name ||
+                            'Unassigned';
+
+                        const isSecondExt = c.second_marker_type === 'EXTERNAL';
+                        const secondMarkerName = isSecondExt
+                          ? c.second_marker_name
+                            ? `${c.second_marker_name} (External)`
+                            : 'External 2nd Marker'
+                          : c.second_marker_lecturer?.user?.full_name || 'Unassigned';
+
+                        return (
+                          <tr key={c.course_id} className="hover:bg-secondary/15 transition-colors">
+                            <td className="px-6 py-4 font-bold font-mono text-primary text-xs">
+                              Sem {c.semester}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="font-bold text-foreground font-mono">
+                                {c.course_code}
+                              </div>
+                              <div className="text-xs text-muted-foreground">{c.course_name}</div>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-muted-foreground uppercase font-semibold">
+                              {c.department?.department_code}
+                            </td>
+                            <td className="px-6 py-4">
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                                  isFirstExt
+                                    ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                                    : firstMarkerName !== 'Unassigned'
+                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                      : 'bg-secondary text-muted-foreground/60'
+                                }`}
+                              >
+                                <UserCheck className="h-3.5 w-3.5" />
+                                {firstMarkerName}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                                  isSecondExt
+                                    ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                                    : secondMarkerName !== 'Unassigned'
+                                      ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                      : 'bg-secondary text-muted-foreground/60'
+                                }`}
+                              >
+                                <User className="h-3.5 w-3.5" />
+                                {secondMarkerName}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <button
+                                onClick={() => {
+                                  setMarkerCourse(c);
+                                  setMarkerDialogOpen(true);
+                                }}
+                                className="px-3.5 py-1.5 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-1.5 ml-auto cursor-pointer shadow-md shadow-primary/10"
+                              >
+                                <Edit3 className="h-3.5 w-3.5" /> Assign Markers
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* SUB-TAB 2: FACULTY LECTURERS DIRECTORY */}
+          {lecturersSubTab === 'faculty' && (
+            <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
+              <div className="px-6 py-4 border-b border-border/60 bg-secondary/15 flex justify-between items-center">
+                <div>
+                  <h3 className="text-base font-bold text-foreground">
+                    Faculty Lecturers Directory
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Add new academic lecturers, manage department allocations, and view assigned
+                    classes.
+                  </p>
+                </div>
+                <button
+                  onClick={handleAddNewLecturer}
+                  className="px-4 py-2 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 cursor-pointer shadow-md"
+                >
+                  <UserPlus className="h-4 w-4" /> Add New Lecturer
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
+                      <th className="px-6 py-4">Lecturer Name</th>
+                      <th className="px-6 py-4">Email</th>
+                      <th className="px-6 py-4">Department</th>
+                      <th className="px-6 py-4">Assigned Courses</th>
+                      <th className="px-6 py-4 text-right">Course Allocation</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60 text-sm font-medium">
+                    {isLecturersLoading ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-20 text-muted-foreground">
+                          <span className="inline-flex items-center gap-2">
+                            <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></span>
+                            Loading lecturers list...
+                          </span>
+                        </td>
+                      </tr>
+                    ) : lecturersList.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-20 text-muted-foreground">
+                          No lecturers found in the database.
+                        </td>
+                      </tr>
+                    ) : (
+                      lecturersList.map((lec: any) => (
+                        <tr
+                          key={lec.lecturer_id}
+                          className="hover:bg-secondary/15 transition-colors"
+                        >
+                          <td className="px-6 py-4 font-bold text-foreground">
+                            {lec.user?.full_name}
+                          </td>
+                          <td className="px-6 py-4 text-muted-foreground text-xs">
+                            {lec.user?.email}
+                          </td>
+                          <td className="px-6 py-4 text-xs text-muted-foreground uppercase font-semibold">
+                            {lec.department?.department_name}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-wrap gap-1.5 max-w-md">
+                              {lec.courses && lec.courses.length > 0 ? (
+                                lec.courses.map((c: any) => (
+                                  <span
+                                    key={c.course?.course_id}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg text-xs font-bold font-mono"
+                                  >
+                                    {c.course?.course_code}
+                                    <button
+                                      onClick={() =>
+                                        handleRemoveCourseFromLecturer(
+                                          c.course?.course_id,
+                                          lec.lecturer_id,
+                                        )
+                                      }
+                                      className="hover:text-destructive hover:bg-destructive/10 rounded p-0.5"
+                                      title="Unassign course"
+                                    >
+                                      ✕
+                                    </button>
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-muted-foreground/60 italic">
+                                  No courses assigned
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <select
+                              onChange={(e) => {
+                                const courseId = parseInt(e.target.value, 10);
+                                if (courseId) {
+                                  handleAssignCourseToLecturer(courseId, lec.lecturer_id);
+                                  e.target.value = '';
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/90 transition text-xs font-semibold"
+                            >
+                              <option value="">+ Assign Course...</option>
+                              {coursesLookup
+                                .filter(
+                                  (c: any) =>
+                                    !lec.courses?.some(
+                                      (ac: any) => ac.course?.course_id === c.course_id,
+                                    ),
+                                )
+                                .map((c: any) => (
+                                  <option key={c.course_id} value={c.course_id}>
+                                    {c.course_code} - {c.course_name}
+                                  </option>
+                                ))}
+                            </select>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -782,14 +1016,34 @@ export default function CoursesManagementPage() {
         onClose={() => setPeriodDialogOpen(false)}
         onSuccess={(newPeriod) => {
           if (newPeriod) {
-            queryClient.setQueryData(['registration-periods'], (oldPeriods: any) => {
-              if (!Array.isArray(oldPeriods)) return [newPeriod];
-              return [newPeriod, ...oldPeriods];
-            });
+            refetchPeriods();
           }
-          queryClient.invalidateQueries({ queryKey: ['registration-periods'] });
-          refetchPeriods();
           setPeriodDialogOpen(false);
+        }}
+      />
+
+      <MarkerDialog
+        open={markerDialogOpen}
+        onClose={() => {
+          setMarkerDialogOpen(false);
+          setMarkerCourse(null);
+        }}
+        course={markerCourse}
+        lecturersList={lecturersList}
+        onSuccess={refetchCourses}
+      />
+
+      <UserDialog
+        open={userDialogOpen}
+        onClose={() => {
+          setUserDialogOpen(false);
+          setSelectedUserForEdit(null);
+        }}
+        user={selectedUserForEdit}
+        onSuccess={() => {
+          refetchLecturers();
+          setUserDialogOpen(false);
+          setSelectedUserForEdit(null);
         }}
       />
     </div>

@@ -29,6 +29,10 @@ export class StudentProfileDto {
 
   @IsInt()
   academicYear!: number;
+
+  @IsString()
+  @IsOptional()
+  batch?: string;
 }
 
 export class LecturerProfileDto {

@@ -41,6 +41,7 @@ const UserFormSchema = BaseUserFormSchema.extend({
       degreeId: z.coerce.number().optional(),
       specializationId: z.coerce.number().optional().nullable().or(z.literal('')),
       academicYear: z.coerce.number().optional(),
+      batch: z.string().optional(),
     })
     .optional(),
   lecturerProfile: z
@@ -193,6 +194,7 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
               degreeId: user.student.degree_id,
               specializationId: user.student.specialization_id || '',
               academicYear: user.student.academic_year,
+              batch: user.student.batch || '20/21',
             }
           : undefined,
         lecturerProfile: user.lecturer
@@ -224,6 +226,7 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
           degreeId: 0,
           specializationId: '',
           academicYear: new Date().getFullYear(),
+          batch: '20/21',
         },
         lecturerProfile: {
           employeeNumber: '',
@@ -578,6 +581,22 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
                         {errors.studentProfile.academicYear.message}
                       </p>
                     )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+                      Student Batch (e.g. 20/21, 21/22)
+                    </label>
+                    <select
+                      {...register('studentProfile.batch')}
+                      className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+                    >
+                      <option value="20/21">Batch 20/21</option>
+                      <option value="21/22">Batch 21/22</option>
+                      <option value="22/23">Batch 22/23</option>
+                      <option value="23/24">Batch 23/24</option>
+                      <option value="24/25">Batch 24/25</option>
+                    </select>
                   </div>
 
                   <div>

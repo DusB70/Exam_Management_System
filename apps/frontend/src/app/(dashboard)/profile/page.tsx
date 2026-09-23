@@ -228,6 +228,80 @@ export default function ProfilePage() {
 
         {/* Right Side: Forms */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Personal Details Card */}
+          <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-md space-y-4 shadow-xl">
+            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+              <UserIcon className="h-4.5 w-4.5 text-primary" />
+              Personal Profile Details
+            </h3>
+            <p className="text-xs text-muted-foreground leading-normal">
+              Official registration credentials and personal identification parameters on record.
+              Contact the Academic Registrar's Office to request changes.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              <div className="p-3 bg-secondary/15 rounded-xl space-y-1">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                  Full Name
+                </span>
+                <p className="text-xs font-semibold text-foreground">{profile?.full_name}</p>
+              </div>
+
+              <div className="p-3 bg-secondary/15 rounded-xl space-y-1">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                  Name with Initials
+                </span>
+                <p className="text-xs font-semibold text-foreground">
+                  {profile?.name_with_initials || 'N/A'}
+                </p>
+              </div>
+
+              <div className="p-3 bg-secondary/15 rounded-xl space-y-1">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                  National Identity Card (NIC)
+                </span>
+                <p className="text-xs font-semibold text-foreground font-mono">
+                  {profile?.nic_no || 'N/A'}
+                </p>
+              </div>
+
+              <div className="p-3 bg-secondary/15 rounded-xl space-y-1">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                  Date of Birth
+                </span>
+                <p className="text-xs font-semibold text-foreground">
+                  {profile?.date_of_birth
+                    ? new Date(profile.date_of_birth).toLocaleDateString(undefined, {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })
+                    : 'N/A'}
+                </p>
+              </div>
+
+              {isStudent && (
+                <div className="p-3 bg-secondary/15 rounded-xl space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                    Index Number
+                  </span>
+                  <p className="text-xs font-semibold text-foreground font-mono">
+                    {profile?.student?.index_number || 'N/A'}
+                  </p>
+                </div>
+              )}
+
+              <div className="p-3 bg-secondary/15 rounded-xl space-y-1 md:col-span-2">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                  Permanent Address
+                </span>
+                <p className="text-xs font-semibold text-foreground leading-normal">
+                  {profile?.address || 'N/A'}
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Phone Number form */}
           <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-md space-y-4 shadow-xl">
             <h3 className="text-sm font-bold text-foreground flex items-center gap-2">

@@ -1,4 +1,4 @@
-import { Controller, Get, Res } from '@nestjs/common';
+import { Controller, Get, Res, Patch, Param, Body, ParseIntPipe } from '@nestjs/common';
 import { ResultsService } from './results.service';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
@@ -42,5 +42,24 @@ export class ResultsController {
       'Content-Length': buffer.length,
     });
     res.end(buffer);
+  }
+
+  @Patch('grades/:gradeId/withhold')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async toggleGradeWithheld(
+    @Param('gradeId', ParseIntPipe) gradeId: number,
+    @GetUser('id') executorId: number,
+    @Body('isWithheld') isWithheld?: boolean,
+  ) {
+    const data = await this.resultsService.toggleGradeResultWithheld(
+      gradeId,
+      executorId,
+      isWithheld,
+    );
+    return {
+      success: true,
+      message: `Result withheld status updated to ${data.result_status}`,
+      data,
+    };
   }
 }

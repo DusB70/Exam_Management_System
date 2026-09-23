@@ -139,36 +139,112 @@ export class ResultsService {
       orderBy: { semester: 'asc' },
     });
 
-    // Fetch published Course Grades OR courses with published CA marks
-    const grades = await this.prisma.studentCourseGrade.findMany({
+    // Fetch all course registrations for the student
+    const registrations = await this.prisma.courseRegistration.findMany({
       where: {
         student_id: student.student_id,
-        OR: [
-          { is_published: true },
-          {
-            course: {
-              ca_published: true,
-            },
-          },
-        ],
       },
       include: {
         course: {
-          select: {
-            course_code: true,
-            course_name: true,
-            credit_value: true,
-            semester: true,
-            ca_published: true,
+          include: {
+            degrees: {
+              where: {
+                degree_id: student.degree_id,
+              },
+            },
           },
         },
       },
-      orderBy: {
+    });
+
+    // Fetch all grade records for this student
+    const studentGrades = await this.prisma.studentCourseGrade.findMany({
+      where: {
+        student_id: student.student_id,
+      },
+      include: {
         course: {
-          semester: 'asc',
+          include: {
+            degrees: {
+              where: {
+                degree_id: student.degree_id,
+              },
+            },
+          },
         },
       },
     });
+
+    // Combine courses from registrations and grade records
+    const coursesMap = new Map<number, any>();
+    registrations.forEach((r) => {
+      if (r.course) {
+        coursesMap.set(r.course_id, r.course);
+      }
+    });
+    studentGrades.forEach((g) => {
+      if (g.course) {
+        coursesMap.set(g.course_id, g.course);
+      }
+    });
+
+    // Map each combined course to a result grade object
+    const grades = Array.from(coursesMap.values()).map((course) => {
+      const matchingGrade = studentGrades.find((sg) => sg.course_id === course.course_id);
+
+      // Determine course type (COMPULSORY or OPTIONAL) for this degree
+      const courseDegree = course.degrees?.[0];
+      const type = courseDegree ? courseDegree.status : 'COMPULSORY';
+
+      // Determine if published
+      const isPublished = matchingGrade ? matchingGrade.is_published : false;
+      const resultStatus = matchingGrade ? matchingGrade.result_status : null;
+
+      // Extract marks_config from course to calculate allocated CA weight
+      let maxCaWeight = 40;
+      try {
+        const config = course.marks_config as any;
+        if (config && config.caWeight) {
+          maxCaWeight = Number(config.caWeight);
+        } else if (config && Array.isArray(config.caComponents)) {
+          const sum = config.caComponents.reduce(
+            (acc: number, c: any) => acc + Number(c.weight || 0),
+            0,
+          );
+          if (sum > 0) maxCaWeight = sum;
+        }
+      } catch (e) {
+        // ignore invalid marks_config structure
+      }
+
+      const caObtained = matchingGrade ? matchingGrade.continuous_assessment_marks : 0;
+
+      return {
+        grade_id: matchingGrade?.grade_id || `reg-${course.course_id}`,
+        student_id: student.student_id,
+        course_id: course.course_id,
+        continuous_assessment_marks: caObtained,
+        max_ca_weight: maxCaWeight,
+        formatted_ca: `${caObtained.toFixed(1)} / ${maxCaWeight}`,
+        total_marks: matchingGrade ? matchingGrade.total_marks : 0,
+        grade: matchingGrade ? matchingGrade.grade : 'Pending',
+        grade_point: matchingGrade ? matchingGrade.grade_point : 0,
+        is_published: isPublished,
+        result_status: resultStatus,
+        type, // "COMPULSORY" or "OPTIONAL"
+        course: {
+          course_id: course.course_id,
+          course_code: course.course_code,
+          course_name: course.course_name,
+          credit_value: parseFloat(course.credit_value.toString()),
+          semester: course.semester,
+          ca_published: course.ca_published,
+        },
+      };
+    });
+
+    // Sort grades by semester
+    grades.sort((a, b) => a.course.semester.localeCompare(b.course.semester));
 
     return {
       student,
@@ -715,5 +791,42 @@ export class ResultsService {
     const fileName = `${data.course.courseCode.replace(/[^a-zA-Z0-9-]/g, '_')}_combined_results.xlsx`;
 
     return { buffer, fileName };
+  }
+
+  async toggleGradeResultWithheld(gradeId: number, executorId: number, isWithheld?: boolean) {
+    const grade = await this.prisma.studentCourseGrade.findUnique({
+      where: { grade_id: gradeId },
+    });
+
+    if (!grade) {
+      throw new NotFoundException(`Student grade with ID ${gradeId} not found`);
+    }
+
+    const nextStatus =
+      isWithheld !== undefined
+        ? isWithheld
+          ? 'WITHHELD'
+          : 'NORMAL'
+        : grade.result_status === 'WITHHELD'
+          ? 'NORMAL'
+          : 'WITHHELD';
+
+    const updated = await this.prisma.studentCourseGrade.update({
+      where: { grade_id: gradeId },
+      data: {
+        result_status: nextStatus,
+      },
+    });
+
+    await this.auditService.logAction(
+      executorId,
+      nextStatus === 'WITHHELD' ? 'RESULT_WITHHELD' : 'RESULT_UNWITHHELD',
+      'student_course_grades',
+      gradeId.toString(),
+      grade,
+      updated,
+    );
+
+    return updated;
   }
 }

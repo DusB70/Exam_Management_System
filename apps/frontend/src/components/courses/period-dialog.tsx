@@ -11,12 +11,16 @@ import { ApiResponse } from '@ems/shared';
 const PeriodFormSchema = z
   .object({
     academicYear: z.coerce.number().int().min(2000, 'Academic year must be 2000 or later'),
+    batch: z.string().optional(),
     semester: z
       .string()
       .regex(
         /^(1\.1|1\.2|2\.1|2\.2|3\.1|3\.2|4\.1|4\.2)$/,
         'Semester must be in format X.Y (1.1 to 4.2)',
       ),
+    windowType: z
+      .enum(['SEMESTER_REGISTRATION', 'MEDICAL_REPEAT_REGISTRATION'])
+      .default('SEMESTER_REGISTRATION'),
     startDate: z.string().min(1, 'Start date is required'),
     endDate: z.string().min(1, 'End date is required'),
     status: z.enum(['OPEN', 'CLOSED', 'SUSPENDED']).default('CLOSED'),
@@ -54,7 +58,9 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
     resolver: zodResolver(PeriodFormSchema),
     defaultValues: {
       academicYear: new Date().getFullYear(),
+      batch: '20/21',
       semester: '1.1',
+      windowType: 'SEMESTER_REGISTRATION',
       status: 'CLOSED',
       startDate: new Date().toISOString().split('T')[0],
       endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days later
@@ -105,18 +111,29 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-              Academic Year
-            </label>
-            <input
-              type="number"
-              {...register('academicYear')}
-              className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm"
-            />
-            {errors.academicYear && (
-              <p className="mt-1 text-xs text-destructive">{errors.academicYear.message}</p>
-            )}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+                Batch (e.g. 20/21)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. 20/21"
+                {...register('batch')}
+                className="w-full px-3 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm font-semibold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+                Academic Year
+              </label>
+              <input
+                type="number"
+                {...register('academicYear')}
+                className="w-full px-3 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm"
+              />
+            </div>
           </div>
 
           <div>
@@ -139,6 +156,21 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
             {errors.semester && (
               <p className="mt-1 text-xs text-destructive">{errors.semester.message}</p>
             )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+              Registration Window Type
+            </label>
+            <select
+              {...register('windowType')}
+              className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+            >
+              <option value="SEMESTER_REGISTRATION">Semester Course Registration</option>
+              <option value="MEDICAL_REPEAT_REGISTRATION">
+                Medical / Repeat Exam Registration
+              </option>
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

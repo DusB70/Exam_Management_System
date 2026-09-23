@@ -12,6 +12,22 @@ export class ProfileController {
     const user = await this.usersService.findById(userId);
     const safeUser = { ...(user as any) };
     delete safeUser.password_hash;
+
+    if (safeUser.student && safeUser.student.degree) {
+      const deg = safeUser.student.degree;
+      const compulsoryCredits = deg.courses
+        ? deg.courses
+            .filter((cd: any) => cd.status === 'COMPULSORY')
+            .reduce((sum: number, cd: any) => sum + Number(cd.course.credit_value), 0)
+        : 0;
+
+      const totalCreditsRequired = Number(deg.total_credits_required || 0);
+      const optionalCreditsRequired = Math.max(0, totalCreditsRequired - compulsoryCredits);
+
+      safeUser.student.degree.compulsory_credits = compulsoryCredits;
+      safeUser.student.degree.optional_credits_required = optionalCreditsRequired;
+    }
+
     return {
       success: true,
       message: 'Profile retrieved successfully',

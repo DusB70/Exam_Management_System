@@ -270,93 +270,66 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
 
             <div className="md:col-span-2 space-y-2">
               <label className="block text-xs font-semibold text-muted-foreground">
-                Applicable Degree Programs (Faculty of Technology)
+                Applicable Degree Programs
               </label>
-              {departments.length === 0 ? (
+              {degrees.length === 0 ? (
                 <p className="text-xs text-muted-foreground italic bg-secondary/15 p-3.5 rounded-xl border border-border/60">
-                  No departments defined in the academic structure.
+                  No degree programs defined.
                 </p>
               ) : (
-                <div className="space-y-4 max-h-56 overflow-y-auto pr-1">
-                  {departments.map((dept: any) => {
-                    const deptDegrees = degrees.filter(
-                      (deg: any) => deg.department_id === dept.department_id,
-                    );
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {degrees.map((deg: any) => {
+                    const isChecked = selectedDegrees.some((sd) => sd.degreeId === deg.degree_id);
+                    const currentStatus =
+                      selectedDegrees.find((sd) => sd.degreeId === deg.degree_id)?.status ||
+                      'COMPULSORY';
 
                     return (
-                      <div key={dept.department_id} className="space-y-2 pb-2">
-                        <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/40 pb-1 mb-2">
-                          {dept.department_name} ({dept.department_code})
-                        </div>
-                        {deptDegrees.length === 0 ? (
-                          <p className="text-xs text-muted-foreground/60 italic pl-2 pb-2">
-                            No degree programs defined.
-                          </p>
-                        ) : (
-                          <div className="space-y-2">
-                            {deptDegrees.map((deg: any) => {
-                              const isChecked = selectedDegrees.some(
-                                (sd) => sd.degreeId === deg.degree_id,
-                              );
-                              const currentStatus =
-                                selectedDegrees.find((sd) => sd.degreeId === deg.degree_id)
-                                  ?.status || 'COMPULSORY';
-
-                              return (
-                                <div
-                                  key={deg.degree_id}
-                                  className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-2xl border transition-all duration-300 gap-3 ${
-                                    isChecked
-                                      ? 'bg-primary/5 border-primary/45 shadow-sm shadow-primary/5'
-                                      : 'bg-secondary/10 border-border/40 hover:border-border/60 hover:bg-secondary/15'
-                                  }`}
-                                >
-                                  <label className="flex items-center gap-3 cursor-pointer text-sm font-semibold text-foreground select-none flex-1 min-w-0">
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={(e) =>
-                                        handleDegreeCheckboxChange(deg.degree_id, e.target.checked)
-                                      }
-                                      className="h-5 w-5 rounded-lg border-border/80 text-primary focus:ring-primary/60 bg-secondary/30 transition-transform active:scale-95"
-                                    />
-                                    <span className="truncate pr-2">
-                                      {deg.degree_name} ({deg.degree_code})
-                                    </span>
-                                  </label>
-                                  {isChecked && (
-                                    <div className="flex bg-secondary/50 p-1 rounded-xl border border-border/60 w-full sm:w-auto shrink-0 transition-all">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          handleDegreeStatusChange(deg.degree_id, 'COMPULSORY')
-                                        }
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
-                                          currentStatus === 'COMPULSORY'
-                                            ? 'bg-card text-foreground shadow-sm border border-border/40 font-extrabold'
-                                            : 'text-muted-foreground hover:text-foreground border border-transparent'
-                                        }`}
-                                      >
-                                        Compulsory
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          handleDegreeStatusChange(deg.degree_id, 'OPTIONAL')
-                                        }
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
-                                          currentStatus === 'OPTIONAL'
-                                            ? 'bg-card text-foreground shadow-sm border border-border/40 font-extrabold'
-                                            : 'text-muted-foreground hover:text-foreground border border-transparent'
-                                        }`}
-                                      >
-                                        Optional
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
+                      <div
+                        key={deg.degree_id}
+                        className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-2xl border transition-all duration-300 gap-3 ${
+                          isChecked
+                            ? 'bg-primary/5 border-primary/45 shadow-sm shadow-primary/5'
+                            : 'bg-secondary/10 border-border/40 hover:border-border/60 hover:bg-secondary/15'
+                        }`}
+                      >
+                        <label className="flex items-center gap-3 cursor-pointer text-sm font-semibold text-foreground select-none flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) =>
+                              handleDegreeCheckboxChange(deg.degree_id, e.target.checked)
+                            }
+                            className="h-5 w-5 rounded-lg border-border/80 text-primary focus:ring-primary/60 bg-secondary/30 transition-transform active:scale-95"
+                          />
+                          <span className="truncate pr-2">
+                            {deg.degree_name} ({deg.degree_code})
+                          </span>
+                        </label>
+                        {isChecked && (
+                          <div className="flex bg-secondary/50 p-1 rounded-xl border border-border/60 w-full sm:w-auto shrink-0 transition-all">
+                            <button
+                              type="button"
+                              onClick={() => handleDegreeStatusChange(deg.degree_id, 'COMPULSORY')}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
+                                currentStatus === 'COMPULSORY'
+                                  ? 'bg-card text-foreground shadow-sm border border-border/40 font-extrabold'
+                                  : 'text-muted-foreground hover:text-foreground border border-transparent'
+                              }`}
+                            >
+                              Compulsory
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDegreeStatusChange(deg.degree_id, 'OPTIONAL')}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
+                                currentStatus === 'OPTIONAL'
+                                  ? 'bg-card text-foreground shadow-sm border border-border/40 font-extrabold'
+                                  : 'text-muted-foreground hover:text-foreground border border-transparent'
+                              }`}
+                            >
+                              Optional
+                            </button>
                           </div>
                         )}
                       </div>

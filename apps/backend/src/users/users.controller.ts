@@ -103,4 +103,69 @@ export class UsersController {
       data: safeUser,
     };
   }
+
+  @Get('students/staff-directory')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async getStudentsForStaff(
+    @Query('page') page = '1',
+    @Query('limit') limit = '10',
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('degreeId') degreeId?: string,
+    @Query('academicYear') academicYear?: string,
+  ) {
+    const parsedPage = parseInt(page, 10) || 1;
+    const parsedLimit = parseInt(limit, 10) || 10;
+    const parsedDegreeId = degreeId ? parseInt(degreeId, 10) : undefined;
+    const parsedAcademicYear = academicYear ? parseInt(academicYear, 10) : undefined;
+
+    const data = await this.usersService.getStudentsForStaff(
+      parsedPage,
+      parsedLimit,
+      search,
+      status,
+      parsedDegreeId,
+      parsedAcademicYear,
+    );
+
+    return {
+      success: true,
+      message: 'Student directory retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('students/:studentId/full-record')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async getStudentFullRecord(@Param('studentId', ParseIntPipe) studentId: number) {
+    const data = await this.usersService.getStudentFullAcademicRecord(studentId);
+    return {
+      success: true,
+      message: 'Full student academic record retrieved successfully',
+      data,
+    };
+  }
+
+  @Patch('students/:studentId/academic-status')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async updateStudentAcademicStatus(
+    @Param('studentId', ParseIntPipe) studentId: number,
+    @Body('status') status: string,
+    @Body('enrollmentDate') enrollmentDate?: string,
+    @Body('graduationDate') graduationDate?: string,
+    @GetUser('id') executorId?: number,
+  ) {
+    const data = await this.usersService.updateStudentAcademicStatus(
+      studentId,
+      status,
+      enrollmentDate,
+      graduationDate,
+      executorId,
+    );
+    return {
+      success: true,
+      message: `Student academic status updated to ${status}`,
+      data,
+    };
+  }
 }
