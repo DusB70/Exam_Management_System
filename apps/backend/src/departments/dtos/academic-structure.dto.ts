@@ -14,6 +14,10 @@ export class CreateDepartmentDto {
   @IsInt()
   @IsOptional()
   parentDepartmentId?: number;
+
+  @IsString()
+  @IsOptional()
+  establishedDate?: string;
 }
 
 export class CreateDegreeDto {
@@ -28,11 +32,24 @@ export class CreateDegreeDto {
   degreeCode!: string;
 
   @IsInt()
-  departmentId!: number;
+  @IsOptional()
+  departmentId?: number;
+
+  @IsNumber()
+  @IsOptional()
+  durationYears?: number;
 
   @IsNumber()
   @IsOptional()
   totalCreditsRequired?: number;
+
+  @IsNumber()
+  @IsOptional()
+  compulsoryCredits?: number;
+
+  @IsNumber()
+  @IsOptional()
+  minOptionalCredits?: number;
 }
 
 export class CreateSpecializationDto {

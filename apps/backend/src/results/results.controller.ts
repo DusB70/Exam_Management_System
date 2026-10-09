@@ -1,4 +1,4 @@
-import { Controller, Get, Res, Patch, Param, Body, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Res, Patch, Post, Param, Body, ParseIntPipe } from '@nestjs/common';
 import { ResultsService } from './results.service';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
@@ -61,5 +61,20 @@ export class ResultsController {
       message: `Result withheld status updated to ${data.result_status}`,
       data,
     };
+  }
+
+  @Post('violations')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async recordExamViolation(
+    @Body() dto: { studentId: number; academicYear: number; semester: string; reason?: string },
+    @GetUser('id') executorUserId: number,
+  ) {
+    return this.resultsService.recordExamViolation(
+      dto.studentId,
+      dto.academicYear,
+      dto.semester,
+      dto.reason,
+      executorUserId,
+    );
   }
 }

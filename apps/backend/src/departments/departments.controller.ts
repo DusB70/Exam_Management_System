@@ -64,6 +64,7 @@ export class DepartmentsController {
         department_name: dto.departmentName,
         department_code: dto.departmentCode.toUpperCase(),
         parent_department_id: dto.parentDepartmentId || null,
+        created_at: dto.establishedDate ? new Date(dto.establishedDate) : new Date(),
       },
     });
 
@@ -131,6 +132,7 @@ export class DepartmentsController {
         department_name: dto.departmentName,
         department_code: dto.departmentCode.toUpperCase(),
         parent_department_id: dto.parentDepartmentId || null,
+        created_at: dto.establishedDate ? new Date(dto.establishedDate) : undefined,
       },
     });
 

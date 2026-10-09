@@ -32,6 +32,7 @@ model User {
   created_at         DateTime?      @default(now()) @db.Timestamp(6)
   audit_logs         AuditLog[]
   recorded_marks     ExamMark[]
+  recorded_violations ExamViolation[]
   lecturer           Lecturer?
   refresh_tokens     RefreshToken[]
   student            Student?
@@ -78,6 +79,7 @@ model Student {
   medical_submissions     MedicalSubmission[]
   grace_chance_applications GraceChanceApplication[]
   recorrection_requests   RecorrectionRequest[]
+  exam_violations         ExamViolation[]
 
   @@map("students")
 }
@@ -103,9 +105,12 @@ model Degree {
   degree_id              Int                   @id @default(autoincrement())
   degree_name            String                @unique @db.VarChar(150)
   degree_code            String                @unique @db.VarChar(20)
-  department_id          Int
+  department_id          Int?
+  duration_years         Float?                @default(4)
   total_credits_required Float                 @default(0)
-  department             Department            @relation(fields: [department_id], references: [department_id], onDelete: Cascade)
+  compulsory_credits     Float?                @default(0)
+  min_optional_credits   Float?                @default(0)
+  department             Department?           @relation(fields: [department_id], references: [department_id], onDelete: SetNull)
   students               Student[]
   specializations        Specialization[]
   courses                CourseDegree[]
@@ -169,12 +174,14 @@ model CourseRegistration {
   registration_id   Int       @id @default(autoincrement())
   student_id        Int
   course_id         Int
-  attempt_type      String    @default("PROPER") @db.VarChar(20)
+  attempt_type      String    @default("PROPER") @db.VarChar(30)
+  attempt_number    Int       @default(1)
+  is_held           Boolean   @default(false)
   registration_date DateTime? @default(now()) @db.Timestamp(6)
   course            Course    @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
   student           Student   @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
 
-  @@unique([student_id, course_id], name: "unique_student_course")
+  @@unique([student_id, course_id, attempt_number], name: "unique_student_course_attempt")
   @@map("course_registrations")
 }
 
@@ -272,6 +279,8 @@ model StudentCourseGrade {
   grade_id                    Int      @id @default(autoincrement())
   student_id                  Int
   course_id                   Int
+  attempt_number              Int      @default(1)
+  attempt_type                String   @default("PROPER") @db.VarChar(30)
   continuous_assessment_marks Float    @default(0)
   final_exam_marks            Float    @default(0)
   total_marks                 Float    @default(0)
@@ -279,14 +288,32 @@ model StudentCourseGrade {
   grade_point                 Float
   is_published                Boolean  @default(false)
   is_locked                   Boolean  @default(false)
+  is_violated                 Boolean  @default(false)
+  is_held                     Boolean  @default(false)
+  max_allowed_grade           String?  @db.VarChar(5)
   result_status               String?  @db.VarChar(20)
   created_at                  DateTime @default(now()) @db.Timestamp(6)
   updated_at                  DateTime @updatedAt @db.Timestamp(6)
   course                      Course   @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
   student                     Student  @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
 
-  @@unique([student_id, course_id])
+  @@unique([student_id, course_id, attempt_number], name: "unique_student_course_grade_attempt")
   @@map("student_course_grades")
+}
+
+model ExamViolation {
+  violation_id   Int      @id @default(autoincrement())
+  student_id     Int
+  academic_year  Int
+  semester       String   @db.VarChar(10)
+  reason         String?  @db.Text
+  recorded_by_id Int
+  created_at     DateTime @default(now()) @db.Timestamp(6)
+  student        Student  @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+  recorded_by    User     @relation(fields: [recorded_by_id], references: [user_id])
+
+  @@unique([student_id, academic_year, semester])
+  @@map("exam_violations")
 }
 
 model StudentSemesterGpa {

@@ -272,7 +272,7 @@ export class NotificationsService {
   }
 
   /**
-   * Notifies the 2nd Marker when the 1st marker returns papers to AR office, providing a Magic Link for evaluation.
+   * Notifies the 2nd Marker when 1st marking is submitted, providing a Magic Link for evaluation.
    */
   async sendSecondMarkerMagicLinkNotification(
     markerEmail: string,
@@ -280,17 +280,23 @@ export class NotificationsService {
     courseCode: string,
     courseName: string,
     magicLinkUrl: string,
+    markerType: string = 'INTERNAL',
   ): Promise<void> {
-    const subject = `2nd Marking Paper Packet Ready & Access Link - ${courseCode}`;
+    const subject = `2nd Marking Evaluation Request & Access Link - ${courseCode}`;
+    const collectionInstruction =
+      markerType === 'EXTERNAL'
+        ? 'You will receive the physical examination paper packet in due course via dispatch/courier.'
+        : 'Please visit the Assistant Registrar (AR) Office to collect the physical examination paper packet.';
+
     const htmlContent = `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fff;padding:24px;border-radius:12px;border:1px solid #e2e8f0;">
         <h2 style="color:#0f172a;margin-top:0;">2nd Marking Evaluation Request</h2>
         <p>Dear <strong>${markerName}</strong>,</p>
-        <p>The paper packet for <strong>${courseCode} — ${courseName}</strong> has been returned to the Assistant Registrar (AR) Office by the 1st Marker and is ready for collection.</p>
+        <p>The 1st marking evaluation for <strong>${courseCode} — ${courseName}</strong> has been finished and submitted.</p>
         <div style="background:#f0fdf4;padding:16px;border-radius:8px;border:1px solid #bbf7d0;margin:16px 0;">
-          <p style="margin:0;color:#166534;font-weight:700;">Action Required:</p>
-          <p style="margin:6px 0 12px;color:#15803d;font-size:14px;">1. Collect the paper packet from the AR Office.<br/>2. Use your secure Magic Link below to view 1st marker marks, download nominal student lists, and submit your 2nd marking results.</p>
-          <a href="${magicLinkUrl}" style="display:inline-block;background:#16a34a;color:#ffffff;font-weight:bold;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;">Access 2nd Marking Portal</a>
+          <p style="margin:0;color:#166534;font-weight:700;">Paper Packet & Access Instructions:</p>
+          <p style="margin:6px 0 12px;color:#15803d;font-size:14px;">1. ${collectionInstruction}<br/>2. Use your secure Magic Link below to access the 2nd Marker Evaluation Marksheet directly.</p>
+          <a href="${magicLinkUrl}" style="display:inline-block;background:#16a34a;color:#ffffff;font-weight:bold;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;">Access 2nd Marking Sheet</a>
         </div>
         <p style="color:#64748b;font-size:12px;margin-top:24px;">Metropolitan University of Technology — Examinations Division</p>
       </div>
@@ -298,7 +304,7 @@ export class NotificationsService {
 
     if (!this.client) {
       this.logger.log(
-        `[SIMULATED EMAIL] 2nd Marker Magic Link -> ${markerEmail} | URL: ${magicLinkUrl}`,
+        `[SIMULATED EMAIL] 2nd Marker Magic Link (${markerType}) -> ${markerEmail} | URL: ${magicLinkUrl}`,
       );
       return;
     }
@@ -318,7 +324,7 @@ export class NotificationsService {
   }
 
   /**
-   * Notifies the 1st Marker when 2nd marking is submitted so they can review side-by-side marks and finalize for HOD.
+   * Notifies the In-Charge / 1st Marker when 2nd marking is submitted so they can review side-by-side marks and select max/min/avg options.
    */
   async sendFirstMarkerSecondMarkingDoneNotification(
     markerEmail: string,
@@ -326,15 +332,15 @@ export class NotificationsService {
     courseCode: string,
     courseName: string,
   ): Promise<void> {
-    const subject = `2nd Marking Completed: Review & Finalize Results - ${courseCode}`;
+    const subject = `2nd Marking Completed for ${courseCode} — Action Required`;
     const htmlContent = `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fff;padding:24px;border-radius:12px;border:1px solid #e2e8f0;">
         <h2 style="color:#0f172a;margin-top:0;">2nd Marking Evaluation Completed</h2>
         <p>Dear <strong>${markerName}</strong>,</p>
         <p>The Second Marker has completed and submitted the 2nd marking evaluation for <strong>${courseCode} — ${courseName}</strong>.</p>
         <div style="background:#eff6ff;padding:16px;border-radius:8px;border:1px solid #bfdbfe;margin:16px 0;">
-          <p style="margin:0;color:#1e40af;font-weight:700;">Final Review Action:</p>
-          <p style="margin:6px 0 0;color:#1d4ed8;font-size:14px;">Please log into the staff portal to review side-by-side marks, resolve any discrepancies, and submit the final evaluation to the Head of Department (HOD).</p>
+          <p style="margin:0;color:#1e40af;font-weight:700;">In-Charge Resolution Action Required:</p>
+          <p style="margin:6px 0 0;color:#1d4ed8;font-size:14px;">Please log into the portal to check the 2nd marker evaluations. Changed marks are highlighted and you can select whether to take the maximum, minimum, or average mark for each record to compile the detailed marksheet.</p>
         </div>
         <p style="color:#64748b;font-size:12px;margin-top:24px;">Metropolitan University of Technology — Examinations Division</p>
       </div>
@@ -342,7 +348,7 @@ export class NotificationsService {
 
     if (!this.client) {
       this.logger.log(
-        `[SIMULATED EMAIL] First Marker 2nd Marking Complete -> ${markerEmail} (${courseCode})`,
+        `[SIMULATED EMAIL] In-Charge 2nd Marking Complete -> ${markerEmail} (${courseCode})`,
       );
       return;
     }
@@ -354,7 +360,7 @@ export class NotificationsService {
         sender: { name: this.senderName, email: this.senderEmail },
         to: [{ email: markerEmail, name: markerName }],
       });
-      this.logger.log(`First marker 2nd marking complete email sent to ${markerEmail}`);
+      this.logger.log(`In-charge notification email sent to ${markerEmail}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Failed to send 2nd marking complete email to ${markerEmail}: ${msg}`);

@@ -666,6 +666,107 @@ export class ExamsService {
     };
   }
 
+  async saveBulkTimetable(items: any[], executorId: number) {
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      throw new BadRequestException(
+        'Please provide at least one valid timetable entry before saving.',
+      );
+    }
+
+    const results = [];
+    try {
+      for (const item of items) {
+        const courseId = Number(item.courseId);
+        if (isNaN(courseId) || courseId <= 0) {
+          throw new BadRequestException('Invalid course selection provided for timetable entry.');
+        }
+
+        const batch = item.batch
+          ? String(item.batch)
+              .trim()
+              .replace(/^batch\s+/i, '')
+          : '21/22';
+
+        if (!item.examDate) {
+          throw new BadRequestException(
+            'Please specify an examination date for all entered courses.',
+          );
+        }
+
+        const parsedDate = parseFlexibleDate(item.examDate);
+        if (!parsedDate) {
+          throw new BadRequestException(
+            `Invalid examination date '${item.examDate}' provided. Please enter dates in DD-MM-YYYY format (e.g. 15-10-2026).`,
+          );
+        }
+
+        const existing = await this.prisma.examTimetable.findFirst({
+          where: { batch, course_id: courseId },
+        });
+
+        const examName = item.examName || 'End Semester Examination 2026';
+        const startTime = item.startTime || '09:00 AM';
+        const endTime = item.endTime || '12:00 PM';
+        const venue = item.venue || 'Main Exam Hall A';
+
+        if (existing) {
+          const updated = await this.prisma.examTimetable.update({
+            where: { timetable_id: existing.timetable_id },
+            data: {
+              batch,
+              exam_name: examName,
+              exam_date: parsedDate,
+              start_time: startTime,
+              end_time: endTime,
+              venue,
+              is_dirty: true,
+            } as any,
+          });
+          results.push(updated);
+        } else {
+          const created = await this.prisma.examTimetable.create({
+            data: {
+              batch,
+              course_id: courseId,
+              exam_name: examName,
+              exam_date: parsedDate,
+              start_time: startTime,
+              end_time: endTime,
+              venue,
+              is_published: false,
+              is_dirty: true,
+            } as any,
+          });
+          results.push(created);
+        }
+
+        await this.prisma.coursePublishingProgress.upsert({
+          where: { course_id: courseId },
+          update: { batch },
+          create: { course_id: courseId, batch, exam_held: 'PENDING' },
+        });
+      }
+
+      await this.auditService.logAction(
+        executorId,
+        'EXAM_TIMETABLE_BULK_SAVE',
+        'exam_timetables',
+        'BULK',
+        null,
+        { count: results.length },
+      );
+
+      return results;
+    } catch (err: any) {
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
+      throw new BadRequestException(
+        err.message || 'Failed to save timetable entries. Please check the entries and try again.',
+      );
+    }
+  }
+
   async validateExcelTimetable(
     batch: string,
     semester: string,
@@ -687,15 +788,36 @@ export class ExamsService {
 
     // Header validation
     const headerRow: string[] = (rawRows[0] || []).map((h: any) => String(h).trim());
-    const expectedHeaders = ['Course Code', 'Date', 'Start Time', 'End Time', 'Venue'];
+    const expectedHeaders = [
+      'Batch',
+      'Semester',
+      'Examination Name',
+      'Course Code',
+      'Date',
+      'Start Time',
+      'End Time',
+      'Venue',
+    ];
 
     const headerErrors: string[] = [];
 
+    const hasBatchHeader = headerRow.some((h) => /batch/i.test(h));
+    const hasSemesterHeader = headerRow.some((h) => /semester|sem/i.test(h));
+    const hasExamNameHeader = headerRow.some((h) => /exam.*name|examination|exam_name/i.test(h));
     const hasCodeHeader = headerRow.some((h) => /course|subject|code/i.test(h));
     const hasDateHeader = headerRow.some((h) => /date/i.test(h));
     const hasStartHeader = headerRow.some((h) => /start|time/i.test(h));
     const hasEndHeader = headerRow.some((h) => /end/i.test(h));
 
+    if (!hasBatchHeader) {
+      headerErrors.push("Missing required column 'Batch'");
+    }
+    if (!hasSemesterHeader) {
+      headerErrors.push("Missing required column 'Semester'");
+    }
+    if (!hasExamNameHeader) {
+      headerErrors.push("Missing required column 'Examination Name'");
+    }
     if (!hasCodeHeader) {
       headerErrors.push("Missing required column 'Course Code'");
     }
@@ -711,9 +833,7 @@ export class ExamsService {
 
     const rowsData: any[] = XLSX.utils.sheet_to_json(sheet);
 
-    // Fetch system courses to validate course code matches for this batch/semester
     const systemCourses = await this.prisma.course.findMany({
-      where: semester && semester !== 'ALL' ? { semester } : {},
       include: { department: true },
     });
 
@@ -724,11 +844,18 @@ export class ExamsService {
       const row = rowsData[index];
       const rowErrors: string[] = [];
 
+      const batchKey = Object.keys(row).find((k) => /batch/i.test(k));
+      const semesterKey = Object.keys(row).find((k) => /semester|sem/i.test(k));
+      const examNameKey = Object.keys(row).find((k) => /exam.*name|examination|exam_name/i.test(k));
       const codeKey = Object.keys(row).find((k) => /course|subject|code/i.test(k));
       const dateKey = Object.keys(row).find((k) => /date/i.test(k));
       const startKey = Object.keys(row).find((k) => /start|time/i.test(k));
       const endKey = Object.keys(row).find((k) => /end/i.test(k));
       const venueKey = Object.keys(row).find((k) => /venue|hall|location/i.test(k));
+
+      const rawBatch = batchKey ? String(row[batchKey]).trim() : batch || '';
+      const rawSemester = semesterKey ? String(row[semesterKey]).trim() : semester || '';
+      const rawExamName = examNameKey ? String(row[examNameKey]).trim() : examName || '';
 
       const rawCode = codeKey ? String(row[codeKey]).trim() : '';
       const rawDate = dateKey ? row[dateKey] : '';
@@ -736,16 +863,29 @@ export class ExamsService {
       const rawEnd = endKey ? String(row[endKey]).trim() : '12:00 PM';
       const rawVenue = venueKey ? String(row[venueKey]).trim() : 'Main Exam Hall A';
 
+      // Clean batch format e.g. "Batch 21/22" -> "21/22"
+      const cleanBatch = rawBatch.replace(/^batch\s+/i, '').trim();
+      const cleanSemester = rawSemester.replace(/^semester\s+/i, '').trim();
+
+      if (!cleanBatch) {
+        rowErrors.push('Batch is missing.');
+      }
+      if (!cleanSemester) {
+        rowErrors.push('Semester is missing.');
+      }
+      if (!rawExamName) {
+        rowErrors.push('Examination Name is missing.');
+      }
+
+      let matchedCourse: any = null;
       if (!rawCode) {
         rowErrors.push('Course Code is missing or empty.');
       } else {
-        const matchedCourse = systemCourses.find(
+        matchedCourse = systemCourses.find(
           (c) => c.course_code.toLowerCase() === rawCode.toLowerCase(),
         );
         if (!matchedCourse) {
-          rowErrors.push(
-            `Course Code '${rawCode}' does not exist in the system${semester && semester !== 'ALL' ? ` for Semester ${semester}` : ''}.`,
-          );
+          rowErrors.push(`Course Code '${rawCode}' does not exist in the system.`);
         }
       }
 
@@ -764,18 +904,16 @@ export class ExamsService {
         hasBlockingErrors = true;
       }
 
-      const matched = systemCourses.find(
-        (c) => c.course_code.toLowerCase() === rawCode.toLowerCase(),
-      );
-
       const formattedDisplayDate = formatToDDMMYYYY(rawDate);
 
       parsedRows.push({
         rowIndex: index + 2,
+        batch: cleanBatch || '21/22',
+        semester: cleanSemester || (matchedCourse ? matchedCourse.semester : '1.1'),
+        examName: rawExamName || 'End Semester Examination 2026',
         courseCode: rawCode,
-        courseName: matched ? matched.course_name : 'Unknown Course',
-        courseId: matched ? matched.course_id : null,
-        semester: matched ? matched.semester : semester || '1.1',
+        courseName: matchedCourse ? matchedCourse.course_name : 'Unknown Course',
+        courseId: matchedCourse ? matchedCourse.course_id : null,
         examDate: formattedDisplayDate !== '—' ? formattedDisplayDate : String(rawDate || ''),
         startTime: rawStart,
         endTime: rawEnd,
@@ -786,9 +924,9 @@ export class ExamsService {
     }
 
     return {
-      batch,
-      semester,
-      examName,
+      batch: batch || 'ALL',
+      semester: semester || 'ALL',
+      examName: examName || 'Imported Examination',
       headerRow,
       headerErrors,
       expectedHeaders,
@@ -818,20 +956,21 @@ export class ExamsService {
     const itemsToSave = validation.rows
       .filter((r) => r.isValid && r.courseId)
       .map((r) => ({
+        batch: r.batch,
+        semester: r.semester,
         courseId: r.courseId,
-        examName: 'End Semester Examination 2026',
+        examName: r.examName,
         examDate: r.examDate,
         startTime: r.startTime,
         endTime: r.endTime,
         venue: r.venue,
       }));
 
-    const results = await this.saveBatchTimetable(batch, itemsToSave, executorId);
+    const results = await this.saveBulkTimetable(itemsToSave, executorId);
 
     return {
-      batch,
       importedCount: results.length,
-      message: `Successfully imported and saved ${results.length} timetable entries for batch ${batch}!`,
+      message: `Successfully imported and saved ${results.length} timetable entries from spreadsheet!`,
     };
   }
 
@@ -889,7 +1028,7 @@ export class ExamsService {
 
     const registeredCourseIds = student.registrations.map((r) => r.course_id);
 
-    const timetables = await this.prisma.examTimetable.findMany({
+    const mySchedules = await this.prisma.examTimetable.findMany({
       where: {
         is_published: true,
         course_id: { in: registeredCourseIds },
@@ -904,7 +1043,25 @@ export class ExamsService {
       orderBy: { exam_date: 'asc' },
     });
 
-    return timetables;
+    const fullTimetable = await this.prisma.examTimetable.findMany({
+      where: {
+        is_published: true,
+      },
+      include: {
+        course: {
+          include: {
+            department: true,
+          },
+        },
+      },
+      orderBy: [{ batch: 'asc' }, { exam_date: 'asc' }, { start_time: 'asc' }],
+    });
+
+    return {
+      mySchedules,
+      fullTimetable,
+      timetables: mySchedules,
+    };
   }
 
   // ==========================================
@@ -926,66 +1083,13 @@ export class ExamsService {
     });
 
     const coursesWithTimetables = courses.filter((c) => c.timetables && c.timetables.length > 0);
-    const now = new Date();
 
     const results = await Promise.all(
       coursesWithTimetables.map(async (course) => {
         const prog = course.publishing_progress;
         const mainTimetable = course.timetables[0];
 
-        let effectiveExamHeld = prog?.exam_held || 'PENDING';
-
-        // Auto-calculate HELD status after 2 hours from exam end date & time if not postponed
-        if (
-          effectiveExamHeld !== 'POSTPONED' &&
-          effectiveExamHeld !== 'HELD' &&
-          mainTimetable?.exam_date
-        ) {
-          const parsedDate = parseFlexibleDate(mainTimetable.exam_date);
-          if (parsedDate) {
-            let endHours = 12;
-            let endMins = 0;
-            if (mainTimetable.end_time) {
-              const isPm = /pm/i.test(mainTimetable.end_time);
-              const isAm = /am/i.test(mainTimetable.end_time);
-              const match = mainTimetable.end_time.match(/(\d{1,2})[:.](\d{1,2})/);
-              if (match) {
-                endHours = parseInt(match[1], 10);
-                endMins = parseInt(match[2], 10);
-                if (isPm && endHours < 12) endHours += 12;
-                if (isAm && endHours === 12) endHours = 0;
-              }
-            }
-
-            const cutoff = new Date(
-              Date.UTC(
-                parsedDate.getUTCFullYear(),
-                parsedDate.getUTCMonth(),
-                parsedDate.getUTCDate(),
-                endHours + 2, // 2 hours after exam end time
-                endMins,
-              ),
-            );
-
-            if (now >= cutoff) {
-              effectiveExamHeld = 'HELD';
-              // Automatically persist HELD status in database
-              try {
-                await this.prisma.coursePublishingProgress.upsert({
-                  where: { course_id: course.course_id },
-                  update: { exam_held: 'HELD' },
-                  create: {
-                    course_id: course.course_id,
-                    exam_held: 'HELD',
-                    batch: mainTimetable.batch,
-                  },
-                });
-              } catch (e) {
-                // Ignore background DB error on read
-              }
-            }
-          }
-        }
+        const effectiveExamHeld = prog?.exam_held || 'PENDING';
 
         return {
           course_id: course.course_id,

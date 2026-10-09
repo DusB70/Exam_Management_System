@@ -41,6 +41,9 @@ export class MarksService {
       },
       include: {
         department: true,
+        _count: {
+          select: { registrations: true },
+        },
       },
       orderBy: { course_code: 'asc' },
     });
@@ -82,6 +85,15 @@ export class MarksService {
           select: {
             specialization_name: true,
             specialization_code: true,
+          },
+        },
+        course_grades: {
+          where: { course_id: courseId },
+          select: {
+            continuous_assessment_marks: true,
+            final_exam_marks: true,
+            total_marks: true,
+            grade: true,
           },
         },
       },
@@ -494,6 +506,7 @@ export class MarksService {
             student: {
               select: {
                 academic_year: true,
+                batch: true,
               },
             },
           },
@@ -501,14 +514,32 @@ export class MarksService {
       },
     });
 
-    const courseDistribution = courses.map((c) => ({
-      courseId: c.course_id,
-      courseCode: c.course_code,
-      courseName: c.course_name,
-      studentCount: c.registrations.length,
-      academicYear: c.registrations[0]?.student?.academic_year || new Date().getFullYear(),
-      semester: c.semester,
-    }));
+    const courseDistribution = courses.map((c) => {
+      const year: number | null = c.registrations[0]?.student?.academic_year || null;
+      let batchStr = '21/22';
+      if (c.registrations[0]?.student?.batch) {
+        batchStr = String(c.registrations[0].student.batch);
+      } else if (year) {
+        if (year >= 2000) {
+          const y1 = year.toString().slice(2);
+          const y2 = (year + 1).toString().slice(2);
+          batchStr = `${y1}/${y2}`;
+        } else {
+          batchStr = `${year}/${year + 1}`;
+        }
+      }
+
+      return {
+        courseId: c.course_id,
+        courseCode: c.course_code,
+        courseName: c.course_name,
+        studentCount: c.registrations.length,
+        latestSemesterCount: c.registrations.length,
+        batch: batchStr,
+        academicYear: year || new Date().getFullYear(),
+        semester: c.semester,
+      };
+    });
 
     const allStudentIds = new Set<number>();
     courses.forEach((c) => {
@@ -559,11 +590,39 @@ export class MarksService {
       }
     }
 
-    // 2. Get students registered for this course
-    const students = await this.getStudentsRegisteredForCourse(courseId);
+    // 2. Get registrations for this course with student details
+    const registrations = await this.prisma.courseRegistration.findMany({
+      where: { course_id: courseId },
+      include: {
+        student: {
+          include: {
+            user: {
+              select: {
+                full_name: true,
+                name_with_initials: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Sort students: regular/proper attempt students at the top, repeat/violation/held at the bottom
+    registrations.sort((a, b) => {
+      const aIsRepeat = a.attempt_type !== 'PROPER' || a.attempt_number > 1 || a.is_held;
+      const bIsRepeat = b.attempt_type !== 'PROPER' || b.attempt_number > 1 || b.is_held;
+
+      if (aIsRepeat !== bIsRepeat) {
+        return aIsRepeat ? 1 : -1;
+      }
+      return (a.student.registration_number || '').localeCompare(
+        b.student.registration_number || '',
+      );
+    });
 
     // Get the batch (academic year of the first student, or default to current year)
-    const batch = students[0]?.academic_year || new Date().getFullYear();
+    const batch = registrations[0]?.student?.academic_year || new Date().getFullYear();
 
     const rows: any[][] = [
       ['Student List'],
@@ -571,15 +630,19 @@ export class MarksService {
       ['Course Name:', course.course_name],
       ['Batch:', `Batch ${batch}`],
       [],
-      ['Registration Number', 'Index Number', 'Full Name', 'Email'],
+      ['Registration Number', 'Index Number', 'Full Name', 'Email', 'Attempt Type'],
     ];
 
-    students.forEach((s) => {
+    registrations.forEach((reg) => {
+      const s = reg.student;
+      let typeLabel = reg.attempt_type || 'PROPER';
+      if (reg.is_held) typeLabel += ' (HELD)';
       rows.push([
         s.registration_number,
         s.index_number,
         s.user?.full_name || '',
         s.user?.email || '',
+        typeLabel,
       ]);
     });
 
@@ -591,6 +654,7 @@ export class MarksService {
       { wch: 25 }, // Index Number
       { wch: 40 }, // Full Name
       { wch: 35 }, // Email
+      { wch: 20 }, // Attempt Type
     ];
 
     const workbook = XLSX.utils.book_new();
@@ -710,7 +774,13 @@ export class MarksService {
   // 3. Create Course Exam (Add assessment)
   async createCourseExam(
     courseId: number,
-    data: { exam_type: string; exam_title: string; total_marks: number },
+    data: {
+      exam_type: string;
+      exam_title: string;
+      total_marks: number;
+      weight?: number;
+      contributes?: boolean;
+    },
     lecturerUserId: number,
     isLecturer: boolean,
   ) {
@@ -729,7 +799,7 @@ export class MarksService {
       }
     }
 
-    return this.prisma.exam.create({
+    const exam = await this.prisma.exam.create({
       data: {
         course_id: courseId,
         exam_type: data.exam_type,
@@ -740,6 +810,29 @@ export class MarksService {
         end_time: new Date(1970, 0, 1, 12, 0, 0),
       },
     });
+
+    if (data.weight !== undefined || data.contributes !== undefined) {
+      const course = await this.prisma.course.findUnique({ where: { course_id: courseId } });
+      const currentConfig: any = course?.marks_config || {};
+      const weights = currentConfig.weights || {};
+      const contributes = currentConfig.contributes || {};
+
+      if (data.weight !== undefined) weights[exam.exam_id] = data.weight;
+      if (data.contributes !== undefined) contributes[exam.exam_id] = data.contributes;
+
+      await this.prisma.course.update({
+        where: { course_id: courseId },
+        data: {
+          marks_config: {
+            ...currentConfig,
+            weights,
+            contributes,
+          },
+        },
+      });
+    }
+
+    return exam;
   }
 
   // 4. Update Course Exam (Rename, edit total marks)
@@ -902,6 +995,78 @@ export class MarksService {
     return { success: true };
   }
 
+  // Revoke Course Grid (before Head approval)
+  async revokeCourseGrid(courseId: number, executorUserId: number, isLecturer: boolean) {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+    });
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    if (isLecturer) {
+      const lecturer = await this.getLecturerByUserId(executorUserId);
+      const isAssigned = await this.prisma.courseLecturer.findUnique({
+        where: {
+          course_id_lecturer_id: {
+            course_id: courseId,
+            lecturer_id: lecturer.lecturer_id,
+          },
+        },
+      });
+      if (!isAssigned) {
+        throw new BadRequestException('You are not authorized to revoke marks for this course.');
+      }
+    }
+
+    const currentStatus = course.result_submission_status;
+    if (
+      currentStatus === 'APPROVED' ||
+      currentStatus === 'PUBLISHED_PROVISIONAL' ||
+      currentStatus === 'SUBMITTED_TO_STAFF' ||
+      currentStatus === 'RECEIVED_BY_STAFF'
+    ) {
+      throw new BadRequestException(
+        'Cannot revoke result sheet after Department Head or Exam Staff approval.',
+      );
+    }
+
+    if (!currentStatus || currentStatus === 'DRAFT') {
+      throw new BadRequestException('Result sheet is not submitted yet.');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.course.update({
+        where: { course_id: courseId },
+        data: {
+          result_submission_status: 'DRAFT',
+          rejection_reason: null,
+        },
+      }),
+      this.prisma.studentCourseGrade.updateMany({
+        where: { course_id: courseId },
+        data: {
+          result_status: 'DRAFT',
+          is_locked: false,
+          is_published: false,
+        },
+      }),
+      this.prisma.examMark.updateMany({
+        where: {
+          exam: { course_id: courseId },
+        },
+        data: {
+          grading_status: 'PENDING',
+        },
+      }),
+    ]);
+
+    return {
+      success: true,
+      message: 'Submitted result sheet revoked successfully. You can now edit marks.',
+    };
+  }
+
   // Compile Course Grades for Submission
   async compileCourseGradesForSubmission(courseId: number, submissionType: string) {
     const course = await this.prisma.course.findUnique({
@@ -920,6 +1085,7 @@ export class MarksService {
 
     const config: any = course.marks_config || {};
     const weights = config.weights || {};
+    const contributes = config.contributes || {};
     const cutoffs = config.cutoffs || { ca: 40, final: 35 };
     const gradeRanges = config.grade_ranges || null;
 
@@ -927,26 +1093,32 @@ export class MarksService {
     const finalExams = exams.filter((e) => e.exam_type.toUpperCase() === 'FINAL');
 
     const resolvedWeights: { [examId: number]: number } = {};
+    const resolvedContributes: { [examId: number]: boolean } = {};
 
-    let hasCustomWeights = false;
-    if (weights && Object.keys(weights).length > 0) {
-      hasCustomWeights = true;
-      for (const [examIdStr, w] of Object.entries(weights)) {
-        resolvedWeights[parseInt(examIdStr)] = parseFloat(w as string);
+    const hasCustomWeights = Object.keys(weights).length > 0;
+
+    exams.forEach((e) => {
+      const isContributing = contributes[e.exam_id] !== undefined ? !!contributes[e.exam_id] : true;
+      resolvedContributes[e.exam_id] = isContributing;
+
+      if (hasCustomWeights) {
+        resolvedWeights[e.exam_id] =
+          isContributing && weights[e.exam_id] !== undefined ? parseFloat(weights[e.exam_id]) : 0;
       }
-    }
+    });
 
     if (!hasCustomWeights) {
-      if (caExams.length > 0 && finalExams.length > 0) {
-        caExams.forEach((e) => {
-          resolvedWeights[e.exam_id] = 40 / caExams.length;
+      const activeCaExams = caExams.filter((e) => resolvedContributes[e.exam_id]);
+      if (activeCaExams.length > 0 && finalExams.length > 0) {
+        activeCaExams.forEach((e) => {
+          resolvedWeights[e.exam_id] = 40 / activeCaExams.length;
         });
         finalExams.forEach((e) => {
           resolvedWeights[e.exam_id] = 60 / finalExams.length;
         });
-      } else if (caExams.length > 0) {
-        caExams.forEach((e) => {
-          resolvedWeights[e.exam_id] = 100 / caExams.length;
+      } else if (activeCaExams.length > 0) {
+        activeCaExams.forEach((e) => {
+          resolvedWeights[e.exam_id] = 100 / activeCaExams.length;
         });
       } else if (finalExams.length > 0) {
         finalExams.forEach((e) => {
@@ -958,10 +1130,13 @@ export class MarksService {
     for (const reg of registrations) {
       let totalCAObtained = 0;
       let totalCAMax = 0;
+      let totalCAWeightedScore = 0;
+      let totalCAWeight = 0;
+
       let totalFinalObtained = 0;
       let totalFinalMax = 0;
-
-      let totalWeightedPercentage = 0;
+      let totalFinalWeightedScore = 0;
+      let totalFinalWeight = 0;
 
       for (const exam of exams) {
         const mark = await this.prisma.examMark.findUnique({
@@ -974,26 +1149,45 @@ export class MarksService {
         });
 
         const score = mark ? mark.marks_obtained : 0;
+        const isContributing = resolvedContributes[exam.exam_id];
+        const weight = resolvedWeights[exam.exam_id] || 0;
 
         if (exam.exam_type.toUpperCase() === 'CA') {
-          totalCAObtained += score;
-          totalCAMax += exam.total_marks;
+          if (isContributing) {
+            totalCAObtained += score;
+            totalCAMax += exam.total_marks;
+            totalCAWeight += weight;
+            if (exam.total_marks > 0 && weight > 0) {
+              totalCAWeightedScore += (score / exam.total_marks) * weight;
+            }
+          }
         } else {
           totalFinalObtained += score;
           totalFinalMax += exam.total_marks;
-        }
-
-        const weight = resolvedWeights[exam.exam_id] || 0;
-        if (exam.total_marks > 0 && weight > 0) {
-          totalWeightedPercentage += (score / exam.total_marks) * weight;
+          totalFinalWeight += weight;
+          if (exam.total_marks > 0 && weight > 0) {
+            totalFinalWeightedScore += (score / exam.total_marks) * weight;
+          }
         }
       }
 
-      const caPercentage = totalCAMax > 0 ? (totalCAObtained / totalCAMax) * 100 : 100;
-      const finalPercentage = totalFinalMax > 0 ? (totalFinalObtained / totalFinalMax) * 100 : 100;
+      const totalWeightedPercentage = totalCAWeightedScore + totalFinalWeightedScore;
 
-      const failedCA = totalCAMax > 0 && caPercentage < (cutoffs.ca ?? 40);
-      const failedFinal = totalFinalMax > 0 && finalPercentage < (cutoffs.final ?? 35);
+      const caPercentage =
+        totalCAWeight > 0
+          ? (totalCAWeightedScore / totalCAWeight) * 100
+          : totalCAMax > 0
+            ? (totalCAObtained / totalCAMax) * 100
+            : 100;
+      const finalPercentage =
+        totalFinalWeight > 0
+          ? (totalFinalWeightedScore / totalFinalWeight) * 100
+          : totalFinalMax > 0
+            ? (totalFinalObtained / totalFinalMax) * 100
+            : 100;
+
+      const failedCA = totalCAWeight > 0 && caPercentage < (cutoffs.ca ?? 40);
+      const failedFinal = totalFinalWeight > 0 && finalPercentage < (cutoffs.final ?? 35);
 
       let grade = '';
       let gradePoint = 0;
@@ -1013,11 +1207,28 @@ export class MarksService {
         gradePoint = mapped.gradePoint;
       }
 
+      const attemptNumber = reg.attempt_number || 1;
+      const attemptType = reg.attempt_type || 'PROPER';
+      let maxAllowedGrade: string | null = null;
+
+      if (
+        ['REPEAT_1', 'REPEAT_2', 'REPEAT_VIOLATION', 'REPEAT'].includes(attemptType) ||
+        attemptNumber > 1
+      ) {
+        maxAllowedGrade = 'C';
+      }
+
+      if (maxAllowedGrade === 'C' && gradePoint > 2.0) {
+        grade = 'C';
+        gradePoint = 2.0;
+      }
+
       await this.prisma.studentCourseGrade.upsert({
         where: {
-          student_id_course_id: {
+          unique_student_course_grade_attempt: {
             student_id: reg.student_id,
             course_id: courseId,
+            attempt_number: attemptNumber,
           },
         },
         update: {
@@ -1026,11 +1237,16 @@ export class MarksService {
           total_marks: totalWeightedPercentage,
           grade,
           grade_point: gradePoint,
+          attempt_type: attemptType,
+          max_allowed_grade: maxAllowedGrade,
           result_status: submissionType,
         },
         create: {
           student_id: reg.student_id,
           course_id: courseId,
+          attempt_number: attemptNumber,
+          attempt_type: attemptType,
+          max_allowed_grade: maxAllowedGrade,
           continuous_assessment_marks: totalCAObtained,
           final_exam_marks: totalFinalObtained,
           total_marks: totalWeightedPercentage,
@@ -1452,9 +1668,12 @@ export class MarksService {
     }
   }
 
-  async submitSecondMarking(
+  // Submit 1st Marking to 2nd Marker
+  async submitFirstMarking(
     courseId: number,
-    dto: { marks: { studentId: number; examMarks: { [examId: string]: number } }[] },
+    dto: { marks?: any; config?: any },
+    _executorUserId: number,
+    _isLecturer: boolean,
   ) {
     const course = await this.prisma.course.findUnique({
       where: { course_id: courseId },
@@ -1468,33 +1687,124 @@ export class MarksService {
       throw new NotFoundException(`Course with ID ${courseId} not found`);
     }
 
-    // Save 2nd marking entries
-    await this.prisma.$transaction(async (tx) => {
-      for (const entry of dto.marks) {
-        for (const [examIdStr, score] of Object.entries(entry.examMarks)) {
-          const examId = parseInt(examIdStr);
-          if (isNaN(examId)) continue;
-
-          await tx.examMark.upsert({
-            where: {
-              student_id_exam_id: {
-                student_id: entry.studentId,
-                exam_id: examId,
-              },
-            },
-            update: {
-              marks_obtained: score,
-            },
-            create: {
-              student_id: entry.studentId,
-              exam_id: examId,
-              marks_obtained: score,
-              recorded_by_id: course.second_marker_lecturer?.user_id || 1,
-              grading_status: 'PENDING',
-            },
-          });
-        }
+    let existingConfig: any = course.marks_config || {};
+    if (typeof existingConfig === 'string') {
+      try {
+        existingConfig = JSON.parse(existingConfig);
+      } catch {
+        existingConfig = {};
       }
+    }
+
+    if (dto.config) {
+      existingConfig = { ...existingConfig, ...dto.config };
+    }
+    if (dto.marks) {
+      existingConfig.firstMarkerSheet = {
+        submitted: true,
+        submittedAt: new Date().toISOString(),
+        marks: dto.marks,
+      };
+    } else if (existingConfig.firstMarkerSheet) {
+      existingConfig.firstMarkerSheet.submitted = true;
+      existingConfig.firstMarkerSheet.submittedAt = new Date().toISOString();
+    } else {
+      existingConfig.firstMarkerSheet = {
+        submitted: true,
+        submittedAt: new Date().toISOString(),
+        marks: {},
+      };
+    }
+
+    await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        marks_config: existingConfig,
+      },
+    });
+
+    // Update publishing progress
+    await this.prisma.coursePublishingProgress.upsert({
+      where: { course_id: courseId },
+      update: { first_marking_submitted: true },
+      create: { course_id: courseId, first_marking_submitted: true },
+    });
+
+    // Send email to Second Marker
+    const secondMarkerEmail =
+      course.second_marker_type === 'EXTERNAL'
+        ? course.second_marker_email
+        : course.second_marker_lecturer?.user?.email;
+
+    const secondMarkerName =
+      course.second_marker_type === 'EXTERNAL'
+        ? course.second_marker_name || 'Second Marker'
+        : course.second_marker_lecturer?.user?.full_name || 'Second Marker';
+
+    if (secondMarkerEmail) {
+      const payload = {
+        courseId,
+        email: secondMarkerEmail,
+        exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      };
+      const token = Buffer.from(JSON.stringify(payload)).toString('base64url');
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const magicLinkUrl = `${frontendUrl}/second-marking-portal?token=${token}`;
+
+      await this.notificationsService.sendSecondMarkerMagicLinkNotification(
+        secondMarkerEmail,
+        secondMarkerName,
+        course.course_code,
+        course.course_name,
+        magicLinkUrl,
+        course.second_marker_type || 'INTERNAL',
+      );
+    }
+
+    return {
+      success: true,
+      message: '1st marking submitted to 2nd marker successfully.',
+      magicTokenCreated: Boolean(secondMarkerEmail),
+    };
+  }
+
+  async submitSecondMarking(courseId: number, dto: { marks: any; config?: any }) {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+      include: {
+        first_marker_lecturer: { include: { user: true } },
+        second_marker_lecturer: { include: { user: true } },
+      },
+    });
+
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    let existingConfig: any = course.marks_config || {};
+    if (typeof existingConfig === 'string') {
+      try {
+        existingConfig = JSON.parse(existingConfig);
+      } catch {
+        existingConfig = {};
+      }
+    }
+
+    existingConfig.secondMarkerSheet = {
+      submitted: true,
+      submittedAt: new Date().toISOString(),
+      marks: dto.marks || existingConfig.secondMarkerSheet?.marks || {},
+    };
+
+    if (dto.config) {
+      existingConfig = { ...existingConfig, ...dto.config };
+    }
+
+    await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        marks_config: existingConfig,
+      },
     });
 
     // Mark 2nd marking as submitted in publishing progress
@@ -1504,15 +1814,15 @@ export class MarksService {
       create: { course_id: courseId, second_marking_submitted: true },
     });
 
-    // Trigger notification email to First Marker
+    // Trigger notification email to In-charge / First Marker
     const firstMarkerEmail =
       course.first_marker_type === 'EXTERNAL'
         ? course.first_marker_email
         : course.first_marker_lecturer?.user?.email;
     const firstMarkerName =
       course.first_marker_type === 'EXTERNAL'
-        ? course.first_marker_name || 'First Marker'
-        : course.first_marker_lecturer?.user?.full_name || 'First Marker';
+        ? course.first_marker_name || 'Course In-Charge'
+        : course.first_marker_lecturer?.user?.full_name || 'Course In-Charge';
 
     if (firstMarkerEmail) {
       await this.notificationsService.sendFirstMarkerSecondMarkingDoneNotification(
@@ -1526,7 +1836,7 @@ export class MarksService {
     return {
       success: true,
       message:
-        'Second marking submitted successfully. Notification sent to 1st Marker for final review.',
+        'Second marking submitted successfully. Notification sent to Course In-Charge for final reconciliation.',
     };
   }
 }

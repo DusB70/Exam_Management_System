@@ -5,21 +5,6 @@ import { XlsxParserService } from './xlsx-parser.service';
 import * as bcrypt from 'bcrypt';
 import * as XLSX from 'xlsx';
 
-interface StudentImportRow {
-  nameWithInitials: string;
-  fullName: string;
-  email: string;
-  nicNo: string;
-  dateOfBirth: string; // YYYY-MM-DD
-  phoneNumber: string;
-  address: string;
-  indexNumber: string;
-  registrationNumber: string;
-  academicYear: number;
-  degreeCode: string;
-  specializationCode?: string;
-}
-
 @Injectable()
 export class ImportsService {
   constructor(
@@ -28,8 +13,25 @@ export class ImportsService {
     private readonly xlsxParser: XlsxParserService,
   ) {}
 
+  private getCaseInsensitiveValue(row: Record<string, any>, possibleKeys: string[]): string {
+    const rowKeys = Object.keys(row);
+    for (const pKey of possibleKeys) {
+      const cleanPKey = pKey.toLowerCase().replace(/[\s_-]/g, '');
+      const foundKey = rowKeys.find((rk) => rk.toLowerCase().replace(/[\s_-]/g, '') === cleanPKey);
+      if (
+        foundKey &&
+        row[foundKey] !== undefined &&
+        row[foundKey] !== null &&
+        String(row[foundKey]).trim() !== ''
+      ) {
+        return String(row[foundKey]).trim();
+      }
+    }
+    return '';
+  }
+
   async importStudents(buffer: Buffer, executorId: number) {
-    const rows = this.xlsxParser.parseBuffer<StudentImportRow>(buffer);
+    const rows = this.xlsxParser.parseBuffer<Record<string, any>>(buffer);
     if (rows.length === 0) {
       throw new BadRequestException('Import file is empty.');
     }
@@ -41,20 +43,79 @@ export class ImportsService {
         const row = rows[i];
         const rowNum = i + 2; // Row number in sheet (1-based, plus header)
 
-        const {
-          nameWithInitials,
-          fullName,
-          email,
-          nicNo,
-          dateOfBirth,
-          phoneNumber,
-          address,
-          indexNumber,
-          registrationNumber,
-          academicYear,
-          degreeCode,
-          specializationCode,
-        } = row;
+        const nameWithInitials = this.getCaseInsensitiveValue(row, [
+          'namewithinitials',
+          'name_with_initials',
+          'name with initials',
+          'initials',
+        ]);
+        const fullName = this.getCaseInsensitiveValue(row, [
+          'fullname',
+          'full_name',
+          'full name',
+          'name',
+        ]);
+        const email = this.getCaseInsensitiveValue(row, ['email', 'emailaddress', 'email_address']);
+        const nicNo = this.getCaseInsensitiveValue(row, [
+          'nicno',
+          'nic_no',
+          'nic no',
+          'nic',
+          'nicnumber',
+        ]);
+        const dateOfBirth = this.getCaseInsensitiveValue(row, [
+          'dateofbirth',
+          'date_of_birth',
+          'date of birth',
+          'dob',
+        ]);
+        const phoneNumber = this.getCaseInsensitiveValue(row, [
+          'phonenumber',
+          'phone_number',
+          'phone number',
+          'phone',
+          'contactno',
+        ]);
+        const address = this.getCaseInsensitiveValue(row, ['address', 'permanent_address']);
+        const indexNumber = this.getCaseInsensitiveValue(row, [
+          'indexnumber',
+          'index_number',
+          'index number',
+          'indexno',
+          'index',
+        ]);
+        const registrationNumber = this.getCaseInsensitiveValue(row, [
+          'registrationnumber',
+          'registration_number',
+          'registration number',
+          'regno',
+          'reg_no',
+        ]);
+        const academicYear = this.getCaseInsensitiveValue(row, [
+          'enrollmentyear',
+          'enrollment_year',
+          'enrollment year',
+          'academicyear',
+          'academic_year',
+          'academic year',
+          'year',
+        ]);
+        const degreeCode = this.getCaseInsensitiveValue(row, [
+          'enrolleddegree',
+          'enrolled_degree',
+          'enrolled degree',
+          'degreecode',
+          'degree_code',
+          'degree code',
+          'degree',
+        ]);
+        const batchVal = this.getCaseInsensitiveValue(row, [
+          'batch',
+          'specializationcode',
+          'specialization_code',
+          'specialization code',
+          'specialization',
+        ]);
 
         if (
           !nameWithInitials ||
@@ -70,33 +131,40 @@ export class ImportsService {
           !degreeCode
         ) {
           throw new BadRequestException(
-            `Row ${rowNum}: All columns except specializationCode are required (nameWithInitials, fullName, email, nicNo, dateOfBirth, phoneNumber, address, indexNumber, registrationNumber, academicYear, degreeCode).`,
+            `Row ${rowNum}: Required column missing or empty. Required columns: full name, name with initials, email, nic no, date of birth, phone number, address, index number, registration number, enrollment year, and enrolled degree.`,
           );
         }
 
         // 1. Verify degree
-        const degree = await tx.degree.findUnique({
-          where: { degree_code: degreeCode.trim().toUpperCase() },
+        const degree = await tx.degree.findFirst({
+          where: {
+            OR: [
+              { degree_code: { equals: degreeCode.trim(), mode: 'insensitive' } },
+              { degree_name: { equals: degreeCode.trim(), mode: 'insensitive' } },
+            ],
+          },
         });
         if (!degree) {
-          throw new BadRequestException(`Row ${rowNum}: Degree code "${degreeCode}" not found.`);
+          throw new BadRequestException(
+            `Row ${rowNum}: Enrolled degree "${degreeCode}" not found.`,
+          );
         }
 
-        // 2. Verify specialization (optional)
+        // 2. Verify specialization / batch (optional)
         let specializationId: number | null = null;
-        if (specializationCode && specializationCode.trim()) {
+        if (batchVal) {
           const spec = await tx.specialization.findFirst({
             where: {
               degree_id: degree.degree_id,
-              specialization_code: specializationCode.trim().toUpperCase(),
+              OR: [
+                { specialization_code: { equals: batchVal.trim(), mode: 'insensitive' } },
+                { specialization_name: { equals: batchVal.trim(), mode: 'insensitive' } },
+              ],
             },
           });
-          if (!spec) {
-            throw new BadRequestException(
-              `Row ${rowNum}: Specialization "${specializationCode}" not found for degree "${degreeCode}".`,
-            );
+          if (spec) {
+            specializationId = spec.specialization_id;
           }
-          specializationId = spec.specialization_id;
         }
 
         // 3. Verify unique email
@@ -163,6 +231,7 @@ export class ImportsService {
             degree_id: degree.degree_id,
             specialization_id: specializationId,
             academic_year: Number(academicYear),
+            batch: batchVal ? batchVal.trim() : null,
           },
         });
 
@@ -326,12 +395,10 @@ export class ImportsService {
         }
 
         // 2. Verify Student is registered for this course
-        const isRegistered = await tx.courseRegistration.findUnique({
+        const isRegistered = await tx.courseRegistration.findFirst({
           where: {
-            unique_student_course: {
-              student_id: student.student_id,
-              course_id: exam.course_id,
-            },
+            student_id: student.student_id,
+            course_id: exam.course_id,
           },
         });
         if (!isRegistered) {

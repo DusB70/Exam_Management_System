@@ -149,8 +149,8 @@ export default function StudentImportDialog({
           <div className="bg-secondary/20 border border-border/40 p-4 rounded-2xl text-xs space-y-2 text-muted-foreground">
             <h4 className="font-bold text-foreground">Spreadsheet Formatting Instructions</h4>
             <p>
-              Your Excel sheet must contain a header row with the following column headers exactly
-              (case-sensitive):
+              Your Excel sheet must contain a header row with the following column headers
+              (case-insensitive):
             </p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-[10px] bg-secondary/35 p-3 rounded-lg border border-border/50 max-h-[120px] overflow-y-auto">
               <span>• fullName</span>
@@ -162,12 +162,13 @@ export default function StudentImportDialog({
               <span>• address</span>
               <span>• indexNumber</span>
               <span>• registrationNumber</span>
-              <span>• academicYear</span>
-              <span>• degreeCode</span>
-              <span>• specializationCode</span>
+              <span>• enrollment year</span>
+              <span>• enrolled degree</span>
+              <span>• batch (optional)</span>
             </div>
             <p className="text-[10px] italic pt-1">
-              Note: Default account password will be set to student's NIC number.
+              Note: Default account password will be set to student's NIC number. Column headers are
+              case-insensitive.
             </p>
           </div>
 

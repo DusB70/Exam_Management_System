@@ -30,51 +30,29 @@ async function main() {
   console.log('✅ Roles seeded');
 
   // ─── 2. Departments ──────────────────────────────────────────────────────
-  // Seed parent departments first
-  const parentDepartments = [
-    { department_name: 'Bio system technology', department_code: 'BST' },
-    { department_name: 'Engineering technology', department_code: 'ET' },
-    { department_name: 'Information and communication technology', department_code: 'ICT' },
+  const activeDepartments = [
+    {
+      department_name: 'Department of Information and Communication Technology',
+      department_code: 'ICT',
+    },
+    {
+      department_name: 'Department of Electrical and Electronic Technology',
+      department_code: 'EET',
+    },
+    { department_name: 'Department of Materials Technology', department_code: 'MTT' },
+    { department_name: 'Department of Bio Process Technology', department_code: 'BPT' },
+    { department_name: 'Department of Food Technology', department_code: 'FDT' },
   ];
 
   const seededDepts: Record<string, any> = {};
 
-  for (const dept of parentDepartments) {
+  for (const dept of activeDepartments) {
     const d = await prisma.department.upsert({
       where: { department_code: dept.department_code },
-      update: { department_name: dept.department_name },
-      create: dept,
+      update: { department_name: dept.department_name, parent_department_id: null },
+      create: { department_name: dept.department_name, department_code: dept.department_code },
     });
     seededDepts[dept.department_code] = d;
-  }
-
-  // Seed child departments
-  const childDepartments = [
-    {
-      department_name: 'Electrical and Electronic Technology',
-      department_code: 'EET',
-      parent_code: 'ET',
-    },
-    { department_name: 'Materials Technology', department_code: 'MT', parent_code: 'ET' },
-    { department_name: 'Bio Process Technology', department_code: 'BPT', parent_code: 'BST' },
-    { department_name: 'Food Technology', department_code: 'FT', parent_code: 'BST' },
-  ];
-
-  for (const child of childDepartments) {
-    const parent = seededDepts[child.parent_code];
-    const d = await prisma.department.upsert({
-      where: { department_code: child.department_code },
-      update: {
-        department_name: child.department_name,
-        parent_department_id: parent.department_id,
-      },
-      create: {
-        department_name: child.department_name,
-        department_code: child.department_code,
-        parent_department_id: parent.department_id,
-      },
-    });
-    seededDepts[child.department_code] = d;
   }
   console.log('✅ Departments seeded');
 
@@ -83,12 +61,12 @@ async function main() {
     {
       degree_name: 'Bachelor of Biosystems Technology',
       degree_code: 'BBST',
-      department_code: 'BST',
+      department_code: 'BPT',
     },
     {
       degree_name: 'Bachelor of Engineering Technology',
       degree_code: 'BET',
-      department_code: 'ET',
+      department_code: 'EET',
     },
     {
       degree_name: 'Bachelor of Information and Communication Technology',

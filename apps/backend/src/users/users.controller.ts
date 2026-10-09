@@ -113,6 +113,7 @@ export class UsersController {
     @Query('status') status?: string,
     @Query('degreeId') degreeId?: string,
     @Query('academicYear') academicYear?: string,
+    @Query('batch') batch?: string,
   ) {
     const parsedPage = parseInt(page, 10) || 1;
     const parsedLimit = parseInt(limit, 10) || 10;
@@ -126,6 +127,7 @@ export class UsersController {
       status,
       parsedDegreeId,
       parsedAcademicYear,
+      batch,
     );
 
     return {

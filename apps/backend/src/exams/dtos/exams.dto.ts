@@ -104,6 +104,14 @@ export class ScheduleExamDto {
 }
 
 export class TimetableItemDto {
+  @IsString()
+  @IsOptional()
+  batch?: string;
+
+  @IsString()
+  @IsOptional()
+  semester?: string;
+
   @IsInt()
   @IsNotEmpty()
   courseId!: number;
@@ -139,6 +147,13 @@ export class SaveBatchTimetableDto {
   @Type(() => TimetableItemDto)
   @IsOptional()
   items?: TimetableItemDto[];
+}
+
+export class SaveBulkTimetableDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TimetableItemDto)
+  items!: TimetableItemDto[];
 }
 
 export class UpdateProgressDto {

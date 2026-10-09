@@ -190,17 +190,30 @@ export class ResultsService {
 
     // Map each combined course to a result grade object
     const grades = Array.from(coursesMap.values()).map((course) => {
-      const matchingGrade = studentGrades.find((sg) => sg.course_id === course.course_id);
+      const sgList = studentGrades.filter((sg) => sg.course_id === course.course_id);
+      sgList.sort((a, b) => a.attempt_number - b.attempt_number);
 
-      // Determine course type (COMPULSORY or OPTIONAL) for this degree
+      const latestGrade = sgList[sgList.length - 1] || null;
+      const properGrade =
+        sgList.find((sg) => sg.attempt_number === 1 || sg.attempt_type === 'PROPER') || null;
+      const repeat1Grade =
+        sgList.find(
+          (sg) =>
+            sg.attempt_number === 2 ||
+            sg.attempt_type === 'REPEAT_1' ||
+            sg.attempt_type === 'REPEAT_VIOLATION',
+        ) || null;
+      const repeat2Grade =
+        sgList.find((sg) => sg.attempt_number === 3 || sg.attempt_type === 'REPEAT_2') || null;
+
+      const hasMultipleAttempts = sgList.length > 1;
+
       const courseDegree = course.degrees?.[0];
       const type = courseDegree ? courseDegree.status : 'COMPULSORY';
 
-      // Determine if published
-      const isPublished = matchingGrade ? matchingGrade.is_published : false;
-      const resultStatus = matchingGrade ? matchingGrade.result_status : null;
+      const isPublished = latestGrade ? latestGrade.is_published : false;
+      const resultStatus = latestGrade ? latestGrade.result_status : null;
 
-      // Extract marks_config from course to calculate allocated CA weight
       let maxCaWeight = 40;
       try {
         const config = course.marks_config as any;
@@ -214,24 +227,53 @@ export class ResultsService {
           if (sum > 0) maxCaWeight = sum;
         }
       } catch (e) {
-        // ignore invalid marks_config structure
+        // ignore
       }
 
-      const caObtained = matchingGrade ? matchingGrade.continuous_assessment_marks : 0;
+      const caObtained = latestGrade ? latestGrade.continuous_assessment_marks : 0;
 
       return {
-        grade_id: matchingGrade?.grade_id || `reg-${course.course_id}`,
+        grade_id: latestGrade?.grade_id || `reg-${course.course_id}`,
         student_id: student.student_id,
         course_id: course.course_id,
         continuous_assessment_marks: caObtained,
         max_ca_weight: maxCaWeight,
         formatted_ca: `${caObtained.toFixed(1)} / ${maxCaWeight}`,
-        total_marks: matchingGrade ? matchingGrade.total_marks : 0,
-        grade: matchingGrade ? matchingGrade.grade : 'Pending',
-        grade_point: matchingGrade ? matchingGrade.grade_point : 0,
+        total_marks: latestGrade ? latestGrade.total_marks : 0,
+        grade: latestGrade ? latestGrade.grade : 'Pending',
+        grade_point: latestGrade ? latestGrade.grade_point : 0,
         is_published: isPublished,
         result_status: resultStatus,
-        type, // "COMPULSORY" or "OPTIONAL"
+        is_violated: latestGrade ? latestGrade.is_violated : false,
+        is_held: latestGrade ? latestGrade.is_held : false,
+        type,
+        hasMultipleAttempts,
+        attempts: {
+          proper: properGrade
+            ? {
+                grade: properGrade.grade,
+                grade_point: properGrade.grade_point,
+                marks: properGrade.total_marks,
+                is_published: properGrade.is_published,
+              }
+            : null,
+          repeat_1: repeat1Grade
+            ? {
+                grade: repeat1Grade.grade,
+                grade_point: repeat1Grade.grade_point,
+                marks: repeat1Grade.total_marks,
+                is_published: repeat1Grade.is_published,
+              }
+            : null,
+          repeat_2: repeat2Grade
+            ? {
+                grade: repeat2Grade.grade,
+                grade_point: repeat2Grade.grade_point,
+                marks: repeat2Grade.total_marks,
+                is_published: repeat2Grade.is_published,
+              }
+            : null,
+        },
         course: {
           course_id: course.course_id,
           course_code: course.course_code,
@@ -246,10 +288,16 @@ export class ResultsService {
     // Sort grades by semester
     grades.sort((a, b) => a.course.semester.localeCompare(b.course.semester));
 
+    const violations = await this.prisma.examViolation.findMany({
+      where: { student_id: student.student_id },
+      orderBy: { created_at: 'desc' },
+    });
+
     return {
       student,
       gpas,
       grades,
+      violations,
     };
   }
 
@@ -279,6 +327,7 @@ export class ResultsService {
     let semesterCredits = 0;
 
     for (const g of currentSemesterGrades) {
+      if (g.is_violated || g.is_held || g.result_status === 'VIOLATED') continue;
       const cred = parseFloat(g.course.credit_value.toString());
       semesterGpProduct += g.grade_point * cred;
       semesterCredits += cred;
@@ -301,6 +350,7 @@ export class ResultsService {
     let cumulativeCredits = 0;
 
     for (const g of allHistoricalGrades) {
+      if (g.is_violated || g.is_held || g.result_status === 'VIOLATED') continue;
       const cred = parseFloat(g.course.credit_value.toString());
       cumulativeGpProduct += g.grade_point * cred;
       cumulativeCredits += cred;
@@ -828,5 +878,231 @@ export class ResultsService {
     );
 
     return updated;
+  }
+
+  async recordExamViolation(
+    studentId: number,
+    academicYear: number,
+    semester: string,
+    reason: string | undefined,
+    executorUserId: number,
+  ) {
+    const student = await this.prisma.student.findUnique({
+      where: { student_id: studentId },
+      include: { user: true, degree: true },
+    });
+    if (!student) {
+      throw new NotFoundException(`Student with ID ${studentId} not found`);
+    }
+
+    const violation = await this.prisma.examViolation.upsert({
+      where: {
+        student_id_academic_year_semester: {
+          student_id: studentId,
+          academic_year: academicYear,
+          semester,
+        },
+      },
+      update: {
+        reason,
+        recorded_by_id: executorUserId,
+      },
+      create: {
+        student_id: studentId,
+        academic_year: academicYear,
+        semester,
+        reason,
+        recorded_by_id: executorUserId,
+      },
+    });
+
+    const coursesInSem = await this.prisma.course.findMany({
+      where: {
+        degrees: { some: { degree_id: student.degree_id } },
+        semester,
+      },
+    });
+
+    const courseIds = coursesInSem.map((c) => c.course_id);
+
+    await this.prisma.studentCourseGrade.updateMany({
+      where: {
+        student_id: studentId,
+        course_id: { in: courseIds },
+      },
+      data: {
+        is_violated: true,
+        is_held: true,
+        result_status: 'VIOLATED',
+        grade_point: 0.0,
+      },
+    });
+
+    for (const course of coursesInSem) {
+      const maxReg = await this.prisma.courseRegistration.findFirst({
+        where: { student_id: studentId, course_id: course.course_id },
+        orderBy: { attempt_number: 'desc' },
+      });
+      const nextAttempt = maxReg ? maxReg.attempt_number + 1 : 2;
+
+      await this.prisma.courseRegistration.upsert({
+        where: {
+          unique_student_course_attempt: {
+            student_id: studentId,
+            course_id: course.course_id,
+            attempt_number: nextAttempt,
+          },
+        },
+        update: {
+          attempt_type: 'REPEAT_VIOLATION',
+          is_held: false,
+        },
+        create: {
+          student_id: studentId,
+          course_id: course.course_id,
+          attempt_number: nextAttempt,
+          attempt_type: 'REPEAT_VIOLATION',
+          is_held: false,
+        },
+      });
+
+      await this.prisma.studentCourseGrade.upsert({
+        where: {
+          unique_student_course_grade_attempt: {
+            student_id: studentId,
+            course_id: course.course_id,
+            attempt_number: nextAttempt,
+          },
+        },
+        update: {
+          attempt_type: 'REPEAT_VIOLATION',
+          max_allowed_grade: 'C',
+          is_violated: false,
+          is_held: false,
+        },
+        create: {
+          student_id: studentId,
+          course_id: course.course_id,
+          attempt_number: nextAttempt,
+          attempt_type: 'REPEAT_VIOLATION',
+          max_allowed_grade: 'C',
+          grade: 'Pending',
+          grade_point: 0.0,
+        },
+      });
+    }
+
+    const nextSem = this.getNextSemester(semester);
+    if (nextSem) {
+      const nextSemCourses = await this.prisma.course.findMany({
+        where: {
+          degrees: { some: { degree_id: student.degree_id } },
+          semester: nextSem,
+        },
+      });
+      const nextSemCourseIds = nextSemCourses.map((c) => c.course_id);
+
+      await this.prisma.courseRegistration.updateMany({
+        where: {
+          student_id: studentId,
+          course_id: { in: nextSemCourseIds },
+        },
+        data: {
+          is_held: true,
+        },
+      });
+
+      await this.prisma.studentCourseGrade.updateMany({
+        where: {
+          student_id: studentId,
+          course_id: { in: nextSemCourseIds },
+        },
+        data: {
+          is_held: true,
+        },
+      });
+
+      for (const course of nextSemCourses) {
+        const maxReg = await this.prisma.courseRegistration.findFirst({
+          where: { student_id: studentId, course_id: course.course_id },
+          orderBy: { attempt_number: 'desc' },
+        });
+        const nextAttempt = maxReg ? maxReg.attempt_number + 1 : 2;
+
+        await this.prisma.courseRegistration.upsert({
+          where: {
+            unique_student_course_attempt: {
+              student_id: studentId,
+              course_id: course.course_id,
+              attempt_number: nextAttempt,
+            },
+          },
+          update: {
+            attempt_type: 'HELD_RETAKE',
+            is_held: false,
+          },
+          create: {
+            student_id: studentId,
+            course_id: course.course_id,
+            attempt_number: nextAttempt,
+            attempt_type: 'HELD_RETAKE',
+            is_held: false,
+          },
+        });
+
+        await this.prisma.studentCourseGrade.upsert({
+          where: {
+            unique_student_course_grade_attempt: {
+              student_id: studentId,
+              course_id: course.course_id,
+              attempt_number: nextAttempt,
+            },
+          },
+          update: {
+            attempt_type: 'HELD_RETAKE',
+            max_allowed_grade: null,
+            is_violated: false,
+            is_held: false,
+          },
+          create: {
+            student_id: studentId,
+            course_id: course.course_id,
+            attempt_number: nextAttempt,
+            attempt_type: 'HELD_RETAKE',
+            max_allowed_grade: null,
+            grade: 'Pending',
+            grade_point: 0.0,
+          },
+        });
+      }
+    }
+
+    await this.auditService.logAction(
+      executorUserId,
+      'EXAM_VIOLATION_MARK',
+      'exam_violations',
+      violation.violation_id.toString(),
+      null,
+      { studentId, academicYear, semester, reason },
+    );
+
+    return {
+      success: true,
+      message: `Exam violation recorded for student ${student.registration_number} in Semester ${semester}.`,
+      data: violation,
+    };
+  }
+
+  private getNextSemester(semester: string): string | null {
+    const map: Record<string, string> = {
+      '1.1': '1.2',
+      '1.2': '2.1',
+      '2.1': '2.2',
+      '2.2': '3.1',
+      '3.1': '3.2',
+      '3.2': '4.1',
+      '4.1': '4.2',
+    };
+    return map[semester] || null;
   }
 }

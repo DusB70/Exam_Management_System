@@ -33,6 +33,18 @@ export default function ResultsAndImportsPage() {
   const [yearFilter, setYearFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
 
+  // Exam Violation Modal State (Staff/Admin)
+  const [violationModalOpen, setViolationModalOpen] = useState(false);
+  const [violationStudentId, setViolationStudentId] = useState<number | ''>('');
+  const [violationYear, setViolationYear] = useState<number>(new Date().getFullYear());
+  const [violationSemester, setViolationSemester] = useState<string>('2.2');
+  const [violationReason, setViolationReason] = useState<string>('');
+  const [violationSubmitting, setViolationSubmitting] = useState(false);
+  const [violationMsg, setViolationMsg] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
   // ==========================================
   // STUDENT PORTAL QUERIES
   // ==========================================
@@ -140,30 +152,43 @@ export default function ResultsAndImportsPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button
-            onClick={handleDownloadMyPdf}
-            disabled={isDownloadingPdf}
-            className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold bg-primary text-primary-foreground rounded-xl shadow-md hover:bg-primary/90 transition-colors disabled:opacity-50"
-          >
-            {isDownloadingPdf ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            Download PDF Transcript
-          </button>
-          <button
-            onClick={handleDownloadMyExcel}
-            disabled={isDownloadingExcel}
-            className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold bg-emerald-600 text-white rounded-xl shadow-md hover:bg-emerald-500 transition-colors disabled:opacity-50"
-          >
-            {isDownloadingExcel ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <FileSpreadsheet className="h-4 w-4" />
-            )}
-            Download Excel Sheet
-          </button>
+          {!isStudent && (
+            <button
+              onClick={() => setViolationModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold bg-rose-600 text-white rounded-xl shadow-md hover:bg-rose-500 transition-colors"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              Mark Exam Violation
+            </button>
+          )}
+          {isStudent && (
+            <>
+              <button
+                onClick={handleDownloadMyPdf}
+                disabled={isDownloadingPdf}
+                className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold bg-primary text-primary-foreground rounded-xl shadow-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {isDownloadingPdf ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Download PDF Transcript
+              </button>
+              <button
+                onClick={handleDownloadMyExcel}
+                disabled={isDownloadingExcel}
+                className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold bg-emerald-600 text-white rounded-xl shadow-md hover:bg-emerald-500 transition-colors disabled:opacity-50"
+              >
+                {isDownloadingExcel ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="h-4 w-4" />
+                )}
+                Download Excel Sheet
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -247,100 +272,312 @@ export default function ResultsAndImportsPage() {
         )}
       </div>
 
-      {/* Results Table (Without Progress Status column, with View Progress button) */}
-      <div className="bg-card border border-border/80 rounded-3xl shadow-sm overflow-hidden">
-        {isReportLoading ? (
-          <div className="p-12 text-center text-muted-foreground flex flex-col items-center gap-2">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm font-medium">Loading report card data...</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/20">
-                  <th className="px-6 py-4">Semester</th>
-                  <th className="px-6 py-4">Course Code</th>
-                  <th className="px-6 py-4">Module Name</th>
-                  <th className="px-6 py-4">Credits</th>
-                  <th className="px-6 py-4 text-center">CA Marks (Obtained / Weight)</th>
-                  <th className="px-6 py-4 text-center">Publishing Progress</th>
-                  <th className="px-6 py-4 text-right">Overall Grade</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60 text-sm font-medium">
-                {filteredGrades.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-12 text-muted-foreground text-xs">
-                      No results match the current filters.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredGrades.map((grade: any) => {
-                    const prog = myProgress.find(
-                      (p: any) => p.course_id === grade.course?.course_id,
-                    );
+      {/* Results Table */}
+      {(() => {
+        const hasAnyMultipleAttempts = filteredGrades.some(
+          (g: any) => g.hasMultipleAttempts || g.attempts?.repeat_1 || g.attempts?.repeat_2,
+        );
 
-                    const caObtained = grade.continuous_assessment_marks ?? 0;
-                    const caWeight = grade.max_ca_weight || 40;
-                    const formattedCa = `${caObtained.toFixed(1)} / ${caWeight}`;
-
-                    return (
-                      <tr key={grade.grade_id} className="hover:bg-secondary/15 transition-colors">
-                        <td className="px-6 py-4 text-muted-foreground font-semibold">
-                          Sem {grade.course?.semester}
-                        </td>
-                        <td className="px-6 py-4 font-bold font-mono text-primary text-xs uppercase">
-                          {grade.course?.course_code}
-                        </td>
-                        <td className="px-6 py-4 font-semibold text-foreground">
-                          {grade.course?.course_name}
-                        </td>
-                        <td className="px-6 py-4 font-mono text-muted-foreground">
-                          {parseFloat(grade.course?.credit_value)}
-                        </td>
-                        <td className="px-6 py-4 text-center font-mono font-extrabold text-foreground">
-                          <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-xs">
-                            {formattedCa}
-                          </span>
-                        </td>
-
-                        {/* View Progress Button Action */}
-                        <td className="px-6 py-4 text-center">
-                          <button
-                            onClick={() =>
-                              setSelectedProgressCourse({
-                                ...grade,
-                                progress: prog,
-                              })
-                            }
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 font-bold text-xs rounded-xl border border-border/60 transition cursor-pointer"
-                          >
-                            <Activity className="h-3.5 w-3.5 text-primary" />
-                            View Progress
-                          </button>
-                        </td>
-
-                        <td className="px-6 py-4 text-right">
-                          {grade.is_published ? (
-                            <span className="px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded-xl font-extrabold text-xs">
-                              {grade.grade}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground italic font-medium">
-                              Processing
-                            </span>
-                          )}
+        return (
+          <div className="bg-card border border-border/80 rounded-3xl shadow-sm overflow-hidden">
+            {isReportLoading ? (
+              <div className="p-12 text-center text-muted-foreground flex flex-col items-center gap-2">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-sm font-medium">Loading report card data...</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/20">
+                      <th className="px-6 py-4">Semester</th>
+                      <th className="px-6 py-4">Course Code</th>
+                      <th className="px-6 py-4">Module Name</th>
+                      <th className="px-6 py-4">Credits</th>
+                      {hasAnyMultipleAttempts ? (
+                        <>
+                          <th className="px-6 py-4 text-center bg-indigo-500/5 text-indigo-400">
+                            Proper
+                          </th>
+                          <th className="px-6 py-4 text-center bg-amber-500/5 text-amber-400">
+                            Repeat 1
+                          </th>
+                          <th className="px-6 py-4 text-center bg-rose-500/5 text-rose-400">
+                            Repeat 2
+                          </th>
+                        </>
+                      ) : (
+                        <th className="px-6 py-4 text-center">CA Marks (Obtained / Weight)</th>
+                      )}
+                      <th className="px-6 py-4 text-center">Publishing Progress</th>
+                      <th className="px-6 py-4 text-right">Overall Grade</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60 text-sm font-medium">
+                    {filteredGrades.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={hasAnyMultipleAttempts ? 9 : 7}
+                          className="text-center py-12 text-muted-foreground text-xs"
+                        >
+                          No results match the current filters.
                         </td>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                    ) : (
+                      filteredGrades.map((grade: any) => {
+                        const prog = myProgress.find(
+                          (p: any) => p.course_id === grade.course?.course_id,
+                        );
+
+                        const caObtained = grade.continuous_assessment_marks ?? 0;
+                        const caWeight = grade.max_ca_weight || 40;
+                        const formattedCa = `${caObtained.toFixed(1)} / ${caWeight}`;
+
+                        return (
+                          <tr
+                            key={grade.grade_id}
+                            className="hover:bg-secondary/15 transition-colors"
+                          >
+                            <td className="px-6 py-4 text-muted-foreground font-semibold">
+                              Sem {grade.course?.semester}
+                            </td>
+                            <td className="px-6 py-4 font-bold font-mono text-primary text-xs uppercase">
+                              {grade.course?.course_code}
+                            </td>
+                            <td className="px-6 py-4 font-semibold text-foreground">
+                              {grade.course?.course_name}
+                            </td>
+                            <td className="px-6 py-4 font-mono text-muted-foreground">
+                              {parseFloat(grade.course?.credit_value)}
+                            </td>
+
+                            {hasAnyMultipleAttempts ? (
+                              <>
+                                <td className="px-6 py-4 text-center font-mono font-bold">
+                                  {grade.attempts?.proper?.is_published ? (
+                                    <span className="px-2.5 py-1 bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 rounded-lg text-xs">
+                                      {grade.attempts.proper.grade}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">—</span>
+                                  )}
+                                </td>
+                                <td className="px-6 py-4 text-center font-mono font-bold">
+                                  {grade.attempts?.repeat_1?.is_published ? (
+                                    <span className="px-2.5 py-1 bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded-lg text-xs">
+                                      {grade.attempts.repeat_1.grade}
+                                    </span>
+                                  ) : grade.attempts?.repeat_1 ? (
+                                    <span className="text-amber-400 text-xs italic">Pending</span>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">—</span>
+                                  )}
+                                </td>
+                                <td className="px-6 py-4 text-center font-mono font-bold">
+                                  {grade.attempts?.repeat_2?.is_published ? (
+                                    <span className="px-2.5 py-1 bg-rose-500/10 text-rose-300 border border-rose-500/20 rounded-lg text-xs">
+                                      {grade.attempts.repeat_2.grade}
+                                    </span>
+                                  ) : grade.attempts?.repeat_2 ? (
+                                    <span className="text-rose-400 text-xs italic">Pending</span>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">—</span>
+                                  )}
+                                </td>
+                              </>
+                            ) : (
+                              <td className="px-6 py-4 text-center font-mono font-extrabold text-foreground">
+                                <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-xs">
+                                  {formattedCa}
+                                </span>
+                              </td>
+                            )}
+
+                            {/* View Progress Button Action */}
+                            <td className="px-6 py-4 text-center">
+                              <button
+                                onClick={() =>
+                                  setSelectedProgressCourse({
+                                    ...grade,
+                                    progress: prog,
+                                  })
+                                }
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 font-bold text-xs rounded-xl border border-border/60 transition cursor-pointer"
+                              >
+                                <Activity className="h-3.5 w-3.5 text-primary" />
+                                View Progress
+                              </button>
+                            </td>
+
+                            <td className="px-6 py-4 text-right">
+                              {grade.is_violated ? (
+                                <span className="px-3 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl font-extrabold text-xs">
+                                  VIOLATED (Held)
+                                </span>
+                              ) : grade.is_published ? (
+                                <span className="px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded-xl font-extrabold text-xs">
+                                  {grade.grade}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground italic font-medium">
+                                  Processing
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        );
+      })()}
+
+      {/* STAFF EXAM VIOLATION MODAL */}
+      {violationModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="bg-card border border-border/80 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden p-6 space-y-6">
+            <div className="flex items-center justify-between border-b border-border/60 pb-4">
+              <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
+                <AlertTriangle className="h-5 w-5" />
+                <span>Mark Exam Disciplinary Violation</span>
+              </div>
+              <button
+                onClick={() => setViolationModalOpen(false)}
+                className="p-1 hover:bg-secondary rounded-xl text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {violationMsg && (
+              <div
+                className={`p-3.5 rounded-xl text-xs font-semibold ${
+                  violationMsg.type === 'success'
+                    ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
+                    : 'bg-rose-500/10 border border-rose-500/30 text-rose-300'
+                }`}
+              >
+                {violationMsg.text}
+              </div>
+            )}
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!violationStudentId) {
+                  setViolationMsg({ type: 'error', text: 'Please enter a valid Student ID.' });
+                  return;
+                }
+                setViolationSubmitting(true);
+                setViolationMsg(null);
+                try {
+                  const res = await apiClient.post('/results/violations', {
+                    studentId: Number(violationStudentId),
+                    academicYear: Number(violationYear),
+                    semester: violationSemester,
+                    reason: violationReason || undefined,
+                  });
+                  if (res.data?.success) {
+                    setViolationMsg({ type: 'success', text: res.data.message });
+                    setViolationReason('');
+                  }
+                } catch (err: any) {
+                  setViolationMsg({
+                    type: 'error',
+                    text: err.response?.data?.message || 'Failed to record violation.',
+                  });
+                } finally {
+                  setViolationSubmitting(false);
+                }
+              }}
+              className="space-y-4 text-xs"
+            >
+              <div>
+                <label className="block font-semibold text-muted-foreground mb-1">Student ID</label>
+                <input
+                  type="number"
+                  required
+                  placeholder="Enter Student ID (e.g. 1)"
+                  value={violationStudentId}
+                  onChange={(e) =>
+                    setViolationStudentId(e.target.value ? Number(e.target.value) : '')
+                  }
+                  className="w-full px-3.5 py-2.5 bg-secondary/40 border border-border/80 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/60"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-muted-foreground mb-1">
+                    Academic Year
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={violationYear}
+                    onChange={(e) => setViolationYear(Number(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-secondary/40 border border-border/80 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/60"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-muted-foreground mb-1">
+                    Violated Semester
+                  </label>
+                  <select
+                    value={violationSemester}
+                    onChange={(e) => setViolationSemester(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-secondary/40 border border-border/80 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/60"
+                  >
+                    <option value="1.1">Semester 1.1</option>
+                    <option value="1.2">Semester 1.2</option>
+                    <option value="2.1">Semester 2.1</option>
+                    <option value="2.2">Semester 2.2</option>
+                    <option value="3.1">Semester 3.1</option>
+                    <option value="3.2">Semester 3.2</option>
+                    <option value="4.1">Semester 4.1</option>
+                    <option value="4.2">Semester 4.2</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-muted-foreground mb-1">
+                  Violation Reason / Report Details
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Details of the exam rule violation..."
+                  value={violationReason}
+                  onChange={(e) => setViolationReason(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-secondary/40 border border-border/80 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/60"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setViolationModalOpen(false)}
+                  className="px-4 py-2 bg-secondary text-secondary-foreground font-bold rounded-xl"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  disabled={violationSubmitting}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-extrabold rounded-xl shadow-md transition disabled:opacity-50"
+                >
+                  {violationSubmitting ? 'Recording...' : 'Record Violation'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* POPUP MODAL: RESULT PUBLISHING PROGRESS DIALOG */}

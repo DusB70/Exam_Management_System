@@ -25,6 +25,7 @@ import {
   UpdateHallDto,
   ScheduleExamDto,
   SaveBatchTimetableDto,
+  SaveBulkTimetableDto,
   UpdateProgressDto,
 } from './dtos/exams.dto';
 
@@ -178,6 +179,16 @@ export class ExamsController {
     };
   }
 
+  @Put('timetable/bulk')
+  async saveBulkTimetable(@Body() dto: SaveBulkTimetableDto, @GetUser('id') executorId: number) {
+    const data = await this.examsService.saveBulkTimetable(dto?.items || [], executorId);
+    return {
+      success: true,
+      message: 'Timetables saved successfully',
+      data,
+    };
+  }
+
   @Get(['timetable/batch/:batch(*)', 'timetable/batch/*'])
   async getTimetableByBatch(@Param() params: any, @Query('batch') queryBatch?: string) {
     const rawBatch = queryBatch || params.batch || params['0'] || '';
@@ -299,6 +310,7 @@ export class ExamsController {
   // ==========================================
 
   @Get('progress')
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
   async getPublishingProgress() {
     const data = await this.examsService.getPublishingProgress();
     return {

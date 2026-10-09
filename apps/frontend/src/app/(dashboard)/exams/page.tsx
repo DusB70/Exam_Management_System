@@ -88,6 +88,15 @@ function formatToDDMMYYYY(dateVal: any): string {
   return `${day}-${month}-${year}`;
 }
 
+function formatToYYYYMMDD(dateVal: any): string {
+  const d = parseFlexibleDate(dateVal);
+  if (!d) return '';
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const year = d.getUTCFullYear();
+  return `${year}-${month}-${day}`;
+}
+
 function TimePickerInput({
   value,
   onChange,
@@ -97,206 +106,363 @@ function TimePickerInput({
   onChange: (val: string) => void;
   className?: string;
 }) {
-  const [internalVal, setInternalVal] = React.useState(value || '09:00 AM');
   const [isOpen, setIsOpen] = React.useState(false);
+  const [activeSegment, setActiveSegment] = React.useState<'hours' | 'minutes' | 'period' | null>(
+    null,
+  );
+  const [typedBuffer, setTypedBuffer] = React.useState('');
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const nativeInputRef = React.useRef<HTMLInputElement>(null);
+  const hoursRef = React.useRef<HTMLSpanElement>(null);
+  const minutesRef = React.useRef<HTMLSpanElement>(null);
+  const periodRef = React.useRef<HTMLSpanElement>(null);
 
-  React.useEffect(() => {
-    if (value) setInternalVal(value);
-  }, [value]);
+  const parseVal = (timeStr: string) => {
+    if (!timeStr || timeStr === '--:-- --' || timeStr === '--:--') {
+      return { hours: '', minutes: '', period: '' };
+    }
+
+    let period = '';
+    if (/pm/i.test(timeStr)) period = 'PM';
+    else if (/am/i.test(timeStr)) period = 'AM';
+
+    const parts = timeStr.trim().split(/[:.]/);
+    let hours = '';
+    let minutes = '';
+
+    if (parts.length >= 1) {
+      const hClean = parts[0].replace(/\D/g, '');
+      if (hClean) {
+        let hNum = parseInt(hClean, 10);
+        if (!period) {
+          if (hNum >= 12) {
+            period = 'PM';
+            if (hNum > 12) hNum = hNum - 12;
+          } else {
+            period = 'AM';
+            if (hNum === 0) hNum = 12;
+          }
+        } else {
+          if (hNum > 12) hNum = hNum % 12 || 12;
+          if (hNum === 0) hNum = 12;
+        }
+        hours = String(hNum).padStart(2, '0');
+      }
+    }
+
+    if (parts.length >= 2) {
+      const mClean = parts[1].replace(/\D/g, '');
+      if (mClean) {
+        const mNum = parseInt(mClean, 10);
+        minutes = String(mNum % 60).padStart(2, '0');
+      }
+    }
+
+    return { hours, minutes, period };
+  };
+
+  const parsed = parseVal(value);
+
+  const updateSegment = (newH: string, newM: string, newP: string) => {
+    const finalH = newH || '--';
+    const finalM = newM || '--';
+    const finalP = newP || (newH || newM ? 'AM' : '--');
+
+    if (finalH === '--' && finalM === '--' && finalP === '--') {
+      onChange('');
+    } else {
+      onChange(`${finalH}:${finalM} ${finalP}`);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, segment: 'hours' | 'minutes' | 'period') => {
+    if (e.key === 'Tab') {
+      if (segment === 'hours') {
+        e.preventDefault();
+        setActiveSegment('minutes');
+        minutesRef.current?.focus();
+      } else if (segment === 'minutes') {
+        e.preventDefault();
+        setActiveSegment('period');
+        periodRef.current?.focus();
+      } else {
+        setActiveSegment(null);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (segment === 'hours') {
+        setActiveSegment('minutes');
+        minutesRef.current?.focus();
+      } else if (segment === 'minutes') {
+        setActiveSegment('period');
+        periodRef.current?.focus();
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (segment === 'period') {
+        setActiveSegment('minutes');
+        minutesRef.current?.focus();
+      } else if (segment === 'minutes') {
+        setActiveSegment('hours');
+        hoursRef.current?.focus();
+      }
+      return;
+    }
+
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+      setTypedBuffer('');
+      if (segment === 'hours') {
+        updateSegment('', parsed.minutes, parsed.period);
+      } else if (segment === 'minutes') {
+        updateSegment(parsed.hours, '', parsed.period);
+      } else if (segment === 'period') {
+        updateSegment(parsed.hours, parsed.minutes, '');
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      const dir = e.key === 'ArrowUp' ? 1 : -1;
+
+      if (segment === 'hours') {
+        let curH = parseInt(parsed.hours, 10);
+        if (isNaN(curH)) {
+          curH = dir === 1 ? 8 : 10;
+        }
+        let nextH = curH + dir;
+        if (nextH > 12) nextH = 1;
+        if (nextH < 1) nextH = 12;
+        updateSegment(String(nextH).padStart(2, '0'), parsed.minutes, parsed.period);
+      } else if (segment === 'minutes') {
+        let curM = parseInt(parsed.minutes, 10);
+        if (isNaN(curM)) {
+          curM = dir === 1 ? -1 : 1;
+        }
+        const nextM = (curM + dir + 60) % 60;
+        updateSegment(parsed.hours, String(nextM).padStart(2, '0'), parsed.period);
+      } else if (segment === 'period') {
+        const currentP = parsed.period || 'AM';
+        const nextP = currentP === 'PM' ? 'AM' : 'PM';
+        updateSegment(parsed.hours, parsed.minutes, nextP);
+      }
+      return;
+    }
+
+    if (/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+      const digit = e.key;
+
+      if (segment === 'hours') {
+        const newBuf = typedBuffer + digit;
+        let hNum = parseInt(newBuf, 10);
+        if (hNum > 12) {
+          hNum = parseInt(digit, 10);
+          setTypedBuffer(digit);
+        } else {
+          setTypedBuffer(newBuf);
+        }
+        if (hNum === 0) hNum = 12;
+        updateSegment(String(hNum).padStart(2, '0'), parsed.minutes, parsed.period);
+        if (newBuf.length >= 2 || hNum > 1) {
+          setTypedBuffer('');
+          setActiveSegment('minutes');
+          minutesRef.current?.focus();
+        }
+      } else if (segment === 'minutes') {
+        const newBuf = typedBuffer + digit;
+        let mNum = parseInt(newBuf, 10);
+        if (mNum > 59) {
+          mNum = parseInt(digit, 10);
+          setTypedBuffer(digit);
+        } else {
+          setTypedBuffer(newBuf);
+        }
+        updateSegment(parsed.hours, String(mNum).padStart(2, '0'), parsed.period);
+        if (newBuf.length >= 2) {
+          setTypedBuffer('');
+          setActiveSegment('period');
+          periodRef.current?.focus();
+        }
+      }
+      return;
+    }
+
+    if (segment === 'period') {
+      if (e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        updateSegment(parsed.hours, parsed.minutes, 'AM');
+      } else if (e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        updateSegment(parsed.hours, parsed.minutes, 'PM');
+      }
+    }
+  };
 
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
+        setActiveSegment(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const parseCurrentTime = (timeStr: string) => {
-    let period = 'AM';
-    const rawStr = (timeStr || '09:00 AM').trim();
-    if (/pm/i.test(rawStr)) period = 'PM';
-    else if (/am/i.test(rawStr)) period = 'AM';
-
-    const match = rawStr.match(/(\d{1,2})[:.](\d{1,2})/);
-    let hour = 9;
-    let min = 0;
-    if (match) {
-      hour = parseInt(match[1], 10);
-      min = parseInt(match[2], 10);
-    }
-    if (hour > 12) hour = hour % 12 || 12;
-    if (hour === 0) hour = 12;
-
-    return { hour, min, period };
-  };
-
-  const stepTime = (currentTime: string, direction: 'up' | 'down', stepMinutes = 30) => {
-    let period = 'AM';
-    const rawStr = currentTime.trim();
-    if (/pm/i.test(rawStr)) period = 'PM';
-    else if (/am/i.test(rawStr)) period = 'AM';
-
-    const match = rawStr.match(/(\d{1,2})[:.](\d{1,2})/);
-    let hours = 9;
-    let mins = 0;
-    if (match) {
-      hours = parseInt(match[1], 10);
-      mins = parseInt(match[2], 10);
-    }
-
-    if (period === 'PM' && hours < 12) hours += 12;
-    if (period === 'AM' && hours === 12) hours = 0;
-
-    let totalMins = hours * 60 + mins;
-    if (direction === 'up') {
-      totalMins = (totalMins + stepMinutes) % (24 * 60);
-    } else {
-      totalMins = (totalMins - stepMinutes + 24 * 60) % (24 * 60);
-    }
-
-    let newHours = Math.floor(totalMins / 60);
-    const newMins = totalMins % 60;
-    const newPeriod = newHours >= 12 ? 'PM' : 'AM';
-    newHours = newHours % 12;
-    if (newHours === 0) newHours = 12;
-
-    const hStr = String(newHours).padStart(2, '0');
-    const mStr = String(newMins).padStart(2, '0');
-    return `${hStr}:${mStr} ${newPeriod}`;
-  };
-
-  const updateTime = (hour: number, min: number, period: string) => {
-    const hStr = String(hour).padStart(2, '0');
-    const mStr = String(min).padStart(2, '0');
-    const formatted = `${hStr}:${mStr} ${period}`;
-    setInternalVal(formatted);
-    onChange(formatted);
-  };
-
-  const handleStep = (direction: 'up' | 'down') => {
-    const next = stepTime(internalVal, direction, 30);
-    setInternalVal(next);
-    onChange(next);
-  };
-
-  const triggerClockPicker = () => {
-    setIsOpen(!isOpen);
-    if (nativeInputRef.current && 'showPicker' in nativeInputRef.current) {
-      try {
-        (nativeInputRef.current as any).showPicker();
-      } catch (err) {
-        // ignore browser unsupported showPicker
-      }
-    }
-  };
-
-  const parsed = parseCurrentTime(internalVal);
-
   return (
-    <div ref={containerRef} className="relative inline-block">
-      {/* Hidden Native Time Input */}
-      <input
-        ref={nativeInputRef}
-        type="time"
-        className="sr-only"
-        onChange={(e) => {
-          if (e.target.value) {
-            const [hStr, mStr] = e.target.value.split(':');
-            let h = parseInt(hStr, 10);
-            const m = parseInt(mStr, 10);
-            const p = h >= 12 ? 'PM' : 'AM';
-            h = h % 12 || 12;
-            updateTime(h, m, p);
-          }
-        }}
-      />
+    <div ref={containerRef} className="relative inline-block select-none">
+      <div
+        className={`flex items-center gap-0.5 px-2.5 py-1.5 bg-card border border-border/80 rounded-xl text-xs font-mono font-semibold text-foreground focus-within:ring-2 focus-within:ring-primary/60 shadow-xs ${className}`}
+      >
+        <span
+          ref={hoursRef}
+          tabIndex={0}
+          onFocus={() => {
+            setActiveSegment('hours');
+            setTypedBuffer('');
+          }}
+          onClick={() => {
+            setActiveSegment('hours');
+            setTypedBuffer('');
+            hoursRef.current?.focus();
+          }}
+          onKeyDown={(e) => handleKeyDown(e, 'hours')}
+          className={`px-1 py-0.5 rounded cursor-pointer transition outline-none ${
+            activeSegment === 'hours'
+              ? 'bg-primary text-primary-foreground font-bold'
+              : 'hover:bg-secondary text-foreground'
+          }`}
+          title="Click to change Hours (Use Up/Down arrows)"
+        >
+          {parsed.hours || '--'}
+        </span>
 
-      {/* Input container matching Image 1: clock icon on far right inside input */}
-      <div className="relative flex items-center">
-        <input
-          type="text"
-          value={internalVal}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowUp') {
-              e.preventDefault();
-              handleStep('up');
-            } else if (e.key === 'ArrowDown') {
-              e.preventDefault();
-              handleStep('down');
-            }
+        <span className="text-muted-foreground font-bold">:</span>
+
+        <span
+          ref={minutesRef}
+          tabIndex={0}
+          onFocus={() => {
+            setActiveSegment('minutes');
+            setTypedBuffer('');
           }}
-          onChange={(e) => {
-            setInternalVal(e.target.value);
-            onChange(e.target.value);
+          onClick={() => {
+            setActiveSegment('minutes');
+            setTypedBuffer('');
+            minutesRef.current?.focus();
           }}
-          placeholder="--:--"
-          className={`w-36 pl-3 pr-9 py-2 bg-card border border-border/80 rounded-xl text-xs font-mono font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 shadow-xs ${className}`}
-        />
+          onKeyDown={(e) => handleKeyDown(e, 'minutes')}
+          className={`px-1 py-0.5 rounded cursor-pointer transition outline-none ${
+            activeSegment === 'minutes'
+              ? 'bg-primary text-primary-foreground font-bold'
+              : 'hover:bg-secondary text-foreground'
+          }`}
+          title="Click to change Minutes (Use Up/Down arrows)"
+        >
+          {parsed.minutes || '--'}
+        </span>
+
+        <span
+          ref={periodRef}
+          tabIndex={0}
+          onFocus={() => {
+            setActiveSegment('period');
+            setTypedBuffer('');
+          }}
+          onClick={() => {
+            setActiveSegment('period');
+            setTypedBuffer('');
+            periodRef.current?.focus();
+          }}
+          onKeyDown={(e) => handleKeyDown(e, 'period')}
+          className={`ml-1 px-1 py-0.5 rounded cursor-pointer transition outline-none font-bold ${
+            activeSegment === 'period'
+              ? 'bg-primary text-primary-foreground'
+              : 'hover:bg-secondary text-foreground'
+          }`}
+          title="Click to change AM/PM (Use Up/Down arrows or A/P keys)"
+        >
+          {parsed.period || '--'}
+        </span>
 
         <button
           type="button"
-          onClick={triggerClockPicker}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground/80 hover:text-primary p-0.5 transition cursor-pointer"
-          title="Click to select time"
+          onClick={() => setIsOpen(!isOpen)}
+          className="ml-1.5 text-foreground/70 hover:text-primary p-0.5 transition cursor-pointer"
+          title="Click to open time picker popover"
         >
-          <Clock className="h-4 w-4" />
+          <Clock className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      {/* Interactive Clock Popover */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border/80 rounded-2xl shadow-xl p-3 w-64 space-y-2 text-xs">
+        <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border/80 rounded-2xl shadow-xl p-3 w-72 space-y-2.5 text-xs">
           <div className="flex items-center justify-between font-bold text-[11px] text-muted-foreground uppercase border-b border-border/40 pb-1.5">
             <span className="flex items-center gap-1 text-primary">
               <Clock className="h-3.5 w-3.5" /> Select Time
             </span>
-            <span className="font-mono text-foreground font-bold">{internalVal}</span>
+            <span className="font-mono text-foreground font-bold">
+              {parsed.hours || '--'}:{parsed.minutes || '--'} {parsed.period || '--'}
+            </span>
           </div>
 
           <div>
             <div className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Hour:</div>
             <div className="grid grid-cols-6 gap-1">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((h) => (
-                <button
-                  key={h}
-                  type="button"
-                  onClick={() => updateTime(h, parsed.min, parsed.period)}
-                  className={`py-1 rounded-lg text-center font-mono font-bold text-[11px] transition cursor-pointer ${
-                    parsed.hour === h
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-secondary/40 hover:bg-secondary text-foreground'
-                  }`}
-                >
-                  {String(h).padStart(2, '0')}
-                </button>
-              ))}
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((h) => {
+                const hStr = String(h).padStart(2, '0');
+                const isSel = parsed.hours === hStr;
+                return (
+                  <button
+                    key={h}
+                    type="button"
+                    onClick={() => updateSegment(hStr, parsed.minutes, parsed.period)}
+                    className={`py-1 rounded-lg text-center font-mono font-bold text-[11px] transition cursor-pointer ${
+                      isSel
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-secondary/40 hover:bg-secondary text-foreground'
+                    }`}
+                  >
+                    {hStr}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           <div>
-            <div className="text-[10px] font-bold text-muted-foreground uppercase mb-1">
-              Minute:
+            <div className="flex items-center justify-between text-[10px] font-bold text-muted-foreground uppercase mb-1">
+              <span>Minute (00 - 59):</span>
+              <span className="font-mono text-primary font-extrabold">
+                :{parsed.minutes || '--'}
+              </span>
             </div>
-            <div className="grid grid-cols-4 gap-1">
-              {[0, 15, 30, 45].map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => updateTime(parsed.hour, m, parsed.period)}
-                  className={`py-1 rounded-lg text-center font-mono font-bold text-[11px] transition cursor-pointer ${
-                    parsed.min === m
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-secondary/40 hover:bg-secondary text-foreground'
-                  }`}
-                >
-                  :{String(m).padStart(2, '0')}
-                </button>
-              ))}
+            <div className="max-h-32 overflow-y-auto pr-1 grid grid-cols-6 gap-1">
+              {Array.from({ length: 60 }, (_, i) => i).map((m) => {
+                const mStr = String(m).padStart(2, '0');
+                const isSel = parsed.minutes === mStr;
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => updateSegment(parsed.hours, mStr, parsed.period)}
+                    className={`py-1 rounded-lg text-center font-mono font-bold text-[10px] transition cursor-pointer ${
+                      isSel
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-secondary/40 hover:bg-secondary text-foreground'
+                    }`}
+                  >
+                    :{mStr}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -309,7 +475,7 @@ function TimePickerInput({
                 <button
                   key={p}
                   type="button"
-                  onClick={() => updateTime(parsed.hour, parsed.min, p)}
+                  onClick={() => updateSegment(parsed.hours, parsed.minutes, p)}
                   className={`py-1 rounded-lg font-bold text-xs transition cursor-pointer ${
                     parsed.period === p
                       ? 'bg-primary text-primary-foreground'
@@ -356,13 +522,16 @@ export default function ExamsManagementPage() {
   const [trackerExamNameFilter, setTrackerExamNameFilter] = useState<string>('ALL');
   const [expandedTrackerKeys, setExpandedTrackerKeys] = useState<Record<string, boolean>>({});
 
-  // Student Calendar View State
+  // Student Calendar & View State
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date());
+  const [studentTab, setStudentTab] = useState<'my-schedules' | 'full-timetable'>('my-schedules');
+  const [studentBatchFilter, setStudentBatchFilter] = useState<string>('ALL');
 
   // =========================================================================
   // ADD NEW EXAM TIMETABLE MODAL WIZARD STATE
   // =========================================================================
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
+  const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [wizardBatch, setWizardBatch] = useState<string>('20/21');
   const [wizardSemester, setWizardSemester] = useState<string>('1.1');
   const [wizardExamName, setWizardExamName] = useState<string>('End Semester Examination 2026');
@@ -409,14 +578,19 @@ export default function ExamsManagementPage() {
   });
 
   // 3. Fetch Student Published Timetable (Student)
-  const { data: studentTimetable = [] } = useQuery({
+  const { data: studentTimetableData } = useQuery({
     queryKey: ['student-published-timetable'],
     queryFn: async () => {
       const res = await apiClient.get('/exams/timetable/my-schedules');
-      return res.data?.data || [];
+      return res.data?.data || { mySchedules: [], fullTimetable: [], timetables: [] };
     },
     enabled: isStudent,
   });
+
+  const mySchedules: any[] =
+    studentTimetableData?.mySchedules ||
+    (Array.isArray(studentTimetableData) ? studentTimetableData : []);
+  const fullTimetable: any[] = studentTimetableData?.fullTimetable || [];
 
   // 4. Fetch Publishing Progress Matrix (Staff)
   const {
@@ -474,11 +648,20 @@ export default function ExamsManagementPage() {
         const headerRow: string[] = (rawRows[0] || []).map((h: any) => String(h).trim());
         const headerErrors: string[] = [];
 
+        const hasBatchHeader = headerRow.some((h) => /batch/i.test(h));
+        const hasSemesterHeader = headerRow.some((h) => /semester|sem/i.test(h));
+        const hasExamNameHeader = headerRow.some((h) =>
+          /exam.*name|examination|exam_name/i.test(h),
+        );
         const hasCodeHeader = headerRow.some((h) => /course|subject|code/i.test(h));
         const hasDateHeader = headerRow.some((h) => /date/i.test(h));
         const hasStartHeader = headerRow.some((h) => /start|time/i.test(h));
         const hasEndHeader = headerRow.some((h) => /end/i.test(h));
 
+        if (!hasBatchHeader) headerErrors.push("Missing required column header 'Batch'");
+        if (!hasSemesterHeader) headerErrors.push("Missing required column header 'Semester'");
+        if (!hasExamNameHeader)
+          headerErrors.push("Missing required column header 'Examination Name'");
         if (!hasCodeHeader) headerErrors.push("Missing required column header 'Course Code'");
         if (!hasDateHeader) headerErrors.push("Missing required column header 'Date'");
         if (!hasStartHeader) headerErrors.push("Missing required column header 'Start Time'");
@@ -491,17 +674,39 @@ export default function ExamsManagementPage() {
         rowsData.forEach((row: any, index: number) => {
           const rowErrors: string[] = [];
 
+          const batchKey = Object.keys(row).find((k) => /batch/i.test(k));
+          const semesterKey = Object.keys(row).find((k) => /semester|sem/i.test(k));
+          const examNameKey = Object.keys(row).find((k) =>
+            /exam.*name|examination|exam_name/i.test(k),
+          );
           const codeKey = Object.keys(row).find((k) => /course|subject|code/i.test(k));
           const dateKey = Object.keys(row).find((k) => /date/i.test(k));
           const startKey = Object.keys(row).find((k) => /start|time/i.test(k));
           const endKey = Object.keys(row).find((k) => /end/i.test(k));
           const venueKey = Object.keys(row).find((k) => /venue|hall|location/i.test(k));
 
+          const rawBatch = batchKey ? String(row[batchKey]).trim() : targetBatch || '';
+          const rawSemester = semesterKey ? String(row[semesterKey]).trim() : targetSemester || '';
+          const rawExamName = examNameKey ? String(row[examNameKey]).trim() : targetExamName || '';
+
           const rawCode = codeKey ? String(row[codeKey]).trim() : '';
           const rawDate = dateKey ? row[dateKey] : '';
           const rawStart = startKey ? String(row[startKey]).trim() : '09:00 AM';
           const rawEnd = endKey ? String(row[endKey]).trim() : '12:00 PM';
           const rawVenue = venueKey ? String(row[venueKey]).trim() : 'Main Exam Hall A';
+
+          const cleanBatch = rawBatch.replace(/^batch\s+/i, '').trim();
+          const cleanSemester = rawSemester.replace(/^semester\s+/i, '').trim();
+
+          if (!cleanBatch) {
+            rowErrors.push('Batch is missing.');
+          }
+          if (!cleanSemester) {
+            rowErrors.push('Semester is missing.');
+          }
+          if (!rawExamName) {
+            rowErrors.push('Examination Name is missing.');
+          }
 
           let matchedCourse: any = null;
 
@@ -513,14 +718,6 @@ export default function ExamsManagementPage() {
             );
             if (!matchedCourse) {
               rowErrors.push(`Course Code '${rawCode}' does not exist in the system.`);
-            } else if (
-              targetSemester &&
-              targetSemester !== 'ALL' &&
-              matchedCourse.semester !== targetSemester
-            ) {
-              rowErrors.push(
-                `Course '${rawCode}' belongs to Semester ${matchedCourse.semester}, but target is Semester ${targetSemester}.`,
-              );
             }
           }
 
@@ -543,10 +740,12 @@ export default function ExamsManagementPage() {
 
           parsedRows.push({
             rowIndex: index + 2,
+            batch: cleanBatch || '21/22',
+            semester: cleanSemester || (matchedCourse ? matchedCourse.semester : '1.1'),
+            examName: rawExamName || 'End Semester Examination 2026',
             courseCode: rawCode,
             courseName: matchedCourse ? matchedCourse.course_name : 'Unknown Course',
             courseId: matchedCourse ? matchedCourse.course_id : null,
-            semester: matchedCourse ? matchedCourse.semester : targetSemester || '1.1',
             examDate: formattedDisplayDate !== '—' ? formattedDisplayDate : String(rawDate || ''),
             startTime: rawStart,
             endTime: rawEnd,
@@ -557,12 +756,21 @@ export default function ExamsManagementPage() {
         });
 
         setValidationResult({
-          batch: targetBatch,
-          semester: targetSemester,
-          examName: targetExamName,
+          batch: targetBatch || 'ALL',
+          semester: targetSemester || 'ALL',
+          examName: targetExamName || 'Imported Timetable',
           headerRow,
           headerErrors,
-          expectedHeaders: ['Course Code', 'Date', 'Start Time', 'End Time', 'Venue'],
+          expectedHeaders: [
+            'Batch',
+            'Semester',
+            'Examination Name',
+            'Course Code',
+            'Date',
+            'Start Time',
+            'End Time',
+            'Venue',
+          ],
           hasHeaderErrors: headerErrors.length > 0,
           hasBlockingErrors,
           totalRows: parsedRows.length,
@@ -657,29 +865,40 @@ export default function ExamsManagementPage() {
       const itemsToSave = validationResult.rows
         .filter((r: any) => r.isValid && r.courseId)
         .map((r: any) => ({
+          batch: r.batch,
+          semester: r.semester,
           courseId: r.courseId,
-          examName: wizardExamName,
+          examName: r.examName,
           examDate: r.examDate,
           startTime: r.startTime,
           endTime: r.endTime,
           venue: r.venue,
         }));
 
-      const res = await apiClient.put(`/exams/timetable/batch/${encodeURIComponent(wizardBatch)}`, {
-        batch: wizardBatch,
+      const res = await apiClient.put('/exams/timetable/bulk', {
         items: itemsToSave,
       });
 
       if (publishImmediately) {
-        await apiClient.post(`/exams/timetable/batch/${encodeURIComponent(wizardBatch)}/publish`);
+        const uniqueBatches = Array.from(
+          new Set(itemsToSave.map((i: any) => i.batch).filter(Boolean)),
+        ) as string[];
+
+        for (const b of uniqueBatches) {
+          try {
+            await apiClient.post(`/exams/timetable/batch/${encodeURIComponent(b)}/publish`);
+          } catch (e) {
+            // Ignore sub-publish error
+          }
+        }
       }
 
       return res.data;
     },
     onSuccess: () => {
       setSuccessMsg(
-        `Successfully imported & committed ${validationResult?.validRowsCount} timetable entries for Batch ${wizardBatch}!${
-          publishImmediately ? ' Timetable published to students.' : ''
+        `Successfully imported & committed ${validationResult?.validRowsCount} timetable entries!${
+          publishImmediately ? ' Timetables published to students.' : ''
         }`,
       );
       setErrorMsg(null);
@@ -870,6 +1089,7 @@ export default function ExamsManagementPage() {
   }, [filteredTimetables]);
 
   const handleEditGroupTimetable = (group: any) => {
+    setIsEditMode(true);
     setWizardBatch(group.batch);
     setWizardSemester(group.semester);
     setWizardExamName(group.examName);
@@ -882,10 +1102,10 @@ export default function ExamsManagementPage() {
       inputs[c.course_id] = {
         courseId: c.course_id,
         examName: group.examName,
-        examDate: existing?.exam_date ? formatToDDMMYYYY(existing.exam_date) : '',
-        startTime: existing?.start_time || '09:00 AM',
-        endTime: existing?.end_time || '12:00 PM',
-        venue: existing?.venue || 'Main Exam Hall A',
+        examDate: existing?.exam_date ? formatToYYYYMMDD(existing.exam_date) : '',
+        startTime: existing?.start_time || '',
+        endTime: existing?.end_time || '',
+        venue: existing?.venue || '',
       };
     });
 
@@ -972,23 +1192,30 @@ export default function ExamsManagementPage() {
   // Helper for manual course list population when wizard semester changes
   const wizardCourses = availableCourses.filter((c: any) => c.semester === wizardSemester);
 
-  // Initialize manualInputs when wizard open or semester changes
+  // Initialize manualInputs when wizard open or semester/batch changes, pre-filling existing entries
   React.useEffect(() => {
     if (showAddModal && wizardCourses.length > 0) {
+      const existingItemsForBatchSem = allTimetablesList.filter(
+        (item: any) => item.batch === wizardBatch && item.course?.semester === wizardSemester,
+      );
+
       const initial: Record<number, any> = {};
       wizardCourses.forEach((c: any) => {
+        const existing = existingItemsForBatchSem.find(
+          (item: any) => item.course_id === c.course_id,
+        );
         initial[c.course_id] = {
           courseId: c.course_id,
-          examName: wizardExamName,
-          examDate: '',
-          startTime: '09:00 AM',
-          endTime: '12:00 PM',
-          venue: 'Main Exam Hall A',
+          examName: existing?.exam_name || wizardExamName,
+          examDate: existing?.exam_date ? formatToYYYYMMDD(existing.exam_date) : '',
+          startTime: existing?.start_time || '',
+          endTime: existing?.end_time || '',
+          venue: existing?.venue || '',
         };
       });
       setManualInputs(initial);
     }
-  }, [wizardSemester, showAddModal, wizardExamName]);
+  }, [wizardSemester, wizardBatch, showAddModal]);
 
   // Handle Excel file drop
   const handleDropFile = (e: React.DragEvent) => {
@@ -1000,10 +1227,39 @@ export default function ExamsManagementPage() {
     }
   };
 
+  const studentFullGrouped = React.useMemo(() => {
+    const map = new Map<
+      string,
+      { groupKey: string; batch: string; semester: string; examName: string; items: any[] }
+    >();
+    const filtered =
+      studentBatchFilter === 'ALL'
+        ? fullTimetable
+        : fullTimetable.filter((t: any) => t.batch === studentBatchFilter);
+    filtered.forEach((item: any) => {
+      const batch = item.batch || '20/21';
+      const semester = item.course?.semester || '1.1';
+      const examName = item.exam_name || 'End Semester Examination 2026';
+      const groupKey = `${batch}___${semester}___${examName}`;
+      if (!map.has(groupKey)) {
+        map.set(groupKey, { groupKey, batch, semester, examName, items: [] });
+      }
+      map.get(groupKey)!.items.push(item);
+    });
+    return Array.from(map.values());
+  }, [fullTimetable, studentBatchFilter]);
+
   // =========================================================================
-  // STUDENT VIEW: EXAM TIMETABLE CALENDAR
+  // STUDENT VIEW: EXAM TIMETABLE CALENDAR & FULL TIMETABLE
   // =========================================================================
   if (isStudent) {
+    const currentTimetableList =
+      studentTab === 'my-schedules'
+        ? mySchedules
+        : studentBatchFilter === 'ALL'
+          ? fullTimetable
+          : fullTimetable.filter((t: any) => t.batch === studentBatchFilter);
+
     return (
       <div className="space-y-6 max-w-7xl mx-auto pb-12">
         {/* Header */}
@@ -1014,15 +1270,36 @@ export default function ExamsManagementPage() {
               Student Portal
             </div>
             <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
-              Exam Timetable Calendar
+              {studentTab === 'my-schedules'
+                ? 'My Enrolled Exam Timetable'
+                : 'Full University Exam Timetable'}
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              View official examination dates, start & end times, and hall locations in monthly
-              calendar view.
+              {studentTab === 'my-schedules'
+                ? 'View official examination schedules for your registered subjects.'
+                : 'Browse published examination timetables for all batches and semesters.'}
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {studentTab === 'full-timetable' && (
+              <div className="flex items-center gap-1.5 mr-2">
+                <span className="text-xs font-bold text-muted-foreground uppercase">Batch:</span>
+                <select
+                  value={studentBatchFilter}
+                  onChange={(e) => setStudentBatchFilter(e.target.value)}
+                  className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+                >
+                  <option value="ALL">All Batches</option>
+                  {BATCHES.map((b) => (
+                    <option key={b} value={b}>
+                      Batch {b}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <button
               onClick={() => setCurrentCalendarDate(new Date(year, month - 1, 1))}
               className="p-2.5 bg-secondary hover:bg-secondary/80 rounded-xl text-foreground transition cursor-pointer"
@@ -1043,9 +1320,42 @@ export default function ExamsManagementPage() {
           </div>
         </div>
 
-        {/* Student Calendar Grid */}
-        <div className="bg-card border border-border/80 rounded-3xl shadow-sm overflow-hidden p-6">
-          <div className="grid grid-cols-7 gap-2 mb-4 text-center font-bold text-xs uppercase tracking-wider text-muted-foreground">
+        {/* Student View Mode Tabs */}
+        <div className="flex border-b border-border/60 gap-6 text-sm font-semibold">
+          <button
+            onClick={() => setStudentTab('my-schedules')}
+            className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
+              studentTab === 'my-schedules'
+                ? 'text-primary border-b-2 border-primary font-bold'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Calendar className="h-4 w-4" />
+            My Enrolled Subjects ({mySchedules.length})
+          </button>
+
+          <button
+            onClick={() => setStudentTab('full-timetable')}
+            className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
+              studentTab === 'full-timetable'
+                ? 'text-primary border-b-2 border-primary font-bold'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <ClipboardList className="h-4 w-4" />
+            Full Timetable (All Batches & Semesters)
+          </button>
+        </div>
+
+        {/* Monthly Calendar View */}
+        <div className="bg-card border border-border/80 rounded-3xl shadow-sm overflow-hidden p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-foreground">
+              {studentTab === 'my-schedules' ? 'My Exam Calendar' : 'Full Timetable Calendar'}
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-7 gap-2 mb-2 text-center font-bold text-xs uppercase tracking-wider text-muted-foreground">
             <div>Sun</div>
             <div>Mon</div>
             <div>Tue</div>
@@ -1067,7 +1377,7 @@ export default function ExamsManagementPage() {
               const dayNum = i + 1;
               const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
 
-              const dayExams = studentTimetable.filter((t: any) => {
+              const dayExams = currentTimetableList.filter((t: any) => {
                 const d = new Date(t.exam_date).toISOString().split('T')[0];
                 return d === dateStr;
               });
@@ -1094,8 +1404,13 @@ export default function ExamsManagementPage() {
                         key={exam.timetable_id}
                         className="p-1.5 bg-background/90 border border-primary/20 rounded-xl text-[10px] space-y-0.5 shadow-sm"
                       >
-                        <div className="font-extrabold text-primary truncate">
-                          {exam.course?.course_code}
+                        <div className="font-extrabold text-primary truncate flex items-center justify-between">
+                          <span>{exam.course?.course_code}</span>
+                          {exam.batch && (
+                            <span className="text-[9px] text-muted-foreground font-normal">
+                              B{exam.batch}
+                            </span>
+                          )}
                         </div>
                         <div className="text-muted-foreground truncate text-[9px]">
                           {exam.course?.course_name}
@@ -1116,6 +1431,82 @@ export default function ExamsManagementPage() {
             })}
           </div>
         </div>
+
+        {/* Full Timetable Categorized List (When viewing Full Timetable tab or My Subjects list) */}
+        {studentTab === 'full-timetable' && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-extrabold text-foreground">
+              Categorized Exam Timetables by Batch & Semester
+            </h3>
+
+            {studentFullGrouped.length === 0 ? (
+              <div className="p-8 text-center bg-card border border-border/80 rounded-3xl text-muted-foreground text-sm">
+                No published exam timetables found for the selected batch.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {studentFullGrouped.map((group) => (
+                  <div
+                    key={group.groupKey}
+                    className="bg-card border border-border/80 rounded-3xl overflow-hidden shadow-sm p-5 space-y-3"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-3">
+                      <div>
+                        <span className="px-2.5 py-1 bg-primary/10 text-primary text-xs font-extrabold rounded-lg uppercase tracking-wider mr-2">
+                          Batch {group.batch}
+                        </span>
+                        <span className="px-2.5 py-1 bg-secondary text-foreground text-xs font-bold rounded-lg uppercase tracking-wider">
+                          Semester {group.semester}
+                        </span>
+                        <h4 className="text-base font-bold text-foreground mt-2">
+                          {group.examName}
+                        </h4>
+                      </div>
+                      <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-bold rounded-xl border border-emerald-500/20 w-fit">
+                        Published Official Timetable
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-border/60 bg-secondary/30 font-bold uppercase text-muted-foreground">
+                            <th className="py-2.5 px-3 border-r border-border/40">Course Code</th>
+                            <th className="py-2.5 px-3 border-r border-border/40">Subject Name</th>
+                            <th className="py-2.5 px-3 border-r border-border/40">Exam Date</th>
+                            <th className="py-2.5 px-3 border-r border-border/40">Time</th>
+                            <th className="py-2.5 px-3">Venue</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/60 font-medium">
+                          {group.items.map((item: any) => (
+                            <tr key={item.timetable_id} className="hover:bg-secondary/10">
+                              <td className="py-2.5 px-3 border-r border-border/40 font-mono font-bold text-primary">
+                                {item.course?.course_code}
+                              </td>
+                              <td className="py-2.5 px-3 border-r border-border/40 text-foreground font-semibold">
+                                {item.course?.course_name}
+                              </td>
+                              <td className="py-2.5 px-3 border-r border-border/40 font-mono text-foreground font-bold">
+                                {formatToDDMMYYYY(item.exam_date)}
+                              </td>
+                              <td className="py-2.5 px-3 border-r border-border/40 font-mono text-muted-foreground">
+                                {item.start_time} - {item.end_time}
+                              </td>
+                              <td className="py-2.5 px-3 font-semibold text-foreground">
+                                {item.venue || 'Main Exam Hall A'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -1172,6 +1563,8 @@ export default function ExamsManagementPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
+                setIsEditMode(false);
+                setCreationMode('excel');
                 setShowAddModal(true);
                 setValidationResult(null);
                 setExcelFile(null);
@@ -1509,20 +1902,22 @@ export default function ExamsManagementPage() {
                       {/* Expanded Subject List Table */}
                       {isExpanded && (
                         <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse">
+                          <table className="table-fixed w-full text-left border-collapse">
                             <thead>
                               <tr className="border-b border-border/60 bg-secondary/30 text-xs font-bold uppercase text-muted-foreground tracking-wider">
-                                <th className="py-3 px-4 border-r border-border/40">
+                                <th className="py-3 px-4 border-r border-border/40 w-[35%]">
                                   Course Code & Module
                                 </th>
-                                <th className="py-3 px-4 border-r border-border/40">Exam Date</th>
-                                <th className="py-3 px-4 border-r border-border/40">
+                                <th className="py-3 px-4 border-r border-border/40 w-[15%]">
+                                  Exam Date
+                                </th>
+                                <th className="py-3 px-4 border-r border-border/40 w-[20%]">
                                   Time (Start - End)
                                 </th>
-                                <th className="py-3 px-4 border-r border-border/40">
+                                <th className="py-3 px-4 border-r border-border/40 w-[20%]">
                                   Venue / Hall
                                 </th>
-                                <th className="py-3 px-4 text-center">Status</th>
+                                <th className="py-3 px-4 text-center w-[10%]">Status</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-border/60 text-xs font-medium">
@@ -1558,8 +1953,8 @@ export default function ExamsManagementPage() {
                                         )
                                       </span>
                                     ) : (
-                                      <span className="px-2.5 py-1 bg-secondary text-muted-foreground font-extrabold rounded-lg text-[10px] uppercase">
-                                        PENDING
+                                      <span className="px-2.5 py-1 bg-amber-500/10 text-amber-500 font-extrabold rounded-lg border border-amber-500/20 text-[10px] uppercase">
+                                        TBH
                                       </span>
                                     )}
                                   </td>
@@ -1762,7 +2157,7 @@ export default function ExamsManagementPage() {
                                   className="py-3 px-3 border-r border-border/40 text-center"
                                   rowSpan={2}
                                 >
-                                  Exam Held Status
+                                  Exam Status
                                 </th>
                                 <th
                                   className="py-2 px-3 border-r border-border/40 text-center"
@@ -1838,13 +2233,26 @@ export default function ExamsManagementPage() {
                                     {/* EXAM HELD STATUS DROPDOWN */}
                                     <td className="py-3 px-3 border-r border-border/40 text-center">
                                       <select
-                                        value={item.exam_held || 'PENDING'}
-                                        onChange={(e) =>
+                                        value={item.exam_held || 'TBH'}
+                                        onChange={(e) => {
+                                          const newVal = e.target.value;
+                                          const currentVal = item.exam_held || 'TBH';
+                                          if (newVal === currentVal) return;
+
+                                          const confirmed = window.confirm(
+                                            `Are you sure you want to change the Exam Held status for ${item.course_code} (${item.course_name}) to "${newVal}"?\n\nSetting status to HELD will automatically trigger an email notification to 1st Marker (${item.first_marker_name || '1st Marker'}) to collect exam papers from the AR Office.`,
+                                          );
+
+                                          if (!confirmed) {
+                                            e.target.value = currentVal;
+                                            return;
+                                          }
+
                                           updateProgressMutation.mutate({
                                             courseId: item.course_id,
-                                            payload: { examHeld: e.target.value },
-                                          })
-                                        }
+                                            payload: { examHeld: newVal },
+                                          });
+                                        }}
                                         className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border focus:outline-none cursor-pointer ${
                                           item.exam_held === 'HELD'
                                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
@@ -1854,10 +2262,10 @@ export default function ExamsManagementPage() {
                                         }`}
                                       >
                                         <option value="PENDING" className="bg-card">
-                                          Pending
+                                          TBH
                                         </option>
                                         <option value="HELD" className="bg-card">
-                                          Held (Auto)
+                                          Held
                                         </option>
                                         <option value="POSTPONED" className="bg-card">
                                           Postponed
@@ -2065,9 +2473,13 @@ export default function ExamsManagementPage() {
             <div className="px-6 py-4 md:px-8 md:py-5 border-b border-border/60 flex items-center justify-between shrink-0 bg-secondary/10">
               <div>
                 <span className="text-xs font-semibold text-primary uppercase tracking-wider">
-                  Exam Division Setup
+                  {isEditMode
+                    ? `Batch ${wizardBatch} - Semester ${wizardSemester}`
+                    : 'Exam Division Setup'}
                 </span>
-                <h3 className="text-xl font-bold text-foreground mt-0.5">Add New Exam Timetable</h3>
+                <h3 className="text-xl font-bold text-foreground mt-0.5">
+                  {isEditMode ? 'Edit Exam Timetable' : 'Add New Exam Timetable'}
+                </h3>
               </div>
               <button
                 onClick={() => {
@@ -2081,85 +2493,89 @@ export default function ExamsManagementPage() {
 
             {/* Modal Body */}
             <div className="p-6 md:p-8 space-y-6 overflow-y-auto flex-1">
-              {/* STEP 1: Context Selection */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-secondary/20 p-4 rounded-2xl border border-border/60">
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-bold text-muted-foreground uppercase">
-                    1. Target Batch
-                  </label>
-                  <select
-                    value={wizardBatch}
-                    onChange={(e) => setWizardBatch(e.target.value)}
-                    className="w-full px-3 py-2 bg-card border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+              {/* STEP 1: Context Selection - Displayed only for Manual Entry or Edit Mode */}
+              {(creationMode === 'manual' || isEditMode) && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-secondary/20 p-4 rounded-2xl border border-border/60">
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-muted-foreground uppercase">
+                      1. Target Batch
+                    </label>
+                    <select
+                      value={wizardBatch}
+                      onChange={(e) => setWizardBatch(e.target.value)}
+                      className="w-full px-3 py-2 bg-card border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+                    >
+                      {BATCHES.map((b) => (
+                        <option key={b} value={b}>
+                          Batch {b}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-muted-foreground uppercase">
+                      2. Semester
+                    </label>
+                    <select
+                      value={wizardSemester}
+                      onChange={(e) => setWizardSemester(e.target.value)}
+                      className="w-full px-3 py-2 bg-card border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+                    >
+                      {SEMESTERS.map((sem) => (
+                        <option key={sem} value={sem}>
+                          Semester {sem}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-muted-foreground uppercase">
+                      3. Examination Name
+                    </label>
+                    <input
+                      type="text"
+                      value={wizardExamName}
+                      onChange={(e) => setWizardExamName(e.target.value)}
+                      placeholder="e.g. End Semester Examination 2026"
+                      className="w-full px-3 py-2 bg-card border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: Mode Switcher - Hidden in Edit Mode */}
+              {!isEditMode && (
+                <div className="flex border-b border-border/60 gap-4 text-xs font-semibold">
+                  <button
+                    onClick={() => setCreationMode('excel')}
+                    className={`pb-2 transition flex items-center gap-2 cursor-pointer ${
+                      creationMode === 'excel'
+                        ? 'text-primary border-b-2 border-primary font-bold'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
                   >
-                    {BATCHES.map((b) => (
-                      <option key={b} value={b}>
-                        Batch {b}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Import Spreadsheet
+                  </button>
 
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-bold text-muted-foreground uppercase">
-                    2. Semester
-                  </label>
-                  <select
-                    value={wizardSemester}
-                    onChange={(e) => setWizardSemester(e.target.value)}
-                    className="w-full px-3 py-2 bg-card border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+                  <button
+                    onClick={() => setCreationMode('manual')}
+                    className={`pb-2 transition flex items-center gap-2 cursor-pointer ${
+                      creationMode === 'manual'
+                        ? 'text-primary border-b-2 border-primary font-bold'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
                   >
-                    {SEMESTERS.map((sem) => (
-                      <option key={sem} value={sem}>
-                        Semester {sem}
-                      </option>
-                    ))}
-                  </select>
+                    <Plus className="h-4 w-4" />
+                    Manual Course Entry
+                  </button>
                 </div>
-
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-bold text-muted-foreground uppercase">
-                    3. Examination Name
-                  </label>
-                  <input
-                    type="text"
-                    value={wizardExamName}
-                    onChange={(e) => setWizardExamName(e.target.value)}
-                    placeholder="e.g. End Semester Examination 2026"
-                    className="w-full px-3 py-2 bg-card border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60"
-                  />
-                </div>
-              </div>
-
-              {/* STEP 2: Mode Switcher */}
-              <div className="flex border-b border-border/60 gap-4 text-xs font-semibold">
-                <button
-                  onClick={() => setCreationMode('excel')}
-                  className={`pb-2 transition flex items-center gap-2 cursor-pointer ${
-                    creationMode === 'excel'
-                      ? 'text-primary border-b-2 border-primary font-bold'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  Import Spreadsheet
-                </button>
-
-                <button
-                  onClick={() => setCreationMode('manual')}
-                  className={`pb-2 transition flex items-center gap-2 cursor-pointer ${
-                    creationMode === 'manual'
-                      ? 'text-primary border-b-2 border-primary font-bold'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Plus className="h-4 w-4" />
-                  Manual Course Entry
-                </button>
-              </div>
+              )}
 
               {/* MODE A: EXCEL SPREADSHEET DROP / BROWSE */}
-              {creationMode === 'excel' && (
+              {creationMode === 'excel' && !isEditMode && (
                 <div className="space-y-4">
                   <div
                     onDragOver={(e) => {
@@ -2183,8 +2599,9 @@ export default function ExamsManagementPage() {
                         As soon as you select a file, a live preview popup will display all rows &
                         validate errors in real-time.
                       </p>
-                      <p className="text-[11px] text-muted-foreground/80 mt-0.5">
-                        Required column headers: Course Code, Date, Start Time, End Time, Venue
+                      <p className="text-[11px] text-muted-foreground/80 mt-1 font-semibold">
+                        Required column headers: Batch, Semester, Examination Name, Course Code,
+                        Date, Start Time, End Time, Venue
                       </p>
                     </div>
 
@@ -2218,16 +2635,24 @@ export default function ExamsManagementPage() {
                     Populate timetable dates & locations for Semester {wizardSemester} courses:
                   </div>
 
-                  <div className="max-h-[300px] overflow-y-auto border border-border/80 rounded-2xl">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead className="sticky top-0 bg-secondary border-b border-border/60 font-semibold uppercase text-[10px] text-muted-foreground">
+                  <div className="max-h-[350px] overflow-x-auto overflow-y-auto border border-border/80 rounded-2xl relative">
+                    <table className="table-fixed min-w-[960px] w-full text-left border-collapse text-xs">
+                      <thead className="sticky top-0 bg-card z-20 border-b border-border/60 font-semibold uppercase text-[10px] text-muted-foreground shadow-xs">
                         <tr>
-                          <th className="py-2.5 px-3 border-r border-border/40">Course</th>
-                          <th className="py-2.5 px-3 border-r border-border/40">Exam Date</th>
-                          <th className="py-2.5 px-3 border-r border-border/40">Start Time</th>
-                          <th className="py-2.5 px-3 border-r border-border/40">End Time</th>
-                          <th className="py-2.5 px-3 border-r border-border/40">Venue</th>
-                          <th className="py-2.5 px-3 text-center">Action</th>
+                          <th className="py-2.5 px-3 border-r border-border/40 w-[240px]">
+                            Course
+                          </th>
+                          <th className="py-2.5 px-3 border-r border-border/40 w-[150px]">
+                            Exam Date
+                          </th>
+                          <th className="py-2.5 px-3 border-r border-border/40 w-[160px]">
+                            Start Time
+                          </th>
+                          <th className="py-2.5 px-3 border-r border-border/40 w-[160px]">
+                            End Time
+                          </th>
+                          <th className="py-2.5 px-3 border-r border-border/40 w-[180px]">Venue</th>
+                          <th className="py-2.5 px-3 text-center w-[70px]">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/60 font-medium">
@@ -2262,9 +2687,9 @@ export default function ExamsManagementPage() {
                                           courseId: c.course_id,
                                           examName: wizardExamName,
                                           examDate: '',
-                                          startTime: '09:00 AM',
-                                          endTime: '12:00 PM',
-                                          venue: 'Main Exam Hall A',
+                                          startTime: '',
+                                          endTime: '',
+                                          venue: '',
                                         },
                                       }))
                                     }
@@ -2305,7 +2730,7 @@ export default function ExamsManagementPage() {
                               </td>
                               <td className="py-2 px-3 border-r border-border/40">
                                 <TimePickerInput
-                                  value={current.startTime || '09:00 AM'}
+                                  value={current.startTime || ''}
                                   onChange={(val) =>
                                     setManualInputs((prev) => ({
                                       ...prev,
@@ -2316,7 +2741,7 @@ export default function ExamsManagementPage() {
                               </td>
                               <td className="py-2 px-3 border-r border-border/40">
                                 <TimePickerInput
-                                  value={current.endTime || '12:00 PM'}
+                                  value={current.endTime || ''}
                                   onChange={(val) =>
                                     setManualInputs((prev) => ({
                                       ...prev,
@@ -2328,7 +2753,8 @@ export default function ExamsManagementPage() {
                               <td className="py-2 px-3 border-r border-border/40">
                                 <input
                                   type="text"
-                                  value={current.venue || 'Main Exam Hall A'}
+                                  value={current.venue || ''}
+                                  placeholder="Enter venue..."
                                   onChange={(e) =>
                                     setManualInputs((prev) => ({
                                       ...prev,
@@ -2385,9 +2811,26 @@ export default function ExamsManagementPage() {
                       type="button"
                       disabled={saveBatchMutation.isPending}
                       onClick={() => {
-                        const items = Object.values(manualInputs).filter(
-                          (item: any) => item.examDate && String(item.examDate).trim() !== '',
-                        );
+                        const items = Object.values(manualInputs)
+                          .filter(
+                            (item: any) => item.examDate && String(item.examDate).trim() !== '',
+                          )
+                          .map((item: any) => ({
+                            ...item,
+                            startTime:
+                              item.startTime && item.startTime !== '--:-- --'
+                                ? item.startTime
+                                : '09:00 AM',
+                            endTime:
+                              item.endTime && item.endTime !== '--:-- --'
+                                ? item.endTime
+                                : '12:00 PM',
+                            venue:
+                              item.venue && String(item.venue).trim() !== ''
+                                ? item.venue
+                                : 'Main Exam Hall A',
+                          }));
+
                         if (items.length === 0) {
                           setErrorMsg(
                             'Please select an examination date for at least one course before saving.',
@@ -2479,7 +2922,8 @@ export default function ExamsManagementPage() {
                         </code>
                       </p>
                       <p className="font-semibold">
-                        Required column headers: Course Code, Date, Start Time, End Time, Venue
+                        Required column headers: Batch, Semester, Examination Name, Course Code,
+                        Date, Start Time, End Time, Venue
                       </p>
                     </div>
                   )}
@@ -2518,14 +2962,17 @@ export default function ExamsManagementPage() {
                     <table className="w-full text-left border-collapse text-xs">
                       <thead className="sticky top-0 bg-secondary border-b border-border/60 font-semibold uppercase text-[10px] text-muted-foreground z-10">
                         <tr>
-                          <th className="py-3 px-3 border-r border-border/40 w-16">Row #</th>
+                          <th className="py-3 px-3 border-r border-border/40 w-12">Row #</th>
+                          <th className="py-3 px-3 border-r border-border/40 w-24">Batch</th>
+                          <th className="py-3 px-3 border-r border-border/40 w-24">Semester</th>
+                          <th className="py-3 px-3 border-r border-border/40 w-36">Exam Name</th>
                           <th className="py-3 px-3 border-r border-border/40 w-28">Course Code</th>
                           <th className="py-3 px-3 border-r border-border/40">
                             Course Name (System Match)
                           </th>
                           <th className="py-3 px-3 border-r border-border/40 w-28">Exam Date</th>
                           <th className="py-3 px-3 border-r border-border/40 w-36">Time Range</th>
-                          <th className="py-3 px-3 border-r border-border/40 w-32">Venue</th>
+                          <th className="py-3 px-3 border-r border-border/40 w-28">Venue</th>
                           <th className="py-3 px-4 text-left bg-secondary/90 text-foreground font-bold border-l border-border/40">
                             STATUS
                           </th>
@@ -2543,6 +2990,15 @@ export default function ExamsManagementPage() {
                           >
                             <td className="py-2.5 px-3 border-r border-border/40 font-mono text-muted-foreground">
                               Row {row.rowIndex}
+                            </td>
+                            <td className="py-2.5 px-3 border-r border-border/40 font-mono font-bold text-primary">
+                              {row.batch || '—'}
+                            </td>
+                            <td className="py-2.5 px-3 border-r border-border/40 font-mono font-bold text-foreground">
+                              Sem {row.semester || '—'}
+                            </td>
+                            <td className="py-2.5 px-3 border-r border-border/40 text-[11px] font-semibold text-muted-foreground truncate max-w-[150px]">
+                              {row.examName || '—'}
                             </td>
                             <td className="py-2.5 px-3 border-r border-border/40 font-mono font-bold text-foreground">
                               {row.courseCode || '—'}

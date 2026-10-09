@@ -40,23 +40,33 @@ export class DegreesController {
     });
 
     const mapped = degrees.map((deg) => {
-      const compulsoryCredits = deg.courses
+      const calculatedCompulsory = deg.courses
         .filter((cd) => cd.status === 'COMPULSORY')
         .reduce((sum, cd) => sum + Number(cd.course.credit_value), 0);
 
+      const compulsoryCredits =
+        deg.compulsory_credits != null && deg.compulsory_credits > 0
+          ? deg.compulsory_credits
+          : calculatedCompulsory;
+
       const totalCreditsRequired = Number(deg.total_credits_required || 0);
-      const optionalCreditsRequired = Math.max(0, totalCreditsRequired - compulsoryCredits);
+      const minOptionalCredits =
+        deg.min_optional_credits != null && deg.min_optional_credits > 0
+          ? deg.min_optional_credits
+          : Math.max(0, totalCreditsRequired - compulsoryCredits);
 
       return {
         degree_id: deg.degree_id,
         degree_name: deg.degree_name,
         degree_code: deg.degree_code,
         department_id: deg.department_id,
+        duration_years: deg.duration_years ?? 4,
         total_credits_required: deg.total_credits_required,
+        compulsory_credits: compulsoryCredits,
+        min_optional_credits: minOptionalCredits,
+        optional_credits_required: minOptionalCredits,
         department: deg.department,
         specializations: deg.specializations,
-        compulsory_credits: compulsoryCredits,
-        optional_credits_required: optionalCreditsRequired,
       };
     });
 
@@ -69,11 +79,13 @@ export class DegreesController {
 
   @Post()
   async create(@Body() dto: CreateDegreeDto, @GetUser('id') executorId: number) {
-    const departmentExists = await this.prisma.department.findUnique({
-      where: { department_id: dto.departmentId },
-    });
-    if (!departmentExists) {
-      throw new BadRequestException('Target department does not exist.');
+    if (dto.departmentId) {
+      const departmentExists = await this.prisma.department.findUnique({
+        where: { department_id: dto.departmentId },
+      });
+      if (!departmentExists) {
+        throw new BadRequestException('Target department does not exist.');
+      }
     }
 
     const exists = await this.prisma.degree.findFirst({
@@ -92,8 +104,12 @@ export class DegreesController {
       data: {
         degree_name: dto.degreeName,
         degree_code: dto.degreeCode.toUpperCase(),
-        department_id: dto.departmentId,
-        total_credits_required: dto.totalCreditsRequired || 0,
+        department_id: dto.departmentId || null,
+        duration_years: dto.durationYears != null ? Number(dto.durationYears) : 4,
+        total_credits_required:
+          dto.totalCreditsRequired != null ? Number(dto.totalCreditsRequired) : 0,
+        compulsory_credits: dto.compulsoryCredits != null ? Number(dto.compulsoryCredits) : 0,
+        min_optional_credits: dto.minOptionalCredits != null ? Number(dto.minOptionalCredits) : 0,
       },
     });
 
@@ -124,11 +140,13 @@ export class DegreesController {
       throw new BadRequestException('Degree not found.');
     }
 
-    const departmentExists = await this.prisma.department.findUnique({
-      where: { department_id: dto.departmentId },
-    });
-    if (!departmentExists) {
-      throw new BadRequestException('Target department does not exist.');
+    if (dto.departmentId) {
+      const departmentExists = await this.prisma.department.findUnique({
+        where: { department_id: dto.departmentId },
+      });
+      if (!departmentExists) {
+        throw new BadRequestException('Target department does not exist.');
+      }
     }
 
     const exists = await this.prisma.degree.findFirst({
@@ -149,9 +167,14 @@ export class DegreesController {
       data: {
         degree_name: dto.degreeName,
         degree_code: dto.degreeCode.toUpperCase(),
-        department_id: dto.departmentId,
+        department_id: dto.departmentId !== undefined ? dto.departmentId || null : undefined,
+        duration_years: dto.durationYears !== undefined ? Number(dto.durationYears) : undefined,
         total_credits_required:
-          dto.totalCreditsRequired !== undefined ? dto.totalCreditsRequired : undefined,
+          dto.totalCreditsRequired !== undefined ? Number(dto.totalCreditsRequired) : undefined,
+        compulsory_credits:
+          dto.compulsoryCredits !== undefined ? Number(dto.compulsoryCredits) : undefined,
+        min_optional_credits:
+          dto.minOptionalCredits !== undefined ? Number(dto.minOptionalCredits) : undefined,
       },
     });
 

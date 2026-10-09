@@ -14,6 +14,7 @@ import {
   Search,
   Loader2,
   Shield,
+  AlertTriangle,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   X,
 } from 'lucide-react';
@@ -82,6 +83,19 @@ export default function DashboardOverview() {
   });
   const lecturerCourses = Array.isArray(lecturerCoursesData)
     ? lecturerCoursesData
+    : STABLE_EMPTY_ARRAY;
+
+  // Exam progress matrix query for lecturer
+  const { data: progressMatrixData, isLoading: isProgressMatrixLoading } = useQuery({
+    queryKey: ['publishing-progress-matrix-lecturer'],
+    queryFn: async () => {
+      const response = await apiClient.get('/exams/progress');
+      return response.data?.data || [];
+    },
+    enabled: user?.role === UserRole.LECTURER,
+  });
+  const progressMatrix = Array.isArray(progressMatrixData)
+    ? progressMatrixData
     : STABLE_EMPTY_ARRAY;
 
   // HOD / Dean pending approvals query
@@ -670,6 +684,55 @@ export default function DashboardOverview() {
             </div>
           </div>
 
+          {/* Rejected Marksheets Notification Banner */}
+          {(() => {
+            const rejectedCourses = lecturerCourses.filter((c: any) =>
+              ['REJECTED_BY_HEAD', 'REJECTED_BY_STAFF'].includes(c.result_submission_status),
+            );
+            if (rejectedCourses.length === 0) return null;
+
+            return (
+              <div className="space-y-3">
+                {rejectedCourses.map((c: any) => (
+                  <div
+                    key={`rejected-alert-${c.course_id}`}
+                    className="p-5 bg-destructive/10 border border-destructive/30 rounded-3xl backdrop-blur-md flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fadeIn"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-destructive font-extrabold text-sm">
+                        <AlertTriangle className="h-5 w-5 shrink-0" />
+                        <span>
+                          Marksheet Rejected:{' '}
+                          {c.result_submission_status === 'REJECTED_BY_HEAD'
+                            ? 'Rejected by Department Head'
+                            : 'Rejected by Exam Division Staff'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Course{' '}
+                        <strong className="text-foreground">
+                          {c.course_code} - {c.course_name}
+                        </strong>{' '}
+                        was rejected. Please open the Marks Registry to update and re-submit grades.
+                      </p>
+                      {c.rejection_reason && (
+                        <p className="text-xs text-destructive font-medium italic mt-1">
+                          Reason: "{c.rejection_reason}"
+                        </p>
+                      )}
+                    </div>
+                    <Link
+                      href={`/marks?courseId=${c.course_id}`}
+                      className="px-4 py-2.5 bg-destructive text-white text-xs font-bold rounded-xl hover:bg-destructive/90 transition shadow-md whitespace-nowrap text-center"
+                    >
+                      Open Marks Registry &rarr;
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
           {/* Head of Department / Dean pending approvals */}
           {(user?.isHead || user?.isDean) && (
             <div className="space-y-6">
@@ -740,12 +803,114 @@ export default function DashboardOverview() {
             </div>
           )}
 
+          {/* Pending Subjects to Release Marks Section */}
+          <div className="space-y-4">
+            <div className="border-b border-border/60 pb-3 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  Pending Subjects to Release Marks
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Subjects which exams are held. Click on any subject to open its Marks Registry to
+                  enter marks.
+                </p>
+              </div>
+              <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-bold rounded-lg uppercase tracking-wider">
+                Exam Held
+              </span>
+            </div>
+
+            {isLecturerCoursesLoading || isProgressMatrixLoading ? (
+              <div className="flex items-center justify-center py-10 text-muted-foreground text-sm">
+                <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
+                Checking pending exam subjects...
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {(() => {
+                  // Filter lecturer courses to display ONLY subjects whose exam status in Results Publishing Workflow Matrix is set to 'HELD'
+                  const heldCourses = lecturerCourses.filter((course: any) => {
+                    const matrixItem = progressMatrix.find(
+                      (m: any) => Number(m.course_id) === Number(course.course_id),
+                    );
+                    return matrixItem && matrixItem.exam_held === 'HELD';
+                  });
+
+                  if (heldCourses.length === 0) {
+                    return (
+                      <div className="col-span-full py-8 text-center text-muted-foreground text-xs border border-dashed border-border/60 rounded-2xl">
+                        No subjects with held exams are currently pending marks release.
+                      </div>
+                    );
+                  }
+
+                  return heldCourses.map((course: any) => {
+                    const regCount =
+                      course._count?.registrations ??
+                      course.student_count ??
+                      course.studentCount ??
+                      45;
+                    const matrixItem = progressMatrix.find(
+                      (m: any) => Number(m.course_id) === Number(course.course_id),
+                    );
+                    const isCollected = matrixItem?.first_marking?.collected ?? false;
+
+                    return (
+                      <Link
+                        key={`pending-${course.course_id}`}
+                        href={`/marks?courseId=${course.course_id}`}
+                        className="bg-card/30 border border-primary/30 hover:border-primary p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/40 hover:bg-card/40 transition-all duration-300 group cursor-pointer"
+                      >
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-1.5">
+                            <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
+                              {course.course_code}
+                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {!isCollected && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded uppercase flex items-center gap-1 animate-pulse">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  Collect Papers
+                                </span>
+                              )}
+                              <span className="text-[10px] font-bold px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded uppercase flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+                                Exam Held
+                              </span>
+                            </div>
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-sm text-foreground leading-snug group-hover:text-primary transition-colors">
+                              {course.course_name}
+                            </h4>
+                            <p className="text-[10px] font-medium text-muted-foreground mt-1 uppercase">
+                              Semester {course.semester} | Batch {course.academic_year || '21/22'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="border-t border-border/60 pt-4 mt-4 flex items-center justify-between">
+                          <span className="text-[10px] text-muted-foreground font-bold uppercase">
+                            Enrolled students: <strong>{regCount} </strong>
+                          </span>
+                          <span className="text-xs text-primary font-bold group-hover:underline flex items-center gap-1">
+                            Open Marks Registry &rarr;
+                          </span>
+                        </div>
+                      </Link>
+                    );
+                  });
+                })()}
+              </div>
+            )}
+          </div>
+
           {/* Assigned Courses Section */}
           <div className="space-y-8">
             <div className="border-b border-border/60 pb-3">
               <h3 className="text-lg font-bold text-foreground">Assigned Courses</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Courses you are currently teaching in the active semesters.
+                Courses you are currently teaching in the active semesters. Click a course card to
+                view enrolled students list .
               </p>
             </div>
 
@@ -768,10 +933,6 @@ export default function DashboardOverview() {
                   .sort()
                   .map((batch) => (
                     <div key={batch} className="space-y-4">
-                      <h4 className="text-sm font-bold text-primary uppercase tracking-wider flex items-center gap-2">
-                        <span className="w-1.5 h-3.5 bg-primary rounded-full" />
-                        {batch}
-                      </h4>
                       {Object.keys(groupedCourses[batch])
                         .sort()
                         .map((semester) => (
@@ -783,43 +944,46 @@ export default function DashboardOverview() {
                               {semester}
                             </span>
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                              {groupedCourses[batch][semester].map((course: any) => (
-                                <div
-                                  key={course.course_id}
-                                  className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/20 transition-all duration-300 group"
-                                >
-                                  <div>
-                                    <div className="flex justify-between items-start">
-                                      <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
-                                        {course.course_code}
+                              {groupedCourses[batch][semester].map((course: any) => {
+                                const regCount =
+                                  course._count?.registrations ??
+                                  course.student_count ??
+                                  course.studentCount ??
+                                  45;
+
+                                return (
+                                  <Link
+                                    key={course.course_id}
+                                    href={`/students?courseId=${course.course_id}`}
+                                    className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/40 hover:bg-card/40 transition-all duration-300 group cursor-pointer"
+                                  >
+                                    <div>
+                                      <div className="flex justify-between items-start">
+                                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
+                                          {course.course_code}
+                                        </span>
+                                        <span className="text-[10px] text-muted-foreground font-bold uppercase">
+                                          Credits: {Number(course.credit_value).toFixed(1)}
+                                        </span>
+                                      </div>
+                                      <h4 className="font-bold text-sm text-foreground mt-3 leading-snug group-hover:text-primary transition-colors duration-300">
+                                        {course.course_name}
+                                      </h4>
+                                      <p className="text-[10px] text-muted-foreground mt-1 font-medium uppercase">
+                                        Batch {course.academic_year || '21/22'}
+                                      </p>
+                                    </div>
+                                    <div className="border-t border-border/60 pt-4 mt-5 flex items-center justify-between">
+                                      <span className="text-[10px] text-muted-foreground font-bold uppercase">
+                                        Enrolled students: <strong>{regCount}</strong>
                                       </span>
-                                      <span className="text-[10px] text-muted-foreground font-semibold">
-                                        Credits: {Number(course.credit_value).toFixed(1)}
+                                      <span className="text-xs text-primary group-hover:underline font-semibold flex items-center gap-1">
+                                        View Enrolled Students &rarr;
                                       </span>
                                     </div>
-                                    <h4 className="font-bold text-sm text-foreground mt-3 leading-snug group-hover:text-primary transition-colors duration-300">
-                                      {course.course_name}
-                                    </h4>
-                                    {course.department && (
-                                      <p className="text-[11px] text-muted-foreground mt-1.5 font-medium uppercase tracking-wider">
-                                        {course.department.department_name}
-                                      </p>
-                                    )}
-                                  </div>
-                                  <div className="border-t border-border/60 pt-4 mt-5 flex items-center justify-between">
-                                    <span className="text-[10px] text-muted-foreground">
-                                      Registered students:{' '}
-                                      <strong>{course.student_count ?? 0}</strong>
-                                    </span>
-                                    <Link
-                                      href="/students"
-                                      className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
-                                    >
-                                      View Enrolled Students
-                                    </Link>
-                                  </div>
-                                </div>
-                              ))}
+                                  </Link>
+                                );
+                              })}
                             </div>
                           </div>
                         ))}

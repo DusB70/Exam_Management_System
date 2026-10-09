@@ -538,6 +538,7 @@ export class UsersService {
     status?: string,
     degreeId?: number,
     academicYear?: number,
+    batch?: string,
   ) {
     const where: Prisma.StudentWhereInput = {};
 
@@ -551,6 +552,17 @@ export class UsersService {
 
     if (academicYear) {
       where.academic_year = academicYear;
+    }
+
+    if (batch && batch !== 'ALL') {
+      const yearMatch = batch.match(/\d+/);
+      if (yearMatch) {
+        let yr = Number(yearMatch[0]);
+        if (yr < 100) yr += 2000;
+        where.OR = [{ batch: batch }, { academic_year: yr }];
+      } else {
+        where.batch = batch;
+      }
     }
 
     if (search) {

@@ -221,12 +221,11 @@ export class RegistrationsService {
 
       for (const course of selectedCourses) {
         // Double check unique registration in transaction to prevent concurrent race conditions
-        const exists = await tx.courseRegistration.findUnique({
+        const exists = await tx.courseRegistration.findFirst({
           where: {
-            unique_student_course: {
-              student_id: student.student_id,
-              course_id: course.course_id,
-            },
+            student_id: student.student_id,
+            course_id: course.course_id,
+            attempt_number: 1,
           },
         });
 
@@ -349,12 +348,11 @@ export class RegistrationsService {
     }
 
     // Check if duplicate
-    const exists = await this.prisma.courseRegistration.findUnique({
+    const exists = await this.prisma.courseRegistration.findFirst({
       where: {
-        unique_student_course: {
-          student_id: studentId,
-          course_id: courseId,
-        },
+        student_id: studentId,
+        course_id: courseId,
+        attempt_number: 1,
       },
     });
     if (exists) {
@@ -386,12 +384,10 @@ export class RegistrationsService {
     courseId: number,
     executorId: number,
   ): Promise<CourseRegistration> {
-    const registration = await this.prisma.courseRegistration.findUnique({
+    const registration = await this.prisma.courseRegistration.findFirst({
       where: {
-        unique_student_course: {
-          student_id: studentId,
-          course_id: courseId,
-        },
+        student_id: studentId,
+        course_id: courseId,
       },
     });
 
@@ -403,10 +399,7 @@ export class RegistrationsService {
 
     const result = await this.prisma.courseRegistration.delete({
       where: {
-        unique_student_course: {
-          student_id: studentId,
-          course_id: courseId,
-        },
+        registration_id: registration.registration_id,
       },
     });
 
@@ -420,5 +413,115 @@ export class RegistrationsService {
     );
 
     return result;
+  }
+
+  async getRepeatEligibleCourses(userId: number) {
+    const student = await this.getStudentByUserId(userId);
+
+    const allGrades = await this.prisma.studentCourseGrade.findMany({
+      where: { student_id: student.student_id },
+      include: { course: true },
+    });
+
+    const courseGradesMap = new Map<number, typeof allGrades>();
+    for (const g of allGrades) {
+      if (!courseGradesMap.has(g.course_id)) {
+        courseGradesMap.set(g.course_id, []);
+      }
+      courseGradesMap.get(g.course_id)!.push(g);
+    }
+
+    const eligibleCourses: any[] = [];
+
+    for (const grades of courseGradesMap.values()) {
+      grades.sort((a, b) => b.attempt_number - a.attempt_number);
+
+      const latestGrade = grades[0];
+      const maxAttempt = grades.reduce((max, g) => Math.max(max, g.attempt_number), 0);
+      const hasPassed = grades.some(
+        (g) => g.grade_point >= 2.0 && !g.is_violated && g.grade !== 'VIOLATED',
+      );
+
+      if (!hasPassed && maxAttempt < 3) {
+        const targetCourse = latestGrade.course;
+        eligibleCourses.push({
+          course_id: targetCourse.course_id,
+          course_code: targetCourse.course_code,
+          course_name: targetCourse.course_name,
+          credit_value: parseFloat(targetCourse.credit_value.toString()),
+          semester: targetCourse.semester,
+          previous_grade: latestGrade.grade,
+          previous_grade_point: latestGrade.grade_point,
+          attempt_count: maxAttempt,
+          next_attempt_number: maxAttempt + 1,
+          max_allowed_grade: 'C',
+          attempt_label: maxAttempt + 1 === 2 ? 'Repeat 1' : 'Repeat 2',
+        });
+      }
+    }
+
+    const activePeriod = await this.getActivePeriodForStudent(userId);
+
+    return {
+      activePeriod,
+      eligibleCourses,
+    };
+  }
+
+  async registerRepeatCourse(userId: number, courseId: number) {
+    const student = await this.getStudentByUserId(userId);
+
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+    });
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found.`);
+    }
+
+    const existingRegs = await this.prisma.courseRegistration.findMany({
+      where: { student_id: student.student_id, course_id: courseId },
+      orderBy: { attempt_number: 'desc' },
+    });
+
+    const maxAttempt = existingRegs.length > 0 ? existingRegs[0].attempt_number : 1;
+    if (maxAttempt >= 3) {
+      throw new BadRequestException('Maximum repeat attempts (3) already reached for this course.');
+    }
+
+    const nextAttempt = maxAttempt + 1;
+    const attemptType = nextAttempt === 2 ? 'REPEAT_1' : 'REPEAT_2';
+
+    const registration = await this.prisma.courseRegistration.create({
+      data: {
+        student_id: student.student_id,
+        course_id: courseId,
+        attempt_number: nextAttempt,
+        attempt_type: attemptType,
+        is_held: false,
+      },
+    });
+
+    await this.prisma.studentCourseGrade.create({
+      data: {
+        student_id: student.student_id,
+        course_id: courseId,
+        attempt_number: nextAttempt,
+        attempt_type: attemptType,
+        max_allowed_grade: 'C',
+        grade: 'Pending',
+        grade_point: 0.0,
+      },
+    });
+
+    await this.auditService.logAction(
+      userId,
+      'REPEAT_EXAM_REGISTER',
+      'course_registrations',
+      registration.registration_id.toString(),
+      null,
+      { studentId: student.student_id, courseId, nextAttempt, attemptType },
+    );
+
+    return registration;
   }
 }

@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   ParseIntPipe,
   BadRequestException,
 } from '@nestjs/common';
@@ -23,6 +24,83 @@ export class SpecializationsController {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
   ) {}
+
+  @Get('eligible-students')
+  async getEligibleStudentsForSpecialization(
+    @Query('degreeId') degreeIdStr: string,
+    @Query('batch') batch?: string,
+  ) {
+    const degreeId = parseInt(degreeIdStr);
+    if (!degreeId || isNaN(degreeId)) {
+      throw new BadRequestException('Degree ID is required.');
+    }
+
+    const whereClause: any = { degree_id: degreeId };
+    if (batch && batch.trim()) {
+      const year = parseInt(batch);
+      if (!isNaN(year)) {
+        whereClause.OR = [{ academic_year: year }, { batch: batch.trim() }];
+      } else {
+        whereClause.batch = batch.trim();
+      }
+    }
+
+    const students = await this.prisma.student.findMany({
+      where: whereClause,
+      include: {
+        user: true,
+        specialization: true,
+      },
+      orderBy: { registration_number: 'asc' },
+    });
+
+    return {
+      success: true,
+      data: students,
+    };
+  }
+
+  @Post('bulk-assign')
+  async bulkAssignSpecialization(
+    @Body() dto: { specializationId: number; studentIds: number[] },
+    @GetUser('id') executorId: number,
+  ) {
+    const { specializationId, studentIds } = dto;
+    if (!specializationId || !studentIds || studentIds.length === 0) {
+      throw new BadRequestException('Specialization ID and at least one student ID are required.');
+    }
+
+    const spec = await this.prisma.specialization.findUnique({
+      where: { specialization_id: specializationId },
+    });
+    if (!spec) {
+      throw new BadRequestException('Specialization not found.');
+    }
+
+    const updateResult = await this.prisma.student.updateMany({
+      where: {
+        student_id: { in: studentIds },
+      },
+      data: {
+        specialization_id: specializationId,
+      },
+    });
+
+    await this.auditService.logAction(
+      executorId,
+      'SPECIALIZATION_BULK_ASSIGN',
+      'specializations',
+      specializationId.toString(),
+      null,
+      { specializationId, count: updateResult.count, studentIds },
+    );
+
+    return {
+      success: true,
+      message: `Successfully assigned specialization ${spec.specialization_name} to ${updateResult.count} students.`,
+      data: { count: updateResult.count },
+    };
+  }
 
   @Get()
   async getAll() {

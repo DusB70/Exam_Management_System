@@ -106,7 +106,14 @@ export class MarksController {
   @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
   async createCourseExam(
     @Param('courseId', ParseIntPipe) courseId: number,
-    @Body() body: { exam_type: string; exam_title: string; total_marks: number },
+    @Body()
+    body: {
+      exam_type: string;
+      exam_title: string;
+      total_marks: number;
+      weight?: number;
+      contributes?: boolean;
+    },
     @GetUser('id') executorUserId: number,
     @GetUser('role') role: string,
   ) {
@@ -188,6 +195,22 @@ export class MarksController {
       message: body.submissionType
         ? `Course evaluation marks submitted as ${body.submissionType} successfully`
         : 'Course evaluation marks saved as draft successfully',
+      data: result,
+    };
+  }
+
+  @Post('courses/:courseId/revoke')
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async revokeCourseGrid(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const result = await this.marksService.revokeCourseGrid(courseId, executorUserId, isLecturer);
+    return {
+      success: true,
+      message: result.message,
       data: result,
     };
   }
@@ -488,6 +511,29 @@ export class MarksController {
     };
   }
 
+  @Post('courses/:courseId/submit-first-marking')
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  @HttpCode(HttpStatus.OK)
+  async submitFirstMarking(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Body() body: { marks?: any; config?: any },
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const result = await this.marksService.submitFirstMarking(
+      courseId,
+      body,
+      executorUserId,
+      isLecturer,
+    );
+    return {
+      success: true,
+      message: result.message,
+      data: result,
+    };
+  }
+
   // ==========================================
   // SECOND MARKING MAGIC LINK & SUBMISSION
   // ==========================================
@@ -509,7 +555,7 @@ export class MarksController {
   @HttpCode(HttpStatus.OK)
   async submitSecondMarking(
     @Param('courseId', ParseIntPipe) courseId: number,
-    @Body() body: { marks: { studentId: number; examMarks: { [examId: string]: number } }[] },
+    @Body() body: { marks: any; config?: any },
   ) {
     const data = await this.marksService.submitSecondMarking(courseId, body);
     return {

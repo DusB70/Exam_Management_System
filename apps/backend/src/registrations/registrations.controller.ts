@@ -56,6 +56,32 @@ export class RegistrationsController {
     };
   }
 
+  @Get('repeat-eligible')
+  @Roles(UserRole.STUDENT)
+  async getRepeatEligibleCourses(@GetUser('id') userId: number) {
+    const data = await this.registrationsService.getRepeatEligibleCourses(userId);
+    return {
+      success: true,
+      message: 'Repeat eligible courses retrieved successfully',
+      data,
+    };
+  }
+
+  @Post('repeat-register')
+  @Roles(UserRole.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async registerRepeatCourse(
+    @GetUser('id') userId: number,
+    @Body('courseId', ParseIntPipe) courseId: number,
+  ) {
+    const registration = await this.registrationsService.registerRepeatCourse(userId, courseId);
+    return {
+      success: true,
+      message: 'Repeat course registered successfully',
+      data: registration,
+    };
+  }
+
   @Post()
   @Roles(UserRole.STUDENT)
   @HttpCode(HttpStatus.OK)
