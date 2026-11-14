@@ -27,9 +27,6 @@ export class StudentProfileDto {
   @IsOptional()
   specializationId?: number;
 
-  @IsInt()
-  academicYear!: number;
-
   @IsString()
   @IsOptional()
   batch?: string;

@@ -849,7 +849,7 @@ export default function DashboardOverview() {
                       course._count?.registrations ??
                       course.student_count ??
                       course.studentCount ??
-                      45;
+                      0;
                     const matrixItem = progressMatrix.find(
                       (m: any) => Number(m.course_id) === Number(course.course_id),
                     );
@@ -949,7 +949,7 @@ export default function DashboardOverview() {
                                   course._count?.registrations ??
                                   course.student_count ??
                                   course.studentCount ??
-                                  45;
+                                  0;
 
                                 return (
                                   <Link

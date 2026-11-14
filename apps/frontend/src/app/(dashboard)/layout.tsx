@@ -83,7 +83,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ...common,
           { name: 'Course Registration', href: '/registration', icon: BookOpen },
           { name: 'Exam Registration', href: '/exam-registration', icon: ClipboardList },
-          { name: 'Exam Timetable Calendar', href: '/exams', icon: Calendar },
+          { name: 'Exam Timetable', href: '/exams', icon: Calendar },
           { name: 'My Academic Results', href: '/results', icon: FileBarChart },
           { name: 'Forms & Requests', href: '/requests', icon: FileSpreadsheet },
           { name: 'My Profile', href: '/profile', icon: UserIcon },

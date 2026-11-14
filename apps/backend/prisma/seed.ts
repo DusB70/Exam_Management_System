@@ -244,13 +244,13 @@ async function main() {
   const bictDegree = seededDegrees['BICT'];
   await prisma.student.upsert({
     where: { user_id: student.user_id },
-    update: { degree_id: bictDegree.degree_id },
+    update: { degree_id: bictDegree.degree_id, batch: '21/22' },
     create: {
       user_id: student.user_id,
       registration_number: 'STU-2024-001',
       index_number: 'IDX-2024-001',
       degree_id: bictDegree.degree_id,
-      academic_year: 2024,
+      batch: '21/22',
       specialization_id: null, // First year has no specialization
     },
   });

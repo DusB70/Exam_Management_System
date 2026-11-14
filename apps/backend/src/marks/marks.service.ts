@@ -505,7 +505,6 @@ export class MarksService {
             student_id: true,
             student: {
               select: {
-                academic_year: true,
                 batch: true,
               },
             },
@@ -515,19 +514,7 @@ export class MarksService {
     });
 
     const courseDistribution = courses.map((c) => {
-      const year: number | null = c.registrations[0]?.student?.academic_year || null;
-      let batchStr = '21/22';
-      if (c.registrations[0]?.student?.batch) {
-        batchStr = String(c.registrations[0].student.batch);
-      } else if (year) {
-        if (year >= 2000) {
-          const y1 = year.toString().slice(2);
-          const y2 = (year + 1).toString().slice(2);
-          batchStr = `${y1}/${y2}`;
-        } else {
-          batchStr = `${year}/${year + 1}`;
-        }
-      }
+      const batchStr = c.registrations[0]?.student?.batch || '21/22';
 
       return {
         courseId: c.course_id,
@@ -536,7 +523,6 @@ export class MarksService {
         studentCount: c.registrations.length,
         latestSemesterCount: c.registrations.length,
         batch: batchStr,
-        academicYear: year || new Date().getFullYear(),
         semester: c.semester,
       };
     });
@@ -621,14 +607,14 @@ export class MarksService {
       );
     });
 
-    // Get the batch (academic year of the first student, or default to current year)
-    const batch = registrations[0]?.student?.academic_year || new Date().getFullYear();
+    // Get the batch (enrollment year of the first student, or default to 21/22)
+    const batch = registrations[0]?.student?.batch || '21/22';
 
     const rows: any[][] = [
       ['Student List'],
       ['Course Code:', course.course_code],
       ['Course Name:', course.course_name],
-      ['Batch:', `Batch ${batch}`],
+      ['Batch:', `${batch}`],
       [],
       ['Registration Number', 'Index Number', 'Full Name', 'Email', 'Attempt Type'],
     ];

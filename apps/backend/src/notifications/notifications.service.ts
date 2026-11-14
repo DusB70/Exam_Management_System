@@ -122,15 +122,18 @@ export class NotificationsService {
   /**
    * Notifies students when their academic results have been published.
    */
-  async sendResultsPublishedNotifications(academicYear: number, semester: string): Promise<void> {
+  async sendResultsPublishedNotifications(
+    academicYear: number | string,
+    semester: string,
+  ): Promise<void> {
     try {
       const students = await this.prisma.student.findMany({
-        where: { academic_year: academicYear },
+        where: { batch: String(academicYear) },
         include: { user: true },
       });
 
       this.logger.log(
-        `Sending results published notifications to ${students.length} students (Year ${academicYear}, Sem ${semester})...`,
+        `Sending results published notifications to ${students.length} students (Batch ${academicYear}, Sem ${semester})...`,
       );
 
       for (const student of students) {
@@ -149,7 +152,7 @@ export class NotificationsService {
               <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;">
                 <h2 style="color:#0f172a;">Results Published</h2>
                 <p>Dear <strong>${full_name}</strong>,</p>
-                <p>Your academic results for <strong>Academic Year ${academicYear} — Semester ${semester}</strong>
+                <p>Your academic results for <strong>Batch ${academicYear} — Semester ${semester}</strong>
                 have been compiled and published. Please log in to the portal to view your grade sheets and GPA summary.</p>
                 <p style="color:#64748b;font-size:13px;">Metropolitan University of Technology — Examinations Division</p>
               </div>
@@ -172,13 +175,13 @@ export class NotificationsService {
    * Notifies students when the course registration window opens.
    */
   async sendRegistrationOpenedNotifications(
-    academicYear: number,
+    academicYear: number | string,
     semester: string,
     endDate: Date,
   ): Promise<void> {
     try {
       const students = await this.prisma.student.findMany({
-        where: { academic_year: academicYear },
+        where: { batch: String(academicYear) },
         include: { user: true },
       });
 

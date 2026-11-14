@@ -1270,9 +1270,7 @@ export default function ExamsManagementPage() {
               Student Portal
             </div>
             <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
-              {studentTab === 'my-schedules'
-                ? 'My Enrolled Exam Timetable'
-                : 'Full University Exam Timetable'}
+              {studentTab === 'my-schedules' ? 'My Enrolled Exam Timetable' : 'Full Exam Timetable'}
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               {studentTab === 'my-schedules'

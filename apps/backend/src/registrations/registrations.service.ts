@@ -28,10 +28,10 @@ export class RegistrationsService {
 
     const period = await this.prisma.registrationPeriod.findFirst({
       where: {
-        academic_year: student.academic_year,
         status: 'OPEN',
         start_date: { lte: now },
         end_date: { gte: now },
+        OR: student.batch ? [{ batch: student.batch }, { batch: null }] : undefined,
       },
     });
 
@@ -154,7 +154,7 @@ export class RegistrationsService {
     const period = await this.getActivePeriodForStudent(userId);
     if (!period) {
       throw new BadRequestException(
-        `Registration window is closed or suspended for Year ${student.academic_year}`,
+        `Registration window is closed or suspended for Enrollment Year ${student.batch || '21/22'}`,
       );
     }
 

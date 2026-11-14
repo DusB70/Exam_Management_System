@@ -162,9 +162,8 @@ export default function StudentImportDialog({
               <span>• address</span>
               <span>• indexNumber</span>
               <span>• registrationNumber</span>
-              <span>• enrollment year</span>
+              <span>• enrollment year (e.g. 21/22)</span>
               <span>• enrolled degree</span>
-              <span>• batch (optional)</span>
             </div>
             <p className="text-[10px] italic pt-1">
               Note: Default account password will be set to student's NIC number. Column headers are

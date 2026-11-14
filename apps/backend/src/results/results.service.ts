@@ -33,10 +33,15 @@ export class ResultsService {
 
   // Publish results for all students in a semester
   async publishResults(academicYear: number, semester: string, executorUserId: number) {
-    // 1. Find all students registered in this academic year
     const students = await this.prisma.student.findMany({
       where: {
-        academic_year: academicYear,
+        registrations: {
+          some: {
+            course: {
+              semester,
+            },
+          },
+        },
       },
     });
 
@@ -435,9 +440,9 @@ export class ResultsService {
 
       doc
         .font('Helvetica-Bold')
-        .text('Academic Year:', 350, startY)
+        .text('Enrollment Year:', 350, startY)
         .font('Helvetica')
-        .text(`${student.academic_year}`, 450, startY)
+        .text(`${student.batch || '21/22'}`, 450, startY)
         .font('Helvetica-Bold')
         .text('Current Semester:', 350, startY + 18)
         .font('Helvetica')
@@ -609,7 +614,7 @@ export class ResultsService {
       ['Office of the Registrar (Examinations Division)'],
       ['OFFICIAL ACADEMIC TRANSCRIPT / RESULTS SHEET'],
       [],
-      ['Student Name:', fullName, '', 'Academic Year:', student.academic_year],
+      ['Student Name:', fullName, '', 'Enrollment Year:', student.batch || '21/22'],
       ['Registration No:', student.registration_number, '', 'Current Semester:', displaySemester],
       ['Department:', deptName, '', 'Date Generated:', new Date().toLocaleDateString()],
       [],
@@ -772,7 +777,7 @@ export class ResultsService {
         courseName: course.course_name,
         creditValue: parseFloat(course.credit_value.toString()),
         semester: course.semester,
-        academicYear: registrations[0]?.student?.academic_year || new Date().getFullYear(),
+        academicYear: registrations[0]?.student?.batch || '21/22',
         departmentName: course.department.department_name,
         lecturers:
           course.lecturers.map((l) => l.lecturer.user.full_name).join(', ') || 'Unassigned',

@@ -33,6 +33,14 @@ const BaseUserFormSchema = z.object({
 });
 
 // Conditionally validate profiles using superRefine
+const BATCH_OPTIONS = Array.from({ length: 25 }, (_, i) => {
+  const startYr = 15 + i;
+  const endYr = startYr + 1;
+  const formattedStartYr = startYr.toString().padStart(2, '0');
+  const formattedEndYr = endYr.toString().padStart(2, '0');
+  return `${formattedStartYr}/${formattedEndYr}`;
+});
+
 const UserFormSchema = BaseUserFormSchema.extend({
   studentProfile: z
     .object({
@@ -40,7 +48,6 @@ const UserFormSchema = BaseUserFormSchema.extend({
       indexNumber: z.string().optional().or(z.literal('')),
       degreeId: z.coerce.number().optional(),
       specializationId: z.coerce.number().optional().nullable().or(z.literal('')),
-      academicYear: z.coerce.number().optional(),
       batch: z.string().optional(),
     })
     .optional(),
@@ -78,11 +85,11 @@ const UserFormSchema = BaseUserFormSchema.extend({
         message: 'Degree is required',
       });
     }
-    if (!student?.academicYear || student.academicYear < 2000) {
+    if (!student?.batch) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['studentProfile', 'academicYear'],
-        message: 'Academic year is required',
+        path: ['studentProfile', 'batch'],
+        message: 'Enrollment year is required',
       });
     }
   } else if (data.roleId === 3) {
@@ -193,8 +200,7 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
               indexNumber: user.student.index_number || '',
               degreeId: user.student.degree_id,
               specializationId: user.student.specialization_id || '',
-              academicYear: user.student.academic_year,
-              batch: user.student.batch || '20/21',
+              batch: user.student.batch || '21/22',
             }
           : undefined,
         lecturerProfile: user.lecturer
@@ -225,8 +231,7 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
           indexNumber: '',
           degreeId: 0,
           specializationId: '',
-          academicYear: new Date().getFullYear(),
-          batch: '20/21',
+          batch: '21/22',
         },
         lecturerProfile: {
           employeeNumber: '',
@@ -456,7 +461,7 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
                   </label>
                   <input
                     type="email"
-                    placeholder="e.g. amal.perera@university.com"
+                    placeholder="e.g. itt2022080@tec.rjt.ac.lk"
                     {...register('email')}
                     className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
                   />
@@ -538,7 +543,7 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. STU/2024/001"
+                      placeholder="e.g. ITT/2022/080"
                       {...register('studentProfile.registrationNumber')}
                       className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
                     />
@@ -555,7 +560,7 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. IDX/2024/001"
+                      placeholder="e.g. 2060"
                       {...register('studentProfile.indexNumber')}
                       className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
                     />
@@ -568,35 +573,23 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
 
                   <div>
                     <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                      Enrollment Academic Year
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="e.g. 2024"
-                      {...register('studentProfile.academicYear')}
-                      className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
-                    />
-                    {errors.studentProfile?.academicYear && (
-                      <p className="mt-1 text-xs text-destructive">
-                        {errors.studentProfile.academicYear.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                      Student Batch (e.g. 20/21, 21/22)
+                      Enrollment Year
                     </label>
                     <select
                       {...register('studentProfile.batch')}
-                      className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+                      className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground max-h-48 overflow-y-auto"
                     >
-                      <option value="20/21">Batch 20/21</option>
-                      <option value="21/22">Batch 21/22</option>
-                      <option value="22/23">Batch 22/23</option>
-                      <option value="23/24">Batch 23/24</option>
-                      <option value="24/25">Batch 24/25</option>
+                      {BATCH_OPTIONS.map((b) => (
+                        <option key={b} value={b} className="bg-card text-foreground">
+                          {b}
+                        </option>
+                      ))}
                     </select>
+                    {errors.studentProfile?.batch && (
+                      <p className="mt-1 text-xs text-destructive">
+                        {errors.studentProfile.batch.message}
+                      </p>
+                    )}
                   </div>
 
                   <div>

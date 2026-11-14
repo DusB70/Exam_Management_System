@@ -226,7 +226,7 @@ export default function StudentDirectoryPage() {
       staffSearch,
       staffStatus,
       staffDegreeId,
-      staffAcademicYear,
+      staffBatch,
     ],
     queryFn: async () => {
       const params: any = {
@@ -235,7 +235,7 @@ export default function StudentDirectoryPage() {
         search: staffSearch || undefined,
         status: staffStatus !== 'ALL' ? staffStatus : undefined,
         degreeId: staffDegreeId || undefined,
-        academicYear: staffAcademicYear || undefined,
+        batch: staffBatch || undefined,
       };
       const response = await apiClient.get('/users/students/staff-directory', { params });
       return response.data?.data;

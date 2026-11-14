@@ -127,11 +127,10 @@ export class ImportsService {
           !address ||
           !indexNumber ||
           !registrationNumber ||
-          !academicYear ||
           !degreeCode
         ) {
           throw new BadRequestException(
-            `Row ${rowNum}: Required column missing or empty. Required columns: full name, name with initials, email, nic no, date of birth, phone number, address, index number, registration number, enrollment year, and enrolled degree.`,
+            `Row ${rowNum}: Required column missing or empty. Required columns: full name, name with initials, email, nic no, date of birth, phone number, address, index number, registration number, and enrolled degree.`,
           );
         }
 
@@ -230,8 +229,7 @@ export class ImportsService {
             index_number: indexNumber.trim(),
             degree_id: degree.degree_id,
             specialization_id: specializationId,
-            academic_year: Number(academicYear),
-            batch: batchVal ? batchVal.trim() : null,
+            batch: (batchVal || academicYear || '21/22').trim(),
           },
         });
 

@@ -131,7 +131,7 @@ export class MarksPdfService {
         .text('Academic Year:', 330, startY + 18)
         .font('Helvetica')
         .text(
-          `Batch ${marks[0]?.student?.academic_year || 'N/A'} (Sem ${exam.course.semester})`,
+          `Batch ${marks[0]?.student?.batch || '21/22'} (Sem ${exam.course.semester})`,
           420,
           startY + 18,
         )

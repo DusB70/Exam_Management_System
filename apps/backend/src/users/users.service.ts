@@ -180,8 +180,7 @@ export class UsersService {
             index_number: studentProfile.indexNumber,
             degree_id: studentProfile.degreeId,
             specialization_id: studentProfile.specializationId || null,
-            academic_year: studentProfile.academicYear,
-            batch: studentProfile.batch || null,
+            batch: studentProfile.batch || '21/22',
           },
         });
       } else if (roleId === 3) {
@@ -340,16 +339,14 @@ export class UsersService {
             index_number: studentProfile.indexNumber,
             degree_id: studentProfile.degreeId,
             specialization_id: studentProfile.specializationId || null,
-            academic_year: studentProfile.academicYear,
-            batch: studentProfile.batch || null,
+            batch: studentProfile.batch || '21/22',
           },
           update: {
             registration_number: studentProfile.registrationNumber,
             index_number: studentProfile.indexNumber,
             degree_id: studentProfile.degreeId,
             specialization_id: studentProfile.specializationId || null,
-            academic_year: studentProfile.academicYear,
-            batch: studentProfile.batch || null,
+            batch: studentProfile.batch || '21/22',
           },
         });
       } else if (activeRole === 3) {
@@ -550,19 +547,8 @@ export class UsersService {
       where.degree_id = degreeId;
     }
 
-    if (academicYear) {
-      where.academic_year = academicYear;
-    }
-
     if (batch && batch !== 'ALL') {
-      const yearMatch = batch.match(/\d+/);
-      if (yearMatch) {
-        let yr = Number(yearMatch[0]);
-        if (yr < 100) yr += 2000;
-        where.OR = [{ batch: batch }, { academic_year: yr }];
-      } else {
-        where.batch = batch;
-      }
+      where.batch = batch;
     }
 
     if (search) {

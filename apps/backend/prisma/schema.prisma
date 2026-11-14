@@ -64,8 +64,7 @@ model Student {
   index_number        String               @unique @db.VarChar(50)
   degree_id           Int
   specialization_id   Int?
-  academic_year       Int
-  batch               String?              @db.VarChar(50)
+  batch               String?              @default("21/22") @db.VarChar(50)
   status              String               @default("ACTIVE") @db.VarChar(20)
   enrollment_date     DateTime?            @db.Timestamp(6)
   graduation_date     DateTime?            @db.Timestamp(6)

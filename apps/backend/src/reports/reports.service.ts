@@ -128,12 +128,12 @@ export class ReportsService {
       const uniqueRegistered = await this.prisma.courseRegistration.groupBy({
         by: ['student_id'],
         where: {
-          student: {
-            academic_year: latestCompletedPeriod.academic_year,
-          },
           course: {
             semester: latestCompletedPeriod.semester,
           },
+          ...(latestCompletedPeriod.batch
+            ? { student: { batch: latestCompletedPeriod.batch } }
+            : {}),
         },
       });
       studentsCurrentlyLearning = uniqueRegistered.length;
@@ -145,19 +145,19 @@ export class ReportsService {
     const totalStudents = await this.prisma.student.count();
     const totalCourses = await this.prisma.course.count();
 
-    // Distinct batches (academic_year)
+    // Distinct batches
     const distinctBatches = await this.prisma.student.groupBy({
-      by: ['academic_year'],
-      orderBy: { academic_year: 'desc' },
+      by: ['batch'],
     });
-    const batchesList = distinctBatches.map((b) => b.academic_year);
+    const batchesList = distinctBatches.map((b) => b.batch).filter((b): b is string => !!b);
 
     let batchDetails = null;
 
     if (batch) {
+      const batchStr = String(batch);
       // Find the latest registration period for this batch to get their active semester
       const latestPeriod = await this.prisma.registrationPeriod.findFirst({
-        where: { academic_year: batch },
+        where: { batch: batchStr },
         orderBy: { end_date: 'desc' },
       });
 
@@ -173,7 +173,7 @@ export class ReportsService {
                 degree: {
                   students: {
                     some: {
-                      academic_year: batch,
+                      batch: batchStr,
                     },
                   },
                 },
@@ -184,7 +184,7 @@ export class ReportsService {
 
         // Get all students of this batch
         const studentsInBatch = await this.prisma.student.findMany({
-          where: { academic_year: batch },
+          where: { batch: batchStr },
           include: {
             user: {
               select: {
