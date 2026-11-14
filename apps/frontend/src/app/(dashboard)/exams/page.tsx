@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
+import { useToast } from '../../../hooks/use-toast';
+import { useConfirm } from '../../../hooks/use-confirm';
 import { UserRole, ApiResponse } from '@ems/shared';
 import { AxiosError } from 'axios';
 import {
@@ -499,13 +501,11 @@ const SEMESTERS = ['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2'];
 export default function ExamsManagementPage() {
   const { user } = useAuthStore();
   const isStudent = user?.role === UserRole.STUDENT;
+  const toast = useToast();
+  const confirm = useConfirm();
 
   // Main Section Tab: Timetable vs Results Tracker
   const [activeTab, setActiveTab] = useState<'timetable' | 'tracker'>('timetable');
-
-  // Messages states
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // =========================================================================
   // TIMETABLE SECTION FILTERS & SEARCH
@@ -779,7 +779,7 @@ export default function ExamsManagementPage() {
           rows: parsedRows,
         });
       } catch (err: any) {
-        setErrorMsg('Failed to parse Excel file. Ensure valid spreadsheet format.');
+        toast.error('Failed to parse Excel file. Ensure valid spreadsheet format.');
       } finally {
         setIsValidatingExcel(false);
       }
@@ -834,8 +834,7 @@ export default function ExamsManagementPage() {
       return res.data;
     },
     onSuccess: (_, variables) => {
-      setSuccessMsg(`Exam timetable for Batch ${variables.batch} saved successfully!`);
-      setErrorMsg(null);
+      toast.success(`Exam timetable for Batch ${variables.batch} saved successfully!`);
       setShowAddModal(false);
       setShowExcelPreviewModal(false);
       setValidationResult(null);
@@ -845,13 +844,12 @@ export default function ExamsManagementPage() {
       refetchTracker();
     },
     onError: (err: AxiosError<ApiResponse>) => {
-      setErrorMsg(
+      toast.error(
         formatUserFriendlyErrorMessage(
           err,
           'Failed to save exam timetable. Please check entry dates and try again.',
         ),
       );
-      setSuccessMsg(null);
     },
   });
 
@@ -896,12 +894,11 @@ export default function ExamsManagementPage() {
       return res.data;
     },
     onSuccess: () => {
-      setSuccessMsg(
+      toast.success(
         `Successfully imported & committed ${validationResult?.validRowsCount} timetable entries!${
           publishImmediately ? ' Timetables published to students.' : ''
         }`,
       );
-      setErrorMsg(null);
       setShowAddModal(false);
       setShowExcelPreviewModal(false);
       setValidationResult(null);
@@ -910,10 +907,9 @@ export default function ExamsManagementPage() {
       refetchBatchInfo();
     },
     onError: (err: AxiosError<ApiResponse>) => {
-      setErrorMsg(
+      toast.error(
         formatUserFriendlyErrorMessage(err, 'Failed to commit spreadsheet timetable to system.'),
       );
-      setSuccessMsg(null);
     },
   });
 
@@ -926,17 +922,15 @@ export default function ExamsManagementPage() {
       return res.data;
     },
     onSuccess: (data, batchToPublish) => {
-      setSuccessMsg(
+      toast.success(
         data.message ||
           `Exam timetable published to students! Notification emails sent to Batch ${batchToPublish}.`,
       );
-      setErrorMsg(null);
       refetchTimetables();
       refetchBatchInfo();
     },
     onError: (err: AxiosError<ApiResponse>) => {
-      setErrorMsg(formatUserFriendlyErrorMessage(err, 'Failed to publish exam timetable.'));
-      setSuccessMsg(null);
+      toast.error(formatUserFriendlyErrorMessage(err, 'Failed to publish exam timetable.'));
     },
   });
 
@@ -950,15 +944,13 @@ export default function ExamsManagementPage() {
       return res.data;
     },
     onSuccess: (data) => {
-      setSuccessMsg(data.message || 'Exam timetable deleted successfully.');
-      setErrorMsg(null);
+      toast.success(data.message || 'Exam timetable deleted successfully.');
       refetchTimetables();
       refetchBatchInfo();
       refetchTracker();
     },
     onError: (err: AxiosError<ApiResponse>) => {
-      setErrorMsg(formatUserFriendlyErrorMessage(err, 'Failed to delete exam timetable.'));
-      setSuccessMsg(null);
+      toast.error(formatUserFriendlyErrorMessage(err, 'Failed to delete exam timetable.'));
     },
   });
 
@@ -972,29 +964,27 @@ export default function ExamsManagementPage() {
       refetchTracker();
       refetchTimetables();
       if (payload.examHeld === 'HELD') {
-        setSuccessMsg(
+        toast.success(
           'Exam status updated to HELD. Email notification dispatched to 1st Marker to collect papers from AR Office!',
         );
       } else if (payload.firstMarkingReturned === true) {
-        setSuccessMsg(
+        toast.success(
           '1st marking papers returned to AR Office. Magic Link email dispatched to 2nd Marker!',
         );
       } else if (payload.firstMarkingCollected === true) {
-        setSuccessMsg('1st marking paper collection recorded.');
+        toast.success('1st marking paper collection recorded.');
       } else if (payload.secondMarkingCollected === true) {
-        setSuccessMsg('2nd marking paper collection recorded.');
+        toast.success('2nd marking paper collection recorded.');
       } else if (payload.secondMarkingReturned === true) {
-        setSuccessMsg('2nd marking papers returned to AR Office.');
+        toast.success('2nd marking papers returned to AR Office.');
       } else if (payload.examBoard !== undefined) {
-        setSuccessMsg(payload.examBoard ? 'Exam Board approved.' : 'Exam Board status updated.');
+        toast.success(payload.examBoard ? 'Exam Board approved.' : 'Exam Board status updated.');
       } else {
-        setSuccessMsg('Publishing progress matrix updated.');
+        toast.success('Publishing progress matrix updated.');
       }
-      setErrorMsg(null);
     },
     onError: (err: AxiosError<ApiResponse>) => {
-      setErrorMsg(err.response?.data?.message || 'Failed to update publishing progress.');
-      setSuccessMsg(null);
+      toast.error(err.response?.data?.message || 'Failed to update publishing progress.');
     },
   });
 
@@ -1518,33 +1508,6 @@ export default function ExamsManagementPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      {/* Notifications */}
-      {errorMsg && (
-        <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-2xl font-medium flex gap-2 items-center">
-          <AlertTriangle className="h-4.5 w-4.5 shrink-0" />
-          <span>{errorMsg}</span>
-          <button
-            onClick={() => setErrorMsg(null)}
-            className="ml-auto text-xs hover:underline cursor-pointer"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm rounded-2xl font-medium flex gap-2 items-center">
-          <CheckCircle2 className="h-4.5 w-4.5 shrink-0" />
-          <span>{successMsg}</span>
-          <button
-            onClick={() => setSuccessMsg(null)}
-            className="ml-auto text-xs hover:underline cursor-pointer"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
       {/* Title Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -1847,12 +1810,14 @@ export default function ExamsManagementPage() {
                           </button>
 
                           <button
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  `Are you sure you want to delete the timetable for Batch ${group.batch} (Semester ${group.semester})? This will remove all timetable entries for this semester.`,
-                                )
-                              ) {
+                            onClick={async () => {
+                              const confirmed = await confirm({
+                                title: 'Delete Timetable?',
+                                message: `Are you sure you want to delete the timetable for Batch ${group.batch} (Semester ${group.semester})? This will remove all timetable entries for this semester.`,
+                                confirmText: 'Delete Timetable',
+                                variant: 'destructive',
+                              });
+                              if (confirmed) {
                                 deleteBatchMutation.mutate({
                                   batch: group.batch,
                                   semester: group.semester,
@@ -2232,14 +2197,17 @@ export default function ExamsManagementPage() {
                                     <td className="py-3 px-3 border-r border-border/40 text-center">
                                       <select
                                         value={item.exam_held || 'TBH'}
-                                        onChange={(e) => {
+                                        onChange={async (e) => {
                                           const newVal = e.target.value;
                                           const currentVal = item.exam_held || 'TBH';
                                           if (newVal === currentVal) return;
 
-                                          const confirmed = window.confirm(
-                                            `Are you sure you want to change the Exam Held status for ${item.course_code} (${item.course_name}) to "${newVal}"?\n\nSetting status to HELD will automatically trigger an email notification to 1st Marker (${item.first_marker_name || '1st Marker'}) to collect exam papers from the AR Office.`,
-                                          );
+                                          const confirmed = await confirm({
+                                            title: 'Change Exam Status?',
+                                            message: `Are you sure you want to change the Exam Held status for ${item.course_code} (${item.course_name}) to "${newVal}"? Setting status to HELD will automatically trigger an email notification to 1st Marker (${item.first_marker_name || '1st Marker'}) to collect exam papers from the AR Office.`,
+                                            confirmText: 'Change Status',
+                                            variant: newVal === 'HELD' ? 'primary' : 'warning',
+                                          });
 
                                           if (!confirmed) {
                                             e.target.value = currentVal;
@@ -2830,10 +2798,9 @@ export default function ExamsManagementPage() {
                           }));
 
                         if (items.length === 0) {
-                          setErrorMsg(
+                          toast.error(
                             'Please select an examination date for at least one course before saving.',
                           );
-                          setSuccessMsg(null);
                           return;
                         }
                         saveBatchMutation.mutate({ batch: wizardBatch, items });

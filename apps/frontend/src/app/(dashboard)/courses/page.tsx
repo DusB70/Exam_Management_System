@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
+import { useToast } from '../../../hooks/use-toast';
+import { useConfirm } from '../../../hooks/use-confirm';
 import CourseDialog from '../../../components/courses/course-dialog';
 import LecturerAssignmentDialog from '../../../components/courses/lecturer-assignment-dialog';
 import PeriodDialog from '../../../components/courses/period-dialog';
@@ -37,6 +39,8 @@ const fetchDepartments = async () => {
 
 export default function CoursesManagementPage() {
   const { user } = useAuthStore();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [activeTab, setActiveTab] = useState<'courses' | 'periods' | 'lecturers'>('courses');
   const [lecturersSubTab, setLecturersSubTab] = useState<'examiners' | 'faculty'>('examiners');
 
@@ -104,21 +108,30 @@ export default function CoursesManagementPage() {
   const handleAssignCourseToLecturer = async (courseId: number, lecturerId: number) => {
     try {
       await apiClient.post(`/courses/${courseId}/lecturers`, { lecturerId });
+      toast.success('Lecturer assigned successfully.');
       refetchLecturers();
       refetchCourses();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to assign lecturer.');
+      toast.error(err.response?.data?.message || 'Failed to assign lecturer.');
     }
   };
 
   const handleRemoveCourseFromLecturer = async (courseId: number, lecturerId: number) => {
-    if (confirm('Are you sure you want to remove this course assignment?')) {
+    const confirmed = await confirm({
+      title: 'Remove Course Assignment?',
+      message:
+        'Are you sure you want to remove this course assignment? The lecturer will no longer be attached to this course module.',
+      confirmText: 'Remove',
+      variant: 'destructive',
+    });
+    if (confirmed) {
       try {
         await apiClient.delete(`/courses/${courseId}/lecturers/${lecturerId}`);
+        toast.success('Course assignment removed successfully.');
         refetchLecturers();
         refetchCourses();
       } catch (err: any) {
-        alert(err.response?.data?.message || 'Failed to remove lecturer.');
+        toast.error(err.response?.data?.message || 'Failed to remove lecturer.');
       }
     }
   };
@@ -170,19 +183,28 @@ export default function CoursesManagementPage() {
   const handlePeriodStatusChange = async (periodId: number, status: string) => {
     try {
       await apiClient.patch(`/courses/periods/${periodId}/status`, { status });
+      toast.success(`Registration window status updated to ${status}.`);
       refetchPeriods();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to update period status');
+      toast.error(err.response?.data?.message || 'Failed to update period status');
     }
   };
 
   const handleDeletePeriod = async (periodId: number) => {
-    if (confirm('Are you sure you want to delete this registration window?')) {
+    const confirmed = await confirm({
+      title: 'Delete Registration Window?',
+      message:
+        'Are you sure you want to delete this course registration window? Students will no longer be able to register for this semester.',
+      confirmText: 'Delete Window',
+      variant: 'destructive',
+    });
+    if (confirmed) {
       try {
         await apiClient.delete(`/courses/periods/${periodId}`);
+        toast.success('Registration window deleted successfully.');
         refetchPeriods();
       } catch (err: any) {
-        alert(err.response?.data?.message || 'Failed to delete registration window.');
+        toast.error(err.response?.data?.message || 'Failed to delete registration window.');
       }
     }
   };
@@ -193,10 +215,11 @@ export default function CoursesManagementPage() {
       await apiClient.patch(`/courses/periods/${periodId}/end-date`, {
         endDate: new Date(editingEndDateValue).toISOString(),
       });
+      toast.success('Registration window end date updated.');
       setEditingEndDatePeriodId(null);
       refetchPeriods();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to update end date.');
+      toast.error(err.response?.data?.message || 'Failed to update end date.');
     }
   };
 
@@ -212,12 +235,20 @@ export default function CoursesManagementPage() {
   };
 
   const handleDeleteCourse = async (courseId: number) => {
-    if (confirm('Are you sure you want to delete this course? This action cannot be undone.')) {
+    const confirmed = await confirm({
+      title: 'Delete Course?',
+      message:
+        'Are you sure you want to delete this course? This action is permanent and cannot be undone.',
+      confirmText: 'Delete Course',
+      variant: 'destructive',
+    });
+    if (confirmed) {
       try {
         await apiClient.delete(`/courses/${courseId}`);
+        toast.success('Course deleted successfully.');
         refetchCourses();
       } catch (err: any) {
-        alert(err.response?.data?.message || 'Failed to delete course');
+        toast.error(err.response?.data?.message || 'Failed to delete course');
       }
     }
   };

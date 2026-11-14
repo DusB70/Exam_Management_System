@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
+import { useToast } from '../../../hooks/use-toast';
+import { useConfirm } from '../../../hooks/use-confirm';
 import UserDialog from '../../../components/users/user-dialog';
 import StudentImportDialog from '../../../components/users/student-import-dialog';
 import { Search, UserPlus, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
@@ -21,6 +23,8 @@ const fetchUsers = async (page: number, search: string, roleId: string, status: 
 
 export default function UsersManagementPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
@@ -42,8 +46,16 @@ export default function UsersManagementPage() {
     mutationFn: async ({ userId, isActive }: { userId: number; isActive: boolean }) => {
       await apiClient.patch(`/users/${userId}/status`, { isActive });
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      toast.success(
+        variables.isActive
+          ? 'User account activated successfully.'
+          : 'User account deactivated successfully.',
+      );
       queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || 'Failed to update user status.');
     },
   });
 
@@ -57,8 +69,18 @@ export default function UsersManagementPage() {
     setDialogOpen(true);
   };
 
-  const handleToggleStatus = (userId: number, currentStatus: boolean) => {
-    toggleStatusMutation.mutate({ userId, isActive: !currentStatus });
+  const handleToggleStatus = async (user: any) => {
+    const willDeactivate = user.is_active;
+    const confirmed = await confirm({
+      title: willDeactivate ? 'Deactivate User Account?' : 'Activate User Account?',
+      message: willDeactivate
+        ? `Are you sure you want to deactivate ${user.full_name} (${user.email})? The user will be prevented from logging in.`
+        : `Are you sure you want to activate ${user.full_name} (${user.email})?`,
+      confirmText: willDeactivate ? 'Deactivate' : 'Activate',
+      variant: willDeactivate ? 'destructive' : 'primary',
+    });
+    if (!confirmed) return;
+    toggleStatusMutation.mutate({ userId: user.user_id, isActive: !user.is_active });
   };
 
   // Helper to extract department name based on user role profile
@@ -227,7 +249,7 @@ export default function UsersManagementPage() {
                         Edit
                       </button>
                       <button
-                        onClick={() => handleToggleStatus(user.user_id, user.is_active)}
+                        onClick={() => handleToggleStatus(user)}
                         className={`px-3 py-1.5 rounded-lg transition text-xs font-semibold ${
                           user.is_active
                             ? 'bg-destructive/10 text-destructive hover:bg-destructive/20'

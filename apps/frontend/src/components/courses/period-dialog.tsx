@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { apiClient } from '../../lib/api-client';
+import { useToast } from '../../hooks/use-toast';
 import { AxiosError } from 'axios';
 import { ApiResponse } from '@ems/shared';
 
@@ -46,6 +47,7 @@ interface PeriodDialogProps {
 }
 
 export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogProps) {
+  const toast = useToast();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -79,11 +81,14 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
         endDate: new Date(data.endDate).toISOString(),
       };
       const response = await apiClient.post('/courses/periods', payload);
+      toast.success('Course registration window opened successfully!');
       onSuccess(response.data?.data);
       reset();
     } catch (err) {
       const axiosError = err as AxiosError<ApiResponse>;
-      setError(axiosError.response?.data?.message || 'Failed to open registration window.');
+      const msg = axiosError.response?.data?.message || 'Failed to open registration window.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }

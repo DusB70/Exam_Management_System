@@ -4,13 +4,15 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
+import { useToast } from '../../../hooks/use-toast';
+import { useConfirm } from '../../../hooks/use-confirm';
 import { AxiosError } from 'axios';
 import { ApiResponse } from '@ems/shared';
 import {
   BookOpen,
+  CheckCircle2,
   Calendar,
   AlertTriangle,
-  CheckCircle2,
   Trash2,
   Loader2,
   Sparkles,
@@ -21,9 +23,9 @@ import {
 export default function CourseRegistrationPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [selectedCourseIds, setSelectedCourseIds] = useState<number[]>([]);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Fetch active registration period status
   const { data: activePeriod, isLoading: isActivePeriodLoading } = useQuery({
@@ -60,14 +62,12 @@ export default function CourseRegistrationPage() {
     },
     onSuccess: () => {
       setSelectedCourseIds([]);
-      setSuccessMsg('Course registrations updated successfully!');
-      setErrorMsg(null);
+      toast.success('Course registrations updated successfully!');
       queryClient.invalidateQueries({ queryKey: ['eligible-courses'] });
       queryClient.invalidateQueries({ queryKey: ['my-registrations'] });
     },
     onError: (err: AxiosError<ApiResponse>) => {
-      setErrorMsg(err.response?.data?.message || 'Failed to complete registration');
-      setSuccessMsg(null);
+      toast.error(err.response?.data?.message || 'Failed to complete registration');
     },
   });
 
@@ -77,14 +77,12 @@ export default function CourseRegistrationPage() {
       await apiClient.delete(`/registrations/${registrationId}`);
     },
     onSuccess: () => {
-      setSuccessMsg('Course registration dropped successfully.');
-      setErrorMsg(null);
+      toast.success('Course registration dropped successfully.');
       queryClient.invalidateQueries({ queryKey: ['eligible-courses'] });
       queryClient.invalidateQueries({ queryKey: ['my-registrations'] });
     },
     onError: (err: AxiosError<ApiResponse>) => {
-      setErrorMsg(err.response?.data?.message || 'Failed to drop course');
-      setSuccessMsg(null);
+      toast.error(err.response?.data?.message || 'Failed to drop course');
     },
   });
 
@@ -129,8 +127,14 @@ export default function CourseRegistrationPage() {
     registerMutation.mutate(selectedCourseIds);
   };
 
-  const handleDrop = (registrationId: number, courseCode: string) => {
-    if (confirm(`Are you sure you want to drop course ${courseCode}?`)) {
+  const handleDrop = async (registrationId: number, courseCode: string) => {
+    const confirmed = await confirm({
+      title: 'Drop Course?',
+      message: `Are you sure you want to drop course ${courseCode}? You can re-register if the registration window is still open.`,
+      confirmText: 'Drop Course',
+      variant: 'destructive',
+    });
+    if (confirmed) {
       dropMutation.mutate(registrationId);
     }
   };
@@ -161,21 +165,6 @@ export default function CourseRegistrationPage() {
           enrollments.
         </p>
       </div>
-
-      {/* Messages */}
-      {errorMsg && (
-        <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-2xl font-medium flex gap-2 items-center">
-          <AlertTriangle className="h-4.5 w-4.5 shrink-0" />
-          <span>{errorMsg}</span>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm rounded-2xl font-medium flex gap-2 items-center">
-          <CheckCircle2 className="h-4.5 w-4.5 shrink-0" />
-          <span>{successMsg}</span>
-        </div>
-      )}
 
       {/* Window Status Banner */}
       {!isRegistrationWindowOpen ? (

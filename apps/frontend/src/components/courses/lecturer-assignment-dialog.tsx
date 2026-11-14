@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../lib/api-client';
+import { useToast } from '../../hooks/use-toast';
+import { useConfirm } from '../../hooks/use-confirm';
 import { AxiosError } from 'axios';
 import { ApiResponse } from '@ems/shared';
 import { Trash2, UserPlus, GraduationCap, Loader2 } from 'lucide-react';
@@ -23,6 +25,8 @@ export default function LecturerAssignmentDialog({
   courseName,
 }: LecturerAssignmentDialogProps) {
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [selectedLecturerId, setSelectedLecturerId] = useState<string>('');
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -58,11 +62,14 @@ export default function LecturerAssignmentDialog({
     onSuccess: () => {
       setSelectedLecturerId('');
       setActionError(null);
+      toast.success('Lecturer assigned to course module.');
       refetchCourse();
       queryClient.invalidateQueries({ queryKey: ['courses'] });
     },
     onError: (err: AxiosError<ApiResponse>) => {
-      setActionError(err.response?.data?.message || 'Failed to assign lecturer');
+      const msg = err.response?.data?.message || 'Failed to assign lecturer';
+      setActionError(msg);
+      toast.error(msg);
     },
   });
 
@@ -73,11 +80,14 @@ export default function LecturerAssignmentDialog({
     },
     onSuccess: () => {
       setActionError(null);
+      toast.success('Lecturer removed from course module.');
       refetchCourse();
       queryClient.invalidateQueries({ queryKey: ['courses'] });
     },
     onError: (err: AxiosError<ApiResponse>) => {
-      setActionError(err.response?.data?.message || 'Failed to remove lecturer');
+      const msg = err.response?.data?.message || 'Failed to remove lecturer';
+      setActionError(msg);
+      toast.error(msg);
     },
   });
 
@@ -202,9 +212,19 @@ export default function LecturerAssignmentDialog({
 
                     <button
                       type="button"
-                      onClick={() => removeMutation.mutate(cl.lecturer_id)}
+                      onClick={async () => {
+                        const confirmed = await confirm({
+                          title: 'Remove Assigned Lecturer?',
+                          message: `Are you sure you want to remove ${cl.lecturer?.user?.full_name || 'this lecturer'} from ${courseCode}?`,
+                          confirmText: 'Remove Lecturer',
+                          variant: 'destructive',
+                        });
+                        if (confirmed) {
+                          removeMutation.mutate(cl.lecturer_id);
+                        }
+                      }}
                       disabled={removeMutation.isPending}
-                      className="p-2 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition disabled:opacity-50 shrink-0"
+                      className="p-2 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition disabled:opacity-50 shrink-0 cursor-pointer"
                       title="Remove assignment"
                     >
                       <Trash2 className="h-4 w-4" />

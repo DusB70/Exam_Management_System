@@ -3,16 +3,28 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiClient } from '../../lib/api-client';
+import { useToast } from '../../hooks/use-toast';
+import { useConfirm } from '../../hooks/use-confirm';
 import { Loader2, CheckCircle, AlertTriangle, Upload, Download, Search, Check } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export default function SecondMarkingPortalPage() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
+  const toast = useToast();
+  const confirm = useConfirm();
 
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [error, _setError] = useState<string | null>(null);
+
+  const setError = (msg: string | null) => {
+    _setError(msg);
+    if (msg) toast.error(msg);
+  };
+
+  const setSuccess = (msg: string | null) => {
+    if (msg) toast.success(msg);
+  };
   const [courseData, setCourseData] = useState<any>(null);
   const [students, setStudents] = useState<any[]>([]);
   const [tokenEmail, setTokenEmail] = useState<string>('');
@@ -131,7 +143,7 @@ export default function SecondMarkingPortalPage() {
         const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
         if (!rows || rows.length < 2) {
-          alert('Invalid Excel sheet layout.');
+          toast.error('Invalid Excel sheet layout. Ensure valid rows are present.');
           return;
         }
 
@@ -208,7 +220,7 @@ export default function SecondMarkingPortalPage() {
         setSecondMarks(updatedMarks);
         setSuccess('Excel spreadsheet imported successfully! Review marks below.');
       } catch (err: any) {
-        alert('Failed to parse Excel file: ' + err.message);
+        toast.error('Failed to parse Excel file: ' + err.message);
       }
     };
     reader.readAsBinaryString(file);
@@ -238,13 +250,14 @@ export default function SecondMarkingPortalPage() {
 
   const handleSubmit = async () => {
     if (isSubmitted) return;
-    if (
-      !confirm(
+    const confirmed = await confirm({
+      title: 'Submit 2nd Marking Results?',
+      message:
         'Are you sure you want to submit your 2nd marking results? Once submitted, you cannot edit this sheet further.',
-      )
-    ) {
-      return;
-    }
+      confirmText: 'Submit Results',
+      variant: 'primary',
+    });
+    if (!confirmed) return;
 
     try {
       setIsSubmitting(true);
@@ -357,14 +370,6 @@ export default function SecondMarkingPortalPage() {
             </button>
           </div>
         </div>
-
-        {/* Notifications */}
-        {success && (
-          <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-2xl text-xs font-semibold flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 shrink-0" />
-            <span>{success}</span>
-          </div>
-        )}
 
         {/* Search & Counter Bar */}
         <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">

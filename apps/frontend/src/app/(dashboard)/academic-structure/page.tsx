@@ -3,10 +3,14 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
+import { useToast } from '../../../hooks/use-toast';
+import { useConfirm } from '../../../hooks/use-confirm';
 import { Plus, Edit2, Trash2, Search, Clock } from 'lucide-react';
 
 export default function AcademicStructurePage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [activeTab, setActiveTab] = useState<
     'departments' | 'degrees' | 'specializations' | 'bulk-specialization'
   >('departments');
@@ -22,7 +26,6 @@ export default function AcademicStructurePage() {
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
   const [bulkLoading, setBulkLoading] = useState<boolean>(false);
   const [bulkAssigning, setBulkAssigning] = useState<boolean>(false);
-  const [bulkMsg, setBulkMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [bulkStudentSearch, setBulkStudentSearch] = useState<string>('');
 
   // Modals state
@@ -97,10 +100,15 @@ export default function AcademicStructurePage() {
       });
       // Invalidate related lists
       if (variables.target === 'degree') queryClient.invalidateQueries({ queryKey: ['degrees'] });
+      toast.success(
+        `${variables.target.charAt(0).toUpperCase() + variables.target.slice(1)} created successfully.`,
+      );
       setModalOpen(false);
     },
     onError: (err: any) => {
-      setErrorMsg(err.response?.data?.message || 'Failed to create item');
+      const msg = err.response?.data?.message || 'Failed to create item';
+      setErrorMsg(msg);
+      toast.error(msg);
     },
   });
 
@@ -115,10 +123,15 @@ export default function AcademicStructurePage() {
         ],
       });
       if (variables.target === 'degree') queryClient.invalidateQueries({ queryKey: ['degrees'] });
+      toast.success(
+        `${variables.target.charAt(0).toUpperCase() + variables.target.slice(1)} updated successfully.`,
+      );
       setModalOpen(false);
     },
     onError: (err: any) => {
-      setErrorMsg(err.response?.data?.message || 'Failed to update item');
+      const msg = err.response?.data?.message || 'Failed to update item';
+      setErrorMsg(msg);
+      toast.error(msg);
     },
   });
 
@@ -133,9 +146,12 @@ export default function AcademicStructurePage() {
         ],
       });
       if (variables.target === 'degree') queryClient.invalidateQueries({ queryKey: ['degrees'] });
+      toast.success(
+        `${variables.target.charAt(0).toUpperCase() + variables.target.slice(1)} deleted successfully.`,
+      );
     },
     onError: (err: any) => {
-      alert(
+      toast.error(
         err.response?.data?.message || 'Failed to delete item because it is referenced elsewhere.',
       );
     },
@@ -208,8 +224,14 @@ export default function AcademicStructurePage() {
     setModalOpen(true);
   };
 
-  const handleDelete = (target: 'department' | 'degree' | 'specialization', id: number) => {
-    if (confirm(`Are you sure you want to delete this ${target}? This cannot be undone.`)) {
+  const handleDelete = async (target: 'department' | 'degree' | 'specialization', id: number) => {
+    const confirmed = await confirm({
+      title: `Delete ${target.charAt(0).toUpperCase() + target.slice(1)}?`,
+      message: `Are you sure you want to delete this ${target}? This cannot be undone.`,
+      confirmText: 'Delete',
+      variant: 'destructive',
+    });
+    if (confirmed) {
       deleteMutation.mutate({ target, id });
     }
   };
@@ -227,7 +249,9 @@ export default function AcademicStructurePage() {
       const res = await apiClient.get(`/degrees/${degree.degree_id}/limits`);
       setLimitsList(res.data?.data || []);
     } catch (err: any) {
-      setLimitError(err.response?.data?.message || 'Failed to fetch semester limits');
+      const msg = err.response?.data?.message || 'Failed to fetch semester limits';
+      setLimitError(msg);
+      toast.error(msg);
     } finally {
       setLimitsLoading(false);
     }
@@ -244,24 +268,37 @@ export default function AcademicStructurePage() {
         semester: limitSemester,
         maxCredits: Number(limitCredits),
       });
+      toast.success('Semester credit limit configured successfully.');
       const updatedListRes = await apiClient.get(`/degrees/${limitDegree.degree_id}/limits`);
       setLimitsList(updatedListRes.data?.data || []);
     } catch (err: any) {
-      setLimitError(err.response?.data?.message || 'Failed to configure semester limit');
+      const msg = err.response?.data?.message || 'Failed to configure semester limit';
+      setLimitError(msg);
+      toast.error(msg);
     }
   };
 
   const handleDeleteLimit = async (limitId: number) => {
-    if (!confirm('Are you sure you want to delete this credit limit?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Credit Limit?',
+      message:
+        'Are you sure you want to delete this credit limit? Students in this degree program will fall back to default limit rules.',
+      confirmText: 'Delete Limit',
+      variant: 'destructive',
+    });
+    if (!confirmed) return;
     setLimitError(null);
     if (!limitDegree) return;
 
     try {
       await apiClient.delete(`/degrees/${limitDegree.degree_id}/limits/${limitId}`);
+      toast.success('Semester credit limit deleted successfully.');
       const updatedListRes = await apiClient.get(`/degrees/${limitDegree.degree_id}/limits`);
       setLimitsList(updatedListRes.data?.data || []);
     } catch (err: any) {
-      setLimitError(err.response?.data?.message || 'Failed to delete semester limit');
+      const msg = err.response?.data?.message || 'Failed to delete semester limit';
+      setLimitError(msg);
+      toast.error(msg);
     }
   };
 
@@ -684,21 +721,6 @@ export default function AcademicStructurePage() {
               students who follow that specialization.
             </p>
 
-            {bulkMsg && (
-              <div
-                className={`p-4 rounded-xl text-xs font-semibold flex items-center justify-between ${
-                  bulkMsg.type === 'success'
-                    ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
-                    : 'bg-rose-500/10 border border-rose-500/30 text-rose-300'
-                }`}
-              >
-                <span>{bulkMsg.text}</span>
-                <button onClick={() => setBulkMsg(null)} className="hover:underline">
-                  Dismiss
-                </button>
-              </div>
-            )}
-
             {/* Selection Controls */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
@@ -760,7 +782,6 @@ export default function AcademicStructurePage() {
                     onClick={async () => {
                       if (!bulkDegreeId) return;
                       setBulkLoading(true);
-                      setBulkMsg(null);
                       try {
                         const res = await apiClient.get('/specializations/eligible-students', {
                           params: { degreeId: bulkDegreeId, batch: bulkBatch || undefined },
@@ -768,18 +789,16 @@ export default function AcademicStructurePage() {
                         if (res.data?.success) {
                           setBulkStudents(res.data.data || []);
                           setSelectedStudentIds([]);
+                          toast.info(`Loaded ${res.data.data?.length || 0} eligible students.`);
                         }
                       } catch (err: any) {
-                        setBulkMsg({
-                          type: 'error',
-                          text: err.response?.data?.message || 'Failed to load students',
-                        });
+                        toast.error(err.response?.data?.message || 'Failed to load students');
                       } finally {
                         setBulkLoading(false);
                       }
                     }}
                     disabled={!bulkDegreeId || bulkLoading}
-                    className="px-4 py-2.5 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow hover:bg-primary/90 transition disabled:opacity-50 whitespace-nowrap"
+                    className="px-4 py-2.5 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow hover:bg-primary/90 transition disabled:opacity-50 whitespace-nowrap cursor-pointer"
                   >
                     {bulkLoading ? 'Loading...' : 'Load Students'}
                   </button>
@@ -814,7 +833,7 @@ export default function AcademicStructurePage() {
                         setSelectedStudentIds(bulkStudents.map((s) => s.student_id));
                       }
                     }}
-                    className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs font-bold rounded-lg border border-border/60 transition"
+                    className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs font-bold rounded-lg border border-border/60 transition cursor-pointer"
                   >
                     {selectedStudentIds.length === bulkStudents.length
                       ? 'Deselect All'
@@ -824,21 +843,19 @@ export default function AcademicStructurePage() {
                   <button
                     onClick={async () => {
                       if (!bulkSpecId || selectedStudentIds.length === 0) {
-                        setBulkMsg({
-                          type: 'error',
-                          text: 'Please select a specialization and at least one student.',
-                        });
+                        toast.error('Please select a specialization and at least one student.');
                         return;
                       }
                       setBulkAssigning(true);
-                      setBulkMsg(null);
                       try {
                         const res = await apiClient.post('/specializations/bulk-assign', {
                           specializationId: bulkSpecId,
                           studentIds: selectedStudentIds,
                         });
                         if (res.data?.success) {
-                          setBulkMsg({ type: 'success', text: res.data.message });
+                          toast.success(
+                            res.data.message || 'Specialization assigned successfully.',
+                          );
                           // refresh student list
                           const refreshRes = await apiClient.get(
                             '/specializations/eligible-students',
@@ -852,10 +869,9 @@ export default function AcademicStructurePage() {
                           }
                         }
                       } catch (err: any) {
-                        setBulkMsg({
-                          type: 'error',
-                          text: err.response?.data?.message || 'Failed to assign specialization.',
-                        });
+                        toast.error(
+                          err.response?.data?.message || 'Failed to assign specialization.',
+                        );
                       } finally {
                         setBulkAssigning(false);
                       }

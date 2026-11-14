@@ -3,24 +3,28 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiClient } from '../../../../lib/api-client';
-import {
-  ShieldCheck,
-  CheckCircle2,
-  AlertTriangle,
-  Loader2,
-  Download,
-  Upload,
-  Send,
-} from 'lucide-react';
+import { useToast } from '../../../../hooks/use-toast';
+import { useConfirm } from '../../../../hooks/use-confirm';
+import { ShieldCheck, AlertTriangle, Loader2, Download, Upload, Send } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 function SecondMarkingContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
+  const toast = useToast();
+  const confirm = useConfirm();
 
   const [isLoading, setIsLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [errorMsg, _setErrorMsg] = useState<string | null>(null);
+
+  const setErrorMsg = (msg: string | null) => {
+    _setErrorMsg(msg);
+    if (msg) toast.error(msg);
+  };
+
+  const setSuccessMsg = (msg: string | null) => {
+    if (msg) toast.success(msg);
+  };
   const [courseData, setCourseData] = useState<any | null>(null);
   const [students, setStudents] = useState<any[]>([]);
   const [gridData, setGridData] = useState<any | null>(null);
@@ -170,6 +174,15 @@ function SecondMarkingContent() {
   const handleSubmitSecondMarking = async () => {
     if (!courseData) return;
 
+    const confirmed = await confirm({
+      title: 'Submit Second Marking Evaluation?',
+      message:
+        'Are you sure you want to submit your second marking evaluation? This will lock your evaluation and notify the 1st Marker and Exam Division.',
+      confirmText: 'Submit Evaluation',
+      variant: 'primary',
+    });
+    if (!confirmed) return;
+
     setIsSubmitting(true);
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -281,27 +294,6 @@ function SecondMarkingContent() {
           </div>
         </div>
       </div>
-
-      {/* Notifications */}
-      {errorMsg && (
-        <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-2xl font-medium flex gap-2 items-center">
-          <AlertTriangle className="h-4.5 w-4.5 shrink-0" />
-          <span>{errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)} className="ml-auto text-xs hover:underline">
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm rounded-2xl font-medium flex gap-2 items-center">
-          <CheckCircle2 className="h-4.5 w-4.5 shrink-0" />
-          <span>{successMsg}</span>
-          <button onClick={() => setSuccessMsg(null)} className="ml-auto text-xs hover:underline">
-            Dismiss
-          </button>
-        </div>
-      )}
 
       {/* Evaluation Grid Table */}
       <div className="bg-card border border-border/80 rounded-3xl shadow-sm overflow-hidden">

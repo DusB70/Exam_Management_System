@@ -4,10 +4,11 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
+import { useToast } from '../../../hooks/use-toast';
+import { useConfirm } from '../../../hooks/use-confirm';
 import { AxiosError } from 'axios';
 import { ApiResponse } from '@ems/shared';
 import {
-  CheckCircle,
   CheckCircle2,
   Send,
   Loader2,
@@ -125,9 +126,17 @@ export default function MarksRegistryPage() {
   const [staffActionReason, setStaffActionReason] = useState<string>('');
   const [isActioningCA, setIsActioningCA] = useState<boolean>(false);
 
+  const toast = useToast();
+  const confirm = useConfirm();
+
   // Notifications
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const setErrorMsg = (msg: string | null) => {
+    if (msg) toast.error(msg);
+  };
+  const setSuccessMsg = (msg: string | null) => {
+    if (msg) toast.success(msg);
+  };
   const [isUploadingExcel, setIsUploadingExcel] = useState<boolean>(false);
   void isUploadingExcel;
 
@@ -666,11 +675,14 @@ export default function MarksRegistryPage() {
 
   const handlePublishCA = async () => {
     if (!selectedCourseId || isActioningCA) return;
-    if (
-      confirm(
+    const confirmed = await confirm({
+      title: 'Publish Continuous Assessment Marks?',
+      message:
         'Are you sure you want to publish Continuous Assessment (CA) marks directly to students? You can publish updated CA marks again as new assessments are graded until final results are submitted.',
-      )
-    ) {
+      confirmText: 'Publish CA Marks',
+      variant: 'primary',
+    });
+    if (confirmed) {
       setIsActioningCA(true);
       try {
         await apiClient.post(`/marks/courses/${selectedCourseId}/publish-ca`);
@@ -734,7 +746,7 @@ export default function MarksRegistryPage() {
     return payload;
   };
 
-  const handleSubmitFinal = () => {
+  const handleSubmitFinal = async () => {
     setErrorMsg(null);
     setSuccessMsg(null);
 
@@ -758,11 +770,15 @@ export default function MarksRegistryPage() {
     const payload = validateAndBuildGridPayload();
     if (!payload) return;
 
-    if (
-      confirm(
-        'Are you sure you want to submit FINAL results to the Department Head? This will submit all recorded grades for verification.',
-      )
-    ) {
+    const confirmed = await confirm({
+      title: 'Submit Final Results?',
+      message:
+        'Are you sure you want to submit FINAL results to the Department Head? This will submit all recorded grades for formal verification and locking.',
+      confirmText: 'Submit Final Results',
+      variant: 'primary',
+    });
+
+    if (confirmed) {
       submitGridMutation.mutate({ marks: payload, submissionType: 'FINAL' });
     }
   };
@@ -955,21 +971,6 @@ export default function MarksRegistryPage() {
         </div>
       )}
 
-      {/* Notifications */}
-      {errorMsg && (
-        <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-2xl font-medium flex gap-2 items-center animate-fadeIn">
-          <AlertTriangle className="h-4.5 w-4.5 shrink-0" />
-          <span>{errorMsg}</span>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm rounded-2xl font-medium flex gap-2 items-center animate-fadeIn">
-          <CheckCircle className="h-4.5 w-4.5 shrink-0" />
-          <span>{successMsg}</span>
-        </div>
-      )}
-
       {/* ========================================================================= */}
       {/* LECTURER GRADE ENTRY PORTAL */}
       {/* ========================================================================= */}
@@ -1109,12 +1110,15 @@ export default function MarksRegistryPage() {
                     <div className="flex flex-wrap items-center gap-2.5">
                       {/* Revoke Submission Button */}
                       <button
-                        onClick={() => {
-                          if (
-                            confirm(
+                        onClick={async () => {
+                          const confirmed = await confirm({
+                            title: 'Revoke Submitted Result Sheet?',
+                            message:
                               'Are you sure you want to revoke this submitted result sheet? You can make changes before Department Head approval.',
-                            )
-                          ) {
+                            confirmText: 'Revoke Submission',
+                            variant: 'warning',
+                          });
+                          if (confirmed) {
                             revokeCourseMutation.mutate();
                           }
                         }}
@@ -1180,12 +1184,14 @@ export default function MarksRegistryPage() {
                               ].includes(gridData?.course?.result_submission_status)
                             )
                               return;
-                            if (
-                              !confirm(
+                            const confirmed = await confirm({
+                              title: 'Submit Evaluation to 2nd Marker?',
+                              message:
                                 'Are you sure you want to submit 1st marking evaluation to 2nd marker? This will lock the 1st marker sheet and send email notification with magic access link to the 2nd marker.',
-                              )
-                            )
-                              return;
+                              confirmText: 'Submit to 2nd Marker',
+                              variant: 'primary',
+                            });
+                            if (!confirmed) return;
                             try {
                               setErrorMsg(null);
                               await apiClient.post(
@@ -3176,12 +3182,14 @@ export default function MarksRegistryPage() {
                               </div>
 
                               <button
-                                onClick={() => {
-                                  if (
-                                    confirm(
-                                      `Are you sure you want to delete assessment "${exam.exam_title}"?`,
-                                    )
-                                  ) {
+                                onClick={async () => {
+                                  const confirmed = await confirm({
+                                    title: 'Delete Assessment?',
+                                    message: `Are you sure you want to delete assessment "${exam.exam_title}"? All grades recorded for this assessment will be removed.`,
+                                    confirmText: 'Delete Assessment',
+                                    variant: 'destructive',
+                                  });
+                                  if (confirmed) {
                                     deleteAssessmentMutation.mutate(exam.exam_id);
                                   }
                                 }}

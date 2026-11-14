@@ -4,6 +4,7 @@ import './globals.css';
 import QueryProvider from '../components/providers/query-provider';
 import AuthProvider from '../components/providers/auth-provider';
 import ThemeSwitcher from '../components/theme-switcher';
+import { NotificationProvider } from '../components/ui/notifications';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -22,8 +23,10 @@ export default function RootLayout({
       <body className={inter.className}>
         <QueryProvider>
           <AuthProvider>
-            {children}
-            <ThemeSwitcher />
+            <NotificationProvider>
+              {children}
+              <ThemeSwitcher />
+            </NotificationProvider>
           </AuthProvider>
         </QueryProvider>
       </body>

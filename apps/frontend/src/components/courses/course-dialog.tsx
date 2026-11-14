@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../lib/api-client';
+import { useToast } from '../../hooks/use-toast';
 import { AxiosError } from 'axios';
 import { ApiResponse } from '@ems/shared';
 
@@ -38,6 +39,7 @@ interface CourseDialogProps {
 }
 
 export default function CourseDialog({ open, onClose, course, onSuccess }: CourseDialogProps) {
+  const toast = useToast();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | string>('');
@@ -127,11 +129,15 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
   const onSubmit = async (data: CourseFormInput) => {
     setError(null);
     if (!selectedDepartmentId) {
-      setError('Offering department is required.');
+      const msg = 'Offering department is required.';
+      setError(msg);
+      toast.error(msg);
       return;
     }
     if (selectedDegrees.length === 0) {
-      setError('At least one applicable degree program must be selected.');
+      const msg = 'At least one applicable degree program must be selected.';
+      setError(msg);
+      toast.error(msg);
       return;
     }
 
@@ -150,11 +156,16 @@ export default function CourseDialog({ open, onClose, course, onSuccess }: Cours
       } else {
         await apiClient.post('/courses', payload);
       }
+      toast.success(
+        isEdit ? 'Course module updated successfully!' : 'Course module created successfully!',
+      );
       onSuccess();
       onClose();
     } catch (err) {
       const axiosError = err as AxiosError<ApiResponse>;
-      setError(axiosError.response?.data?.message || 'Action failed. Check logs.');
+      const msg = axiosError.response?.data?.message || 'Action failed. Check logs.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }

@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../../store/authStore';
 import { apiClient } from '../../../lib/api-client';
+import { useToast } from '../../../hooks/use-toast';
+import { useConfirm } from '../../../hooks/use-confirm';
 import { UserRole } from '@ems/shared';
 import {
   Users,
@@ -59,6 +61,8 @@ function formatBatchDisplay(student: any): string {
 export default function StudentDirectoryPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
+  const toast = useToast();
+  const confirm = useConfirm();
 
   const isStaffOrAdmin =
     user?.role === UserRole.EXAM_DIVISION_STAFF || user?.role === UserRole.ADMINISTRATOR;
@@ -200,8 +204,9 @@ export default function StudentDirectoryPage() {
       document.body.appendChild(link);
       link.click();
       link.parentNode?.removeChild(link);
+      toast.success('Student roster downloaded successfully.');
     } catch {
-      alert('Failed to download student excel sheet.');
+      toast.error('Failed to download student excel sheet.');
     } finally {
       setIsDownloadingExcel(false);
     }
@@ -275,13 +280,14 @@ export default function StudentDirectoryPage() {
       return response.data;
     },
     onSuccess: () => {
+      toast.success('Academic status updated successfully!');
       setStatusSaveMsg('Academic status updated successfully!');
       setTimeout(() => setStatusSaveMsg(null), 3000);
       refetchFullRecord();
       queryClient.invalidateQueries({ queryKey: ['staff-students-directory'] });
     },
     onError: (err: any) => {
-      alert(err.response?.data?.message || 'Failed to update student status');
+      toast.error(err.response?.data?.message || 'Failed to update student status');
     },
   });
 
@@ -293,11 +299,16 @@ export default function StudentDirectoryPage() {
       });
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      toast.success(
+        variables.isWithheld
+          ? 'Course result has been withheld from student.'
+          : 'Course result has been released to student.',
+      );
       refetchFullRecord();
     },
     onError: (err: any) => {
-      alert(err.response?.data?.message || 'Failed to update result withheld status');
+      toast.error(err.response?.data?.message || 'Failed to update result withheld status');
     },
   });
 
@@ -1359,17 +1370,17 @@ export default function StudentDirectoryPage() {
                 onSubmit={async (e) => {
                   e.preventDefault();
                   if (!violationStudentId) {
-                    setViolationMsg({ type: 'error', text: 'Please select a valid Student.' });
+                    toast.error('Please select a valid Student.');
                     return;
                   }
 
-                  if (
-                    !confirm(
-                      `Are you sure you want to mark an Exam Violation for this student in Semester ${violationSemester}? This will hold results for this semester, cap repeat grades at C, hold next semester exams, and move student records to the bottom of lecturer spreadsheets.`,
-                    )
-                  ) {
-                    return;
-                  }
+                  const confirmed = await confirm({
+                    title: 'Record Exam Violation?',
+                    message: `Are you sure you want to mark an Exam Violation for this student in Semester ${violationSemester}? This will hold results for this semester, cap repeat grades at C, hold next semester exams, and move student records to the bottom of lecturer spreadsheets.`,
+                    confirmText: 'Record Violation',
+                    variant: 'destructive',
+                  });
+                  if (!confirmed) return;
 
                   setViolationSubmitting(true);
                   setViolationMsg(null);

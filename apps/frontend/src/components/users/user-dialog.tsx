@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../lib/api-client';
+import { useToast } from '../../hooks/use-toast';
 import { AxiosError } from 'axios';
 import { ApiResponse } from '@ems/shared';
 import { GraduationCap, Shield, Users, BookOpen } from 'lucide-react';
@@ -132,6 +133,7 @@ const fetchDegrees = async () => {
 };
 
 export default function UserDialog({ open, onClose, user, onSuccess }: UserDialogProps) {
+  const toast = useToast();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [roleSelected, setRoleSelected] = useState(false);
@@ -272,11 +274,14 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
       } else {
         await apiClient.post('/users', payload);
       }
+      toast.success(isEdit ? 'User updated successfully!' : 'User account created successfully!');
       onSuccess();
       onClose();
     } catch (err) {
       const axiosError = err as AxiosError<ApiResponse>;
-      setError(axiosError.response?.data?.message || 'Action failed. Check logs.');
+      const msg = axiosError.response?.data?.message || 'Action failed. Check logs.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }

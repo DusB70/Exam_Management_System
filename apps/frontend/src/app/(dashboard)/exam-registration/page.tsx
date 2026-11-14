@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../../lib/api-client';
-import { BookOpen, AlertCircle, CheckCircle, Clock, ShieldAlert, Award } from 'lucide-react';
+import { useToast } from '../../../hooks/use-toast';
+import { useConfirm } from '../../../hooks/use-confirm';
+import { BookOpen, CheckCircle, Clock, ShieldAlert, Award } from 'lucide-react';
 
 interface EligibleRepeatCourse {
   course_id: number;
@@ -19,12 +21,15 @@ interface EligibleRepeatCourse {
 }
 
 export default function ExamRegistrationPage() {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [loading, setLoading] = useState(true);
   const [registeringId, setRegisteringId] = useState<number | null>(null);
   const [activePeriod, setActivePeriod] = useState<any>(null);
   const [eligibleCourses, setEligibleCourses] = useState<EligibleRepeatCourse[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const setError = (msg: string | null) => {
+    if (msg) toast.error(msg);
+  };
 
   const fetchRepeatEligible = async () => {
     setLoading(true);
@@ -36,7 +41,9 @@ export default function ExamRegistrationPage() {
         setEligibleCourses(res.data.data.eligibleCourses || []);
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to load repeat registration details.');
+      const msg = err.response?.data?.message || 'Failed to load repeat registration details.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -46,19 +53,25 @@ export default function ExamRegistrationPage() {
     fetchRepeatEligible();
   }, []);
 
-  const handleRegister = async (courseId: number) => {
+  const handleRegister = async (courseId: number, courseCode: string) => {
+    const confirmed = await confirm({
+      title: 'Register for Repeat Examination?',
+      message: `Are you sure you want to register for repeat examination in ${courseCode}? Your repeat attempt will be officially recorded.`,
+      confirmText: 'Register Repeat',
+      variant: 'primary',
+    });
+    if (!confirmed) return;
+
     setRegisteringId(courseId);
-    setError(null);
-    setSuccessMsg(null);
 
     try {
       const res = await apiClient.post('/registrations/repeat-register', { courseId });
       if (res.data?.success) {
-        setSuccessMsg('Successfully registered for repeat examination!');
+        toast.success(`Successfully registered for repeat examination in ${courseCode}!`);
         fetchRepeatEligible();
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to register for repeat examination.');
+      toast.error(err.response?.data?.message || 'Failed to register for repeat examination.');
     } finally {
       setRegisteringId(null);
     }
@@ -109,21 +122,6 @@ export default function ExamRegistrationPage() {
           )}
         </div>
       </div>
-
-      {/* Notifications */}
-      {error && (
-        <div className="bg-rose-500/10 border border-rose-500/30 p-4 rounded-xl flex items-center gap-3 text-rose-300">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <p className="text-sm">{error}</p>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-xl flex items-center gap-3 text-emerald-300">
-          <CheckCircle className="w-5 h-5 flex-shrink-0" />
-          <p className="text-sm">{successMsg}</p>
-        </div>
-      )}
 
       {/* Repeat Regulations Card */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-lg">
@@ -212,9 +210,9 @@ export default function ExamRegistrationPage() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button
-                        onClick={() => handleRegister(c.course_id)}
+                        onClick={() => handleRegister(c.course_id, c.course_code)}
                         disabled={registeringId === c.course_id}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition-all shadow-md disabled:opacity-50"
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition-all shadow-md disabled:opacity-50 cursor-pointer"
                       >
                         {registeringId === c.course_id ? 'Registering...' : 'Register Repeat'}
                       </button>

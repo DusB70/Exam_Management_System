@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { apiClient } from '../../lib/api-client';
+import { useToast } from '../../hooks/use-toast';
 import { AxiosError } from 'axios';
 import { ApiResponse } from '@ems/shared';
 import { Upload, X, FileSpreadsheet, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
@@ -17,6 +18,7 @@ export default function StudentImportDialog({
   onClose,
   onSuccess,
 }: StudentImportDialogProps) {
+  const toast = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -86,20 +88,26 @@ export default function StudentImportDialog({
       });
 
       if (response.data?.success) {
-        setSuccess(response.data?.message || 'Students imported successfully!');
+        const msg = response.data?.message || 'Students imported successfully!';
+        setSuccess(msg);
+        toast.success(msg);
         setFile(null);
         setTimeout(() => {
           onSuccess();
           onClose();
           setSuccess(null);
-        }, 2000);
+        }, 1500);
       } else {
-        setError(response.data?.message || 'Bulk import failed.');
+        const msg = response.data?.message || 'Bulk import failed.';
+        setError(msg);
+        toast.error(msg);
       }
     } catch (err: any) {
       const axiosError = err as AxiosError<ApiResponse>;
       const errMsg = axiosError.response?.data?.message || 'Error occurred during file upload.';
-      setError(Array.isArray(errMsg) ? errMsg.join(', ') : errMsg);
+      const formatted = Array.isArray(errMsg) ? errMsg.join(', ') : errMsg;
+      setError(formatted);
+      toast.error(formatted);
     } finally {
       setIsLoading(false);
     }

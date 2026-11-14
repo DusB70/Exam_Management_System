@@ -3,21 +3,14 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
-import {
-  Database,
-  Download,
-  Loader2,
-  AlertTriangle,
-  CheckCircle2,
-  FileJson,
-  Server,
-  ShieldCheck,
-} from 'lucide-react';
+import { useToast } from '../../../hooks/use-toast';
+import { useConfirm } from '../../../hooks/use-confirm';
+import { Database, Download, Loader2, FileJson, Server, ShieldCheck } from 'lucide-react';
 
 export default function BackupPage() {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [isDownloading, setIsDownloading] = useState(false);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Fetch db stats dynamically
   const { data: stats, isLoading: isStatsLoading } = useQuery({
@@ -29,9 +22,16 @@ export default function BackupPage() {
   });
 
   const handleDownloadBackup = async () => {
+    const confirmed = await confirm({
+      title: 'Export System Database Backup?',
+      message:
+        'This will compile all database tables, user records, marks, and audit logs into a secure JSON snapshot.',
+      confirmText: 'Generate Backup',
+      variant: 'primary',
+    });
+    if (!confirmed) return;
+
     setIsDownloading(true);
-    setSuccessMsg(null);
-    setErrorMsg(null);
     try {
       const response = await apiClient.get('/system/backup', {
         responseType: 'blob',
@@ -46,9 +46,9 @@ export default function BackupPage() {
       link.click();
       link.parentNode?.removeChild(link);
 
-      setSuccessMsg('System database backup successfully generated and downloaded!');
+      toast.success('System database backup successfully generated and downloaded!');
     } catch {
-      setErrorMsg('Failed to generate system database backup.');
+      toast.error('Failed to generate system database backup.');
     } finally {
       setIsDownloading(false);
     }
@@ -63,21 +63,6 @@ export default function BackupPage() {
           Run and export system database tables, configurations, and logs for archival backups.
         </p>
       </div>
-
-      {/* Notifications */}
-      {successMsg && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm rounded-2xl font-medium flex gap-2 items-center">
-          <CheckCircle2 className="h-4.5 w-4.5 shrink-0" />
-          <span>{successMsg}</span>
-        </div>
-      )}
-
-      {errorMsg && (
-        <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-2xl font-medium flex gap-2 items-center">
-          <AlertTriangle className="h-4.5 w-4.5 shrink-0" />
-          <span>{errorMsg}</span>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Main Panel */}

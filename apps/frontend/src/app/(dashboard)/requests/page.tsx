@@ -4,12 +4,14 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
+import { useToast } from '../../../hooks/use-toast';
 import { UserRole } from '@ems/shared';
 import { Upload, Plus, Trash2, Download, CheckCircle, XCircle, Clock, Eye } from 'lucide-react';
 
 export default function RequestsPortalPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
+  const toast = useToast();
   const isStudent = user?.role === UserRole.STUDENT;
 
   // Active Tab: student history/submissions, staff dashboard
@@ -123,7 +125,7 @@ export default function RequestsPortalPage() {
       return res.data;
     },
     onSuccess: () => {
-      alert('Medical submission submitted successfully!');
+      toast.success('Medical submission submitted successfully!');
       queryClient.invalidateQueries({ queryKey: ['student-requests'] });
       // Reset form
       setMedExamName('');
@@ -133,7 +135,7 @@ export default function RequestsPortalPage() {
       setActiveTab('submissions');
     },
     onError: (err: any) => {
-      alert(err.response?.data?.message || 'Failed to submit medical request.');
+      toast.error(err.response?.data?.message || 'Failed to submit medical request.');
     },
   });
 
@@ -143,7 +145,7 @@ export default function RequestsPortalPage() {
       return res.data;
     },
     onSuccess: () => {
-      alert('Grace chance application submitted successfully!');
+      toast.success('Grace chance application submitted successfully!');
       queryClient.invalidateQueries({ queryKey: ['student-requests'] });
       // Reset form
       setGraceRegDate('');
@@ -163,7 +165,7 @@ export default function RequestsPortalPage() {
       setActiveTab('submissions');
     },
     onError: (err: any) => {
-      alert(err.response?.data?.message || 'Failed to submit grace chance request.');
+      toast.error(err.response?.data?.message || 'Failed to submit grace chance request.');
     },
   });
 
@@ -175,7 +177,7 @@ export default function RequestsPortalPage() {
       return res.data;
     },
     onSuccess: () => {
-      alert('Recorrection request submitted successfully!');
+      toast.success('Recorrection request submitted successfully!');
       queryClient.invalidateQueries({ queryKey: ['student-requests'] });
       // Reset form
       setRecExamName('');
@@ -194,7 +196,7 @@ export default function RequestsPortalPage() {
       setActiveTab('submissions');
     },
     onError: (err: any) => {
-      alert(err.response?.data?.message || 'Failed to submit recorrection request.');
+      toast.error(err.response?.data?.message || 'Failed to submit recorrection request.');
     },
   });
 
@@ -204,12 +206,12 @@ export default function RequestsPortalPage() {
       return res.data;
     },
     onSuccess: () => {
-      alert('Status updated successfully!');
+      toast.success('Status updated successfully!');
       queryClient.invalidateQueries({ queryKey: ['staff-submissions'] });
       setSelectedRequest(null);
     },
     onError: (err: any) => {
-      alert(err.response?.data?.message || 'Failed to update status.');
+      toast.error(err.response?.data?.message || 'Failed to update status.');
     },
   });
 
@@ -319,8 +321,8 @@ export default function RequestsPortalPage() {
 
   const handleMedicalSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!medExamName) return alert('Please enter the examination name.');
-    if (!medCertFile) return alert('Please upload the medical certificate.');
+    if (!medExamName) return toast.warning('Please enter the examination name.');
+    if (!medCertFile) return toast.warning('Please upload the medical certificate.');
 
     const now = new Date();
     for (const sub of medSubjects) {
@@ -330,7 +332,7 @@ export default function RequestsPortalPage() {
           const diffMs = now.getTime() - examDate.getTime();
           const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
           if (diffDays > 14) {
-            return alert(
+            return toast.error(
               `Medical submission deadline has expired for course '${sub.course_code || 'selected course'}'. Medicals must be submitted within 14 days of the examination date (${diffDays} days elapsed).`,
             );
           }
@@ -351,8 +353,8 @@ export default function RequestsPortalPage() {
 
   const handleGraceSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!graceRegDate) return alert('Please enter your registration date.');
-    if (!graceDeclaration) return alert('Please sign the declaration checkmark.');
+    if (!graceRegDate) return toast.warning('Please enter your registration date.');
+    if (!graceDeclaration) return toast.warning('Please sign the declaration checkmark.');
 
     const payload = {
       date_of_registration: graceRegDate,
@@ -375,9 +377,9 @@ export default function RequestsPortalPage() {
 
   const handleRecorrectionSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!recExamName) return alert('Please enter the exam name.');
-    if (!recYear || !recSemester) return alert('Please fill in year and semester.');
-    if (!recReceiptFile) return alert('Please upload your payment receipt.');
+    if (!recExamName) return toast.warning('Please enter the exam name.');
+    if (!recYear || !recSemester) return toast.warning('Please fill in year and semester.');
+    if (!recReceiptFile) return toast.warning('Please upload your payment receipt.');
 
     const totalAmount = recSubjects.length * 500;
 

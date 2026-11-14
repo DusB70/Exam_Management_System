@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { apiClient } from '../../lib/api-client';
+import { useToast } from '../../hooks/use-toast';
+import { useConfirm } from '../../hooks/use-confirm';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import RouteGuard from '../../components/auth/route-guard';
@@ -28,15 +30,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, logout } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleLogout = async () => {
+    const confirmed = await confirm({
+      title: 'Sign Out?',
+      message: 'Are you sure you want to log out of your session?',
+      confirmText: 'Sign Out',
+      variant: 'warning',
+    });
+    if (!confirmed) return;
+
     try {
       await apiClient.post('/auth/logout');
     } catch {
       // Proceed with local logout even if API call fails (for safety)
     } finally {
       logout();
+      toast.info('You have been signed out.');
       router.push('/login');
     }
   };

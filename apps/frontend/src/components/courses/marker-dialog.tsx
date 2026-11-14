@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../lib/api-client';
+import { useToast } from '../../hooks/use-toast';
 import { User, UserCheck, Loader2, Check, X } from 'lucide-react';
 
 interface MarkerDialogProps {
@@ -19,6 +20,7 @@ export default function MarkerDialog({
   lecturersList,
   onSuccess,
 }: MarkerDialogProps) {
+  const toast = useToast();
   const [firstMarkerType, setFirstMarkerType] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
   const [firstMarkerLecturerId, setFirstMarkerLecturerId] = useState<string>('');
   const [firstMarkerName, setFirstMarkerName] = useState<string>('');
@@ -81,10 +83,13 @@ export default function MarkerDialog({
       };
 
       await apiClient.put(`/courses/${course.course_id}/markers`, payload);
+      toast.success('Course 1st & 2nd markers assigned successfully!');
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to assign course markers.');
+      const msg = err.response?.data?.message || 'Failed to assign course markers.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }

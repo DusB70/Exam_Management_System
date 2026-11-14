@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
+import { useToast } from '../../../hooks/use-toast';
 import {
   AlertTriangle,
   Loader2,
@@ -17,11 +18,10 @@ import { UserRole } from '@ems/shared';
 
 export default function ResultsAndImportsPage() {
   const { user } = useAuthStore();
+  const toast = useToast();
   const role = user?.role;
   const isStudent = role === UserRole.STUDENT;
 
-  // Notification states
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
 
@@ -82,8 +82,9 @@ export default function ResultsAndImportsPage() {
       document.body.appendChild(link);
       link.click();
       link.parentNode?.removeChild(link);
+      toast.success('PDF transcript downloaded successfully.');
     } catch {
-      setErrorMsg('Failed to download PDF transcript.');
+      toast.error('Failed to download PDF transcript.');
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -102,8 +103,9 @@ export default function ResultsAndImportsPage() {
       document.body.appendChild(link);
       link.click();
       link.parentNode?.removeChild(link);
+      toast.success('Excel transcript downloaded successfully.');
     } catch {
-      setErrorMsg('Failed to download Excel transcript.');
+      toast.error('Failed to download Excel transcript.');
     } finally {
       setIsDownloadingExcel(false);
     }
@@ -191,17 +193,6 @@ export default function ResultsAndImportsPage() {
           )}
         </div>
       </div>
-
-      {/* Notifications */}
-      {errorMsg && (
-        <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-2xl font-medium flex gap-2 items-center">
-          <AlertTriangle className="h-4.5 w-4.5 shrink-0" />
-          <span>{errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)} className="ml-auto text-xs hover:underline">
-            Dismiss
-          </button>
-        </div>
-      )}
 
       {/* Filters Bar */}
       <div className="bg-card border border-border/80 p-4 rounded-3xl flex flex-wrap gap-4 items-center justify-between shadow-sm">
