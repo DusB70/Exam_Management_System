@@ -14,6 +14,10 @@ export class CoursesService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
+  private isEligibleForSpecialization(sem?: string): boolean {
+    return Boolean(sem && sem !== '1.1' && sem !== '1.2');
+  }
+
   async findAll(
     page: number,
     limit: number,
@@ -66,6 +70,11 @@ export class CoursesService {
             },
           },
           specialization: true,
+          course_specializations: {
+            include: {
+              specialization: true,
+            },
+          },
           lecturers: {
             include: {
               lecturer: {
@@ -126,6 +135,11 @@ export class CoursesService {
           },
         },
         specialization: true,
+        course_specializations: {
+          include: {
+            specialization: true,
+          },
+        },
         lecturers: {
           include: {
             lecturer: {
@@ -153,6 +167,7 @@ export class CoursesService {
       departmentId,
       degrees,
       specializationId,
+      specializations,
       semester,
       lecturerId,
     } = createCourseDto;
@@ -173,6 +188,13 @@ export class CoursesService {
       throw new NotFoundException(`Department with ID ${departmentId} not found`);
     }
 
+    const isEligible = this.isEligibleForSpecialization(semester);
+    const primarySpecId = isEligible
+      ? specializations && specializations.length > 0
+        ? specializations[0].specializationId
+        : specializationId || null
+      : null;
+
     const course = await this.prisma.$transaction(async (tx) => {
       const newCourse = await tx.course.create({
         data: {
@@ -180,7 +202,7 @@ export class CoursesService {
           course_name: courseName,
           credit_value: new Prisma.Decimal(creditValue),
           department_id: departmentId,
-          specialization_id: specializationId || null,
+          specialization_id: primarySpecId,
           semester,
           degrees: {
             create: degrees.map((d: any) => ({
@@ -188,6 +210,16 @@ export class CoursesService {
               status: d.status,
             })),
           },
+          ...(isEligible && specializations && specializations.length > 0
+            ? {
+                course_specializations: {
+                  create: specializations.map((s: any) => ({
+                    specialization_id: s.specializationId,
+                    status: s.status,
+                  })),
+                },
+              }
+            : {}),
         },
       });
 
@@ -231,6 +263,7 @@ export class CoursesService {
       departmentId,
       degrees,
       specializationId,
+      specializations,
       semester,
       lecturerId,
     } = updateCourseDto;
@@ -254,9 +287,26 @@ export class CoursesService {
       updateData.department = { connect: { department_id: departmentId } };
     }
 
-    if (specializationId !== undefined) {
-      if (specializationId === null || specializationId === 0) {
+    const targetSemester = semester || existingCourse.semester;
+    const canHaveSpecialization = this.isEligibleForSpecialization(targetSemester);
+
+    if (!canHaveSpecialization) {
+      if (existingCourse.specialization_id) {
         updateData.specialization = { disconnect: true };
+      }
+    } else if (specializations !== undefined) {
+      if (specializations.length > 0) {
+        updateData.specialization = {
+          connect: { specialization_id: specializations[0].specializationId },
+        };
+      } else if (existingCourse.specialization_id) {
+        updateData.specialization = { disconnect: true };
+      }
+    } else if (specializationId !== undefined) {
+      if (specializationId === null || specializationId === 0) {
+        if (existingCourse.specialization_id) {
+          updateData.specialization = { disconnect: true };
+        }
       } else {
         updateData.specialization = { connect: { specialization_id: specializationId } };
       }
@@ -267,6 +317,26 @@ export class CoursesService {
         where: { course_id: id },
         data: updateData,
       });
+
+      if (!canHaveSpecialization) {
+        await tx.courseSpecialization.deleteMany({
+          where: { course_id: id },
+        });
+      } else if (specializations !== undefined) {
+        await tx.courseSpecialization.deleteMany({
+          where: { course_id: id },
+        });
+
+        if (specializations.length > 0) {
+          await tx.courseSpecialization.createMany({
+            data: specializations.map((s: any) => ({
+              course_id: id,
+              specialization_id: s.specializationId,
+              status: s.status,
+            })),
+          });
+        }
+      }
 
       if (degrees !== undefined) {
         // Clear previous degree assignments for this course

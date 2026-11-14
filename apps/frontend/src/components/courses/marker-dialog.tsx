@@ -96,7 +96,7 @@ export default function MarkerDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fadeIn !m-0">
       <div className="bg-card border border-border/80 w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col backdrop-blur-xl animate-scaleUp">
         {/* Header */}
         <div className="px-6 py-4 border-b border-border/60 flex items-center justify-between bg-secondary/15">

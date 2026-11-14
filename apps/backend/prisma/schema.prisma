@@ -128,6 +128,7 @@ model Specialization {
   department          Department? @relation(fields: [department_id], references: [department_id], onDelete: SetNull, onUpdate: NoAction)
   students            Student[]
   courses             Course[]
+  course_specializations CourseSpecialization[]
 
   @@unique([degree_id, specialization_code])
   @@map("specializations")
@@ -147,6 +148,7 @@ model Course {
   degrees           CourseDegree[]
   department        Department           @relation(fields: [department_id], references: [department_id])
   specialization    Specialization?      @relation(fields: [specialization_id], references: [specialization_id])
+  course_specializations CourseSpecialization[]
   exams             Exam[]
   course_grades     StudentCourseGrade[]
   marks_config             Json?
@@ -468,3 +470,14 @@ model CoursePublishingProgress {
   @@map("course_publishing_progress")
 }
 
+
+model CourseSpecialization {
+  course_id         Int
+  specialization_id Int
+  status            String         @db.VarChar(20) // "COMPULSORY" or "OPTIONAL"
+  course            Course         @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+  specialization    Specialization @relation(fields: [specialization_id], references: [specialization_id], onDelete: Cascade)
+
+  @@id([course_id, specialization_id])
+  @@map("course_specializations")
+}

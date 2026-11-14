@@ -28,6 +28,9 @@ import {
   Download,
   Search,
   Lock,
+  Clock,
+  Inbox,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { UserRole } from '@ems/shared';
 import * as XLSX from 'xlsx';
@@ -945,27 +948,27 @@ export default function MarksRegistryPage() {
 
       {/* Top Sub-Navigation Tabs for Lecturer View */}
       {isLecturer && (
-        <div className="border-b border-border/60 flex items-center gap-8 text-sm font-bold pt-2">
+        <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
           <button
             onClick={() => setLecturerTab('registry')}
-            className={`pb-3 flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               lecturerTab === 'registry'
-                ? 'border-primary text-primary font-bold'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'text-primary border-b-2 border-primary font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <ClipboardList className="h-4.5 w-4.5" />
+            <ClipboardList className="h-4 w-4" />
             Student Marks Registry
           </button>
           <button
             onClick={() => setLecturerTab('settings')}
-            className={`pb-3 flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               lecturerTab === 'settings'
-                ? 'border-primary text-primary font-bold'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'text-primary border-b-2 border-primary font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <Settings className="h-4.5 w-4.5" />
+            <Settings className="h-4 w-4" />
             Grading & Evaluation Settings
           </button>
         </div>
@@ -3499,7 +3502,7 @@ export default function MarksRegistryPage() {
       {/* ADD ASSESSMENT MODAL */}
       {/* ========================================================================= */}
       {showAddAssessmentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fadeIn !m-0">
           <div className="bg-card border border-border shadow-2xl rounded-3xl w-full max-w-lg overflow-hidden animate-slideUp">
             <div className="p-6 border-b border-border/60 flex justify-between items-center">
               <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
@@ -3639,45 +3642,49 @@ export default function MarksRegistryPage() {
       {/* ========================================================================= */}
       {isStaffOrAdmin && (
         <div className="space-y-6">
-          <div className="flex border-b border-border/60 gap-4 text-xs font-bold">
+          <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
             <button
               onClick={() => setActiveTab('review')}
-              className={`pb-3 transition-colors ${
+              className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
                 activeTab === 'review'
-                  ? 'border-b-2 border-primary text-primary'
+                  ? 'text-primary border-b-2 border-primary font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
+              <Clock className="h-4 w-4" />
               Pending Approval Queue ({reviewQueueData.length})
             </button>
             <button
               onClick={() => setActiveTab('received')}
-              className={`pb-3 transition-colors ${
+              className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
                 activeTab === 'received'
-                  ? 'border-b-2 border-primary text-primary'
+                  ? 'text-primary border-b-2 border-primary font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
+              <Inbox className="h-4 w-4" />
               Received Queue ({receivedQueueData.length})
             </button>
             <button
               onClick={() => setActiveTab('approved')}
-              className={`pb-3 transition-colors ${
+              className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
                 activeTab === 'approved'
-                  ? 'border-b-2 border-primary text-primary'
+                  ? 'text-primary border-b-2 border-primary font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
+              <CheckCircle2 className="h-4 w-4" />
               Approved Directory ({approvedDirectoryData.length})
             </button>
             <button
               onClick={() => setActiveTab('combined')}
-              className={`pb-3 transition-colors ${
+              className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
                 activeTab === 'combined'
-                  ? 'border-b-2 border-primary text-primary'
+                  ? 'text-primary border-b-2 border-primary font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
+              <FileSpreadsheet className="h-4 w-4" />
               Combined Evaluation Registry
             </button>
           </div>
@@ -3954,7 +3961,7 @@ export default function MarksRegistryPage() {
 
           {/* Modal for Staff Reviewing Marksheet */}
           {selectedCourseReview && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fadeIn">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fadeIn !m-0">
               <div className="bg-card border border-border shadow-2xl rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden animate-slideUp">
                 <div className="p-6 border-b border-border/60 flex justify-between items-center">
                   <div>
@@ -4063,7 +4070,7 @@ export default function MarksRegistryPage() {
 
           {/* Modal for Staff Rejection Prompt */}
           {staffRejectCourseId && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fadeIn">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fadeIn !m-0">
               <div className="bg-card border border-border shadow-2xl rounded-3xl w-full max-w-md p-6 space-y-4 animate-slideUp">
                 <h3 className="text-lg font-bold text-destructive flex items-center gap-2">
                   <AlertTriangle className="h-5 w-5" /> Reject Marksheet

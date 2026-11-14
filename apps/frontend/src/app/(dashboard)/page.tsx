@@ -995,7 +995,7 @@ export default function DashboardOverview() {
 
           {/* Review Marks Modal for Head/Dean */}
           {reviewCourse && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fadeIn">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fadeIn !m-0">
               <div className="bg-card border border-border shadow-2xl rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden animate-slideUp">
                 {/* Modal Header */}
                 <div className="p-6 border-b border-border/60 flex justify-between items-center">

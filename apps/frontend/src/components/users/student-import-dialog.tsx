@@ -5,7 +5,16 @@ import { apiClient } from '../../lib/api-client';
 import { useToast } from '../../hooks/use-toast';
 import { AxiosError } from 'axios';
 import { ApiResponse } from '@ems/shared';
-import { Upload, X, FileSpreadsheet, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import {
+  Upload,
+  X,
+  FileSpreadsheet,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  Download,
+} from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 interface StudentImportDialogProps {
   open: boolean;
@@ -66,6 +75,42 @@ export default function StudentImportDialog({
     }
   };
 
+  const handleDownloadTemplate = () => {
+    const sampleData = [
+      {
+        fullName: 'Kavindu Nimnada Perera',
+        nameWithInitials: 'K.N. Perera',
+        email: 'kavindu.perera@std.ems.edu',
+        nicNo: '200115603421',
+        dateOfBirth: '2001-05-18',
+        phoneNumber: '+94712345678',
+        address: 'No 45, Temple Road, Kandy',
+        indexNumber: 'TG/2021/101',
+        registrationNumber: 'UWU/BICT/21/101',
+        'enrollment year (e.g. 21/22)': '21/22',
+        'enrolled degree': 'BICT',
+      },
+      {
+        fullName: 'Dinithi Hashara Silva',
+        nameWithInitials: 'D.H. Silva',
+        email: 'dinithi.silva@std.ems.edu',
+        nicNo: '200078901234',
+        dateOfBirth: '2000-11-24',
+        phoneNumber: '+94779876543',
+        address: 'No 12, Galle Road, Colombo 03',
+        indexNumber: 'TG/2021/102',
+        registrationNumber: 'UWU/BET/21/102',
+        'enrollment year (e.g. 21/22)': '21/22',
+        'enrolled degree': 'BET',
+      },
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Students');
+    XLSX.writeFile(wb, 'students_bulk_import_template.xlsx');
+  };
+
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
@@ -114,7 +159,7 @@ export default function StudentImportDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm !m-0">
       <div className="bg-card border border-border/80 w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fadeIn">
         {/* Header */}
         <div className="px-6 py-4 border-b border-border/60 flex items-center justify-between bg-secondary/10">
@@ -154,8 +199,18 @@ export default function StudentImportDialog({
           )}
 
           {/* Instructions Box */}
-          <div className="bg-secondary/20 border border-border/40 p-4 rounded-2xl text-xs space-y-2 text-muted-foreground">
-            <h4 className="font-bold text-foreground">Spreadsheet Formatting Instructions</h4>
+          <div className="bg-secondary/20 border border-border/40 p-4 rounded-2xl text-xs space-y-2.5 text-muted-foreground">
+            <div className="flex items-center justify-between">
+              <h4 className="font-bold text-foreground">Spreadsheet Formatting Instructions</h4>
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                className="text-[11px] text-primary hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download Template
+              </button>
+            </div>
             <p>
               Your Excel sheet must contain a header row with the following column headers
               (case-insensitive):

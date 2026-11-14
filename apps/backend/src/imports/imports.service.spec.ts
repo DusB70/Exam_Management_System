@@ -28,8 +28,24 @@ describe('ImportsService', () => {
       count: jest.fn(),
       upsert: jest.fn(),
     },
+    course: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+    degree: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+    },
+    specialization: {
+      findFirst: jest.fn(),
+    },
+    lecturer: {
+      findFirst: jest.fn(),
+    },
     courseLecturer: {
       findUnique: jest.fn(),
+      create: jest.fn(),
     },
     courseRegistration: {
       findUnique: jest.fn(),
@@ -155,6 +171,57 @@ describe('ImportsService', () => {
       await expect(service.importMarks(1, Buffer.from(''), 99, false)).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  describe('importCourses', () => {
+    it('should throw BadRequestException if parsed rows are empty', async () => {
+      mockXlsxParserService.parseBuffer.mockReturnValue([]);
+
+      await expect(service.importCourses(Buffer.from(''), 99)).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if required field is missing', async () => {
+      mockXlsxParserService.parseBuffer.mockReturnValue([
+        {
+          courseCode: 'CS101',
+          courseName: '', // Missing name
+          creditValue: 3,
+          semester: '1.1',
+        },
+      ]);
+
+      await expect(service.importCourses(Buffer.from(''), 99)).rejects.toThrow(BadRequestException);
+    });
+
+    it('should import courses successfully', async () => {
+      mockXlsxParserService.parseBuffer.mockReturnValue([
+        {
+          courseCode: 'CS101',
+          courseName: 'Intro to CS',
+          creditValue: 3,
+          semester: '1.1',
+          department: 'ICT',
+          degree: 'BICT',
+          status: 'COMPULSORY',
+        },
+      ]);
+      mockPrismaService.course.findUnique.mockResolvedValue(null);
+      mockPrismaService.degree.findFirst.mockResolvedValue({ degree_id: 1, department_id: 1 });
+      (mockPrismaService.department as any).findFirst = jest
+        .fn()
+        .mockResolvedValue({ department_id: 1 });
+      mockPrismaService.course.create.mockResolvedValue({
+        course_id: 101,
+        course_code: 'CS101',
+        course_name: 'Intro to CS',
+      });
+
+      const result = await service.importCourses(Buffer.from(''), 99);
+
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(1);
+      expect(mockPrismaService.course.create).toHaveBeenCalled();
     });
   });
 });

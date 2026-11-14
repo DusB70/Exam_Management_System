@@ -35,6 +35,24 @@ export class ImportsController {
     };
   }
 
+  @Post('courses')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  @UseInterceptors(FileInterceptor('file'))
+  async importCourses(
+    @UploadedFile() file: Express.Multer.File,
+    @GetUser('id') executorId: number,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Excel/CSV spreadsheet file is required.');
+    }
+    const result = await this.importsService.importCourses(file.buffer, executorId);
+    return {
+      success: true,
+      message: `Successfully imported ${result.count} courses in bulk.`,
+      data: result,
+    };
+  }
+
   @Post('exams/:examId/marks')
   @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR)
   @UseInterceptors(FileInterceptor('file'))

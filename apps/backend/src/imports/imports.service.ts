@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { XlsxParserService } from './xlsx-parser.service';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as XLSX from 'xlsx';
 
@@ -442,6 +443,348 @@ export class ImportsService {
       return {
         success: true,
         count: importedMarks.length,
+      };
+    });
+  }
+
+  async importCourses(buffer: Buffer, executorId: number) {
+    const rows = this.xlsxParser.parseBuffer<Record<string, any>>(buffer);
+    if (rows.length === 0) {
+      throw new BadRequestException('Import file is empty.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const importedCourses = [];
+      const seenCodes = new Set<string>();
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowNum = i + 2;
+
+        const courseCode = this.getCaseInsensitiveValue(row, [
+          'coursecode',
+          'course_code',
+          'course code',
+          'code',
+        ]);
+        const courseName = this.getCaseInsensitiveValue(row, [
+          'coursename',
+          'course_name',
+          'course name',
+          'name',
+          'title',
+        ]);
+        const creditValue = this.getCaseInsensitiveValue(row, [
+          'creditvalue',
+          'credit_value',
+          'credit value',
+          'credits',
+          'credit',
+        ]);
+        const semester = this.getCaseInsensitiveValue(row, [
+          'semester',
+          'sem',
+          'academicyearsemester',
+        ]);
+        const departmentCode = this.getCaseInsensitiveValue(row, [
+          'department',
+          'departmentcode',
+          'department_code',
+          'dept',
+          'deptcode',
+        ]);
+        const degreeCodesRaw = this.getCaseInsensitiveValue(row, [
+          'degree',
+          'degrees',
+          'degreecode',
+          'degree_code',
+          'degree codes',
+          'program',
+          'programme',
+        ]);
+        const statusVal = this.getCaseInsensitiveValue(row, [
+          'status',
+          'coursestatus',
+          'course_status',
+          'type',
+          'coursetype',
+          'course_type',
+        ]);
+        const specializationVal = this.getCaseInsensitiveValue(row, [
+          'specialization',
+          'specializationcode',
+          'specialization_code',
+          'specialization code',
+          'spec',
+        ]);
+        const lecturerVal = this.getCaseInsensitiveValue(row, [
+          'lecturer',
+          'lectureremail',
+          'lecturer_email',
+          'lecturer email',
+          'instructor',
+        ]);
+
+        if (!courseCode || !courseName || !creditValue || !semester) {
+          throw new BadRequestException(
+            `Row ${rowNum}: Required column missing or empty. Required columns: course code, course name, credit value, and semester.`,
+          );
+        }
+
+        const cleanCode = courseCode.trim().toUpperCase();
+        if (!/^[A-Z0-9-]+$/.test(cleanCode)) {
+          throw new BadRequestException(
+            `Row ${rowNum}: Course code "${cleanCode}" must contain only uppercase letters, numbers, and hyphens.`,
+          );
+        }
+
+        if (seenCodes.has(cleanCode)) {
+          throw new BadRequestException(
+            `Row ${rowNum}: Duplicate course code "${cleanCode}" found in spreadsheet.`,
+          );
+        }
+        seenCodes.add(cleanCode);
+
+        // Check if course already exists in database
+        const existingCourse = await tx.course.findUnique({
+          where: { course_code: cleanCode },
+        });
+        if (existingCourse) {
+          throw new BadRequestException(
+            `Row ${rowNum}: Course code "${cleanCode}" is already in use.`,
+          );
+        }
+
+        // Validate credit value
+        const credits = parseFloat(creditValue);
+        if (isNaN(credits) || credits < 0 || credits > 10) {
+          throw new BadRequestException(
+            `Row ${rowNum}: Credit value must be a valid number between 0 and 10. Received "${creditValue}".`,
+          );
+        }
+
+        // Validate & normalize semester format: 1.1, 1.2, ..., 4.2
+        let cleanSemester = semester.trim();
+        const semMatch = cleanSemester.match(/^[Yy]?([1-4])[-_./]?[Ss]?([1-2])$/);
+        if (semMatch) {
+          cleanSemester = `${semMatch[1]}.${semMatch[2]}`;
+        }
+        if (!/^(1\.1|1\.2|2\.1|2\.2|3\.1|3\.2|4\.1|4\.2)$/.test(cleanSemester)) {
+          throw new BadRequestException(
+            `Row ${rowNum}: Semester "${semester}" is invalid. Must be in format X.Y (1.1 to 4.2).`,
+          );
+        }
+
+        // Resolve Degrees
+        const degreeList: { degreeId: number; status: string }[] = [];
+        const defaultStatus =
+          statusVal.trim().toUpperCase() === 'OPTIONAL' ? 'OPTIONAL' : 'COMPULSORY';
+
+        if (degreeCodesRaw) {
+          const tokens = degreeCodesRaw
+            .split(/[,;]/)
+            .map((t) => t.trim())
+            .filter(Boolean);
+          for (const token of tokens) {
+            let dCode = token;
+            let dStatus = defaultStatus;
+            if (token.includes(':')) {
+              const parts = token.split(':');
+              dCode = parts[0].trim();
+              const subStatus = parts[1].trim().toUpperCase();
+              if (subStatus === 'OPTIONAL' || subStatus === 'COMPULSORY') {
+                dStatus = subStatus;
+              }
+            }
+
+            const degreeObj = await tx.degree.findFirst({
+              where: {
+                OR: [
+                  { degree_code: { equals: dCode, mode: 'insensitive' } },
+                  { degree_name: { equals: dCode, mode: 'insensitive' } },
+                ],
+              },
+            });
+
+            if (!degreeObj) {
+              throw new BadRequestException(`Row ${rowNum}: Degree program "${dCode}" not found.`);
+            }
+
+            if (!degreeList.some((d) => d.degreeId === degreeObj.degree_id)) {
+              degreeList.push({ degreeId: degreeObj.degree_id, status: dStatus });
+            }
+          }
+        }
+
+        // Resolve Department
+        let departmentId: number | null = null;
+        if (departmentCode) {
+          const deptObj = await tx.department.findFirst({
+            where: {
+              OR: [
+                { department_code: { equals: departmentCode.trim(), mode: 'insensitive' } },
+                { department_name: { equals: departmentCode.trim(), mode: 'insensitive' } },
+              ],
+            },
+          });
+          if (!deptObj) {
+            throw new BadRequestException(
+              `Row ${rowNum}: Department "${departmentCode}" not found.`,
+            );
+          }
+          departmentId = deptObj.department_id;
+        } else if (degreeList.length > 0) {
+          // Infer department from the first degree's department
+          const firstDeg = await tx.degree.findUnique({
+            where: { degree_id: degreeList[0].degreeId },
+          });
+          if (firstDeg?.department_id) {
+            departmentId = firstDeg.department_id;
+          }
+        }
+
+        if (!departmentId) {
+          const anyDept = await tx.department.findFirst();
+          if (anyDept) {
+            departmentId = anyDept.department_id;
+          } else {
+            throw new BadRequestException(
+              `Row ${rowNum}: Offering department could not be determined.`,
+            );
+          }
+        }
+
+        // If no degree was specified, auto-associate with degrees belonging to the department or first available degree
+        if (degreeList.length === 0) {
+          const deptDegrees = await tx.degree.findMany({
+            where: { department_id: departmentId },
+          });
+          if (deptDegrees.length > 0) {
+            for (const deg of deptDegrees) {
+              degreeList.push({ degreeId: deg.degree_id, status: defaultStatus });
+            }
+          } else {
+            const anyDegree = await tx.degree.findFirst();
+            if (anyDegree) {
+              degreeList.push({ degreeId: anyDegree.degree_id, status: defaultStatus });
+            } else {
+              throw new BadRequestException(
+                `Row ${rowNum}: At least one degree program must be specified.`,
+              );
+            }
+          }
+        }
+
+        // Resolve Specialization (Optional - only applicable for semester 2.1 or above)
+        let specializationId: number | null = null;
+        const specList: { specializationId: number; status: string }[] = [];
+        const isEligibleForSpecialization = cleanSemester !== '1.1' && cleanSemester !== '1.2';
+        if (specializationVal && isEligibleForSpecialization) {
+          const specTokens = specializationVal
+            .split(/[,;]/)
+            .map((t) => t.trim())
+            .filter(Boolean);
+          for (const sToken of specTokens) {
+            let sCode = sToken;
+            let sStatus = defaultStatus;
+            if (sToken.includes(':')) {
+              const parts = sToken.split(':');
+              sCode = parts[0].trim();
+              const subStatus = parts[1].trim().toUpperCase();
+              if (subStatus === 'OPTIONAL' || subStatus === 'COMPULSORY') {
+                sStatus = subStatus;
+              }
+            }
+
+            const specObj = await tx.specialization.findFirst({
+              where: {
+                OR: [
+                  { specialization_code: { equals: sCode, mode: 'insensitive' } },
+                  { specialization_name: { equals: sCode, mode: 'insensitive' } },
+                ],
+              },
+            });
+
+            if (
+              specObj &&
+              !specList.some((s) => s.specializationId === specObj.specialization_id)
+            ) {
+              specList.push({ specializationId: specObj.specialization_id, status: sStatus });
+            }
+          }
+
+          if (specList.length > 0) {
+            specializationId = specList[0].specializationId;
+          }
+        }
+
+        // Create Course
+        const course = await tx.course.create({
+          data: {
+            course_code: cleanCode,
+            course_name: courseName.trim(),
+            credit_value: new Prisma.Decimal(credits),
+            department_id: departmentId,
+            specialization_id: specializationId,
+            semester: cleanSemester,
+            degrees: {
+              create: degreeList.map((d) => ({
+                degree_id: d.degreeId,
+                status: d.status,
+              })),
+            },
+            ...(isEligibleForSpecialization && specList.length > 0
+              ? {
+                  course_specializations: {
+                    create: specList.map((s) => ({
+                      specialization_id: s.specializationId,
+                      status: s.status,
+                    })),
+                  },
+                }
+              : {}),
+          },
+        });
+
+        // Resolve Lecturer (Optional)
+        if (lecturerVal) {
+          const lecturerObj = await tx.lecturer.findFirst({
+            where: {
+              OR: [
+                { employee_number: { equals: lecturerVal.trim(), mode: 'insensitive' } },
+                {
+                  user: {
+                    email: { equals: lecturerVal.trim().toLowerCase(), mode: 'insensitive' },
+                  },
+                },
+              ],
+            },
+          });
+          if (lecturerObj) {
+            await tx.courseLecturer.create({
+              data: {
+                course_id: course.course_id,
+                lecturer_id: lecturerObj.lecturer_id,
+              },
+            });
+          }
+        }
+
+        await this.auditService.logAction(
+          executorId,
+          'COURSE_CREATE',
+          'courses',
+          course.course_id.toString(),
+          null,
+          course,
+        );
+
+        importedCourses.push(course);
+      }
+
+      return {
+        success: true,
+        count: importedCourses.length,
       };
     });
   }

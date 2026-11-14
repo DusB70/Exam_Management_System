@@ -419,23 +419,23 @@ export default function RequestsPortalPage() {
       </div>
 
       {isStudent && (
-        <div className="flex gap-2 border-b border-border/60 pb-px mb-6">
+        <div className="flex border-b border-border/60 gap-8 text-sm font-semibold mb-6">
           <button
             onClick={() => setActiveTab('submissions')}
-            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               activeTab === 'submissions'
-                ? 'border-primary text-primary font-bold'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'text-primary border-b-2 border-primary font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             My Submissions
           </button>
           <button
             onClick={() => setActiveTab('submit')}
-            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               activeTab === 'submit'
-                ? 'border-primary text-primary font-bold'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'text-primary border-b-2 border-primary font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             Submit New Request
@@ -1353,7 +1353,7 @@ export default function RequestsPortalPage() {
 
       {/* REVIEW DETAILS MODAL */}
       {selectedRequest && selectedRequestType && (
-        <div className="fixed inset-0 bg-background/85 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-background/85 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto !m-0">
           <div className="bg-card border border-border rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-start">
               <div>

@@ -97,7 +97,7 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm !m-0">
       <div className="bg-card border border-border/80 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col">
         <div className="px-6 py-4 border-b border-border/60 flex items-center justify-between">
           <h3 className="text-lg font-bold">New Registration Period</h3>

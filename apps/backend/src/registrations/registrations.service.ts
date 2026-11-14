@@ -68,11 +68,28 @@ export class RegistrationsService {
           },
         },
         semester: activePeriod.semester,
-        OR: [{ specialization_id: null }, { specialization_id: student.specialization_id }],
+        OR: [
+          {
+            AND: [{ specialization_id: null }, { course_specializations: { none: {} } }],
+          },
+          ...(student.specialization_id
+            ? [
+                {
+                  course_specializations: {
+                    some: {
+                      specialization_id: student.specialization_id,
+                    },
+                  },
+                },
+                { specialization_id: student.specialization_id },
+              ]
+            : []),
+        ],
       },
       include: {
         department: true,
         degrees: true,
+        course_specializations: true,
         lecturers: {
           include: {
             lecturer: {
@@ -100,10 +117,23 @@ export class RegistrationsService {
     const filteredCourses = courses.filter((course) => !registeredCourseIds.has(course.course_id));
 
     return filteredCourses.map((course) => {
-      const courseDegree = course.degrees.find((d) => d.degree_id === student.degree_id);
+      let isCompulsory = false;
+      const specMatch = student.specialization_id
+        ? course.course_specializations?.find(
+            (cs: any) => cs.specialization_id === student.specialization_id,
+          )
+        : null;
+
+      if (specMatch) {
+        isCompulsory = specMatch.status === 'COMPULSORY';
+      } else {
+        const courseDegree = course.degrees.find((d) => d.degree_id === student.degree_id);
+        isCompulsory = courseDegree ? courseDegree.status === 'COMPULSORY' : false;
+      }
+
       return {
         ...course,
-        is_compulsory: courseDegree ? courseDegree.status === 'COMPULSORY' : false,
+        is_compulsory: isCompulsory,
       };
     });
   }
@@ -180,12 +210,20 @@ export class RegistrationsService {
         },
       });
 
-      if (
-        !courseDegree ||
-        (course.specialization_id !== null &&
-          course.specialization_id !== student.specialization_id) ||
-        course.semester !== period.semester
-      ) {
+      const courseSpecializations = await this.prisma.courseSpecialization.findMany({
+        where: { course_id: course.course_id },
+      });
+
+      let matchesSpecialization = true;
+      if (courseSpecializations.length > 0) {
+        matchesSpecialization = student.specialization_id
+          ? courseSpecializations.some((cs) => cs.specialization_id === student.specialization_id)
+          : false;
+      } else if (course.specialization_id !== null) {
+        matchesSpecialization = course.specialization_id === student.specialization_id;
+      }
+
+      if (!courseDegree || !matchesSpecialization || course.semester !== period.semester) {
         throw new BadRequestException(
           `Course ${course.course_code} is not offered for your semester, degree, or specialization.`,
         );

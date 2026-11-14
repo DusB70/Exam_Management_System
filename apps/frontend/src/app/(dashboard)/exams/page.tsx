@@ -1309,12 +1309,12 @@ export default function ExamsManagementPage() {
         </div>
 
         {/* Student View Mode Tabs */}
-        <div className="flex border-b border-border/60 gap-6 text-sm font-semibold">
+        <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
           <button
             onClick={() => setStudentTab('my-schedules')}
-            className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
+            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               studentTab === 'my-schedules'
-                ? 'text-primary border-b-2 border-primary font-bold'
+                ? 'text-primary border-b-2 border-primary font-semibold'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -1324,9 +1324,9 @@ export default function ExamsManagementPage() {
 
           <button
             onClick={() => setStudentTab('full-timetable')}
-            className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
+            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               studentTab === 'full-timetable'
-                ? 'text-primary border-b-2 border-primary font-bold'
+                ? 'text-primary border-b-2 border-primary font-semibold'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -2433,7 +2433,7 @@ export default function ExamsManagementPage() {
       {/* MODAL 1: ADD NEW EXAM TIMETABLE SETUP DIALOG */}
       {/* ========================================================================= */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-background/80 backdrop-blur-md overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-background/80 backdrop-blur-md overflow-y-auto !m-0">
           <div className="bg-card border border-border/80 w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] my-auto">
             {/* Modal Header */}
             <div className="px-6 py-4 md:px-8 md:py-5 border-b border-border/60 flex items-center justify-between shrink-0 bg-secondary/10">
@@ -2829,7 +2829,7 @@ export default function ExamsManagementPage() {
       {/* POPUP MODAL 2: DEDICATED EXCEL LIVE ERROR INSPECTOR POPUP DIALOG */}
       {/* ========================================================================= */}
       {showExcelPreviewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-background/80 backdrop-blur-md overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-background/80 backdrop-blur-md overflow-y-auto !m-0">
           <div className="bg-card border border-border/80 w-full max-w-5xl rounded-3xl shadow-2xl flex flex-col max-h-[85vh] my-auto overflow-hidden relative">
             {/* Modal Header */}
             <div className="px-6 py-4 md:px-8 md:py-5 border-b border-border/60 flex items-center justify-between shrink-0 bg-secondary/10">

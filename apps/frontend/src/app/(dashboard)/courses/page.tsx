@@ -7,6 +7,7 @@ import { useAuthStore } from '../../../store/authStore';
 import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
 import CourseDialog from '../../../components/courses/course-dialog';
+import CourseImportDialog from '../../../components/courses/course-import-dialog';
 import LecturerAssignmentDialog from '../../../components/courses/lecturer-assignment-dialog';
 import PeriodDialog from '../../../components/courses/period-dialog';
 import MarkerDialog from '../../../components/courses/marker-dialog';
@@ -28,6 +29,8 @@ import {
   UserPlus,
   Check,
   Users,
+  Upload,
+  X,
 } from 'lucide-react';
 import { UserRole } from '@ems/shared';
 
@@ -53,6 +56,7 @@ export default function CoursesManagementPage() {
 
   // Course Dialog States
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
+  const [courseImportDialogOpen, setCourseImportDialogOpen] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<any>(null);
 
   // Lecturer Assignment Dialog States
@@ -276,12 +280,20 @@ export default function CoursesManagementPage() {
         {isAdminOrStaff && (
           <div className="flex items-center gap-3">
             {activeTab === 'courses' && (
-              <button
-                onClick={handleCreateCourse}
-                className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
-              >
-                <Plus className="h-4 w-4" /> Add New Course
-              </button>
+              <>
+                <button
+                  onClick={() => setCourseImportDialogOpen(true)}
+                  className="px-4 py-2.5 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs flex items-center gap-2 border border-border/80 cursor-pointer shadow-sm"
+                >
+                  <Upload className="h-4 w-4" /> Bulk Import Courses
+                </button>
+                <button
+                  onClick={handleCreateCourse}
+                  className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" /> Add New Course
+                </button>
+              </>
             )}
             {activeTab === 'periods' && (
               <button
@@ -304,23 +316,23 @@ export default function CoursesManagementPage() {
       </div>
 
       {/* Tabs Control */}
-      <div className="flex border-b border-border/60">
+      <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
         <button
           onClick={() => setActiveTab('courses')}
-          className={`px-6 py-3 font-semibold text-sm border-b-2 transition flex items-center gap-2 cursor-pointer ${
+          className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'courses'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'text-primary border-b-2 border-primary font-semibold'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           <BookOpen className="h-4 w-4" /> Course Catalog ({courseData?.total || 0})
         </button>
         <button
           onClick={() => setActiveTab('periods')}
-          className={`px-6 py-3 font-semibold text-sm border-b-2 transition flex items-center gap-2 cursor-pointer ${
+          className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'periods'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'text-primary border-b-2 border-primary font-semibold'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           <Calendar className="h-4 w-4" /> Registration Windows ({periods.length})
@@ -328,10 +340,10 @@ export default function CoursesManagementPage() {
         {isAdminOrStaff && (
           <button
             onClick={() => setActiveTab('lecturers')}
-            className={`px-6 py-3 font-semibold text-sm border-b-2 transition flex items-center gap-2 cursor-pointer ${
+            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               activeTab === 'lecturers'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'text-primary border-b-2 border-primary font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             <UserCheck className="h-4 w-4" /> Lecturer & Examiner Allocations
@@ -344,9 +356,10 @@ export default function CoursesManagementPage() {
       {/* ========================================== */}
       {activeTab === 'courses' && (
         <div className="space-y-6">
-          {/* Filters Bar */}
-          <div className="bg-card/25 border border-border/80 p-5 rounded-2xl backdrop-blur-sm grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="relative">
+          {/* Filter & Search Bar */}
+          <div className="bg-card border border-border/80 p-5 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            {/* Search Input */}
+            <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
@@ -356,65 +369,106 @@ export default function CoursesManagementPage() {
                   setCourseSearch(e.target.value);
                   setCoursePage(1);
                 }}
-                className="w-full pl-10 pr-4 py-2 bg-secondary/40 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-xs text-foreground"
+                className="w-full pl-10 pr-4 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
               />
+              {courseSearch && (
+                <button
+                  onClick={() => {
+                    setCourseSearch('');
+                    setCoursePage(1);
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
 
-            <div>
-              <select
-                value={deptFilter}
-                onChange={(e) => {
-                  setDeptFilter(e.target.value);
-                  setCoursePage(1);
-                }}
-                className="w-full px-4 py-2 bg-secondary/40 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-xs text-foreground"
-              >
-                <option value="">All Departments</option>
-                {departments.map((d: any) => (
-                  <option key={d.department_id} value={d.department_id} className="bg-card">
-                    {d.department_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Filter Dropdowns Row */}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Department Filter */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase">
+                  Department:
+                </span>
+                <select
+                  value={deptFilter}
+                  onChange={(e) => {
+                    setDeptFilter(e.target.value);
+                    setCoursePage(1);
+                  }}
+                  className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 max-w-[180px] truncate cursor-pointer"
+                >
+                  <option value="">All Departments</option>
+                  {departments.map((d: any) => (
+                    <option key={d.department_id} value={d.department_id} className="bg-card">
+                      {d.department_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div>
-              <select
-                value={degreeFilter}
-                onChange={(e) => {
-                  setDegreeFilter(e.target.value);
-                  setCoursePage(1);
-                }}
-                className="w-full px-4 py-2 bg-secondary/40 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-xs text-foreground"
-              >
-                <option value="">All Degree Programs</option>
-                {degrees.map((deg: any) => (
-                  <option key={deg.degree_id} value={deg.degree_id} className="bg-card">
-                    {deg.degree_code} - {deg.degree_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+              {/* Degree Filter */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase">
+                  Degree:
+                </span>
+                <select
+                  value={degreeFilter}
+                  onChange={(e) => {
+                    setDegreeFilter(e.target.value);
+                    setCoursePage(1);
+                  }}
+                  className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 max-w-[200px] truncate cursor-pointer"
+                >
+                  <option value="">All Degree Programs</option>
+                  {degrees.map((deg: any) => (
+                    <option key={deg.degree_id} value={deg.degree_id} className="bg-card">
+                      {deg.degree_code} - {deg.degree_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div>
-              <select
-                value={semesterFilter}
-                onChange={(e) => {
-                  setSemesterFilter(e.target.value);
-                  setCoursePage(1);
-                }}
-                className="w-full px-4 py-2 bg-secondary/40 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-xs text-foreground"
-              >
-                <option value="">All Semesters (Ordered)</option>
-                <option value="1.1">Semester 1.1</option>
-                <option value="1.2">Semester 1.2</option>
-                <option value="2.1">Semester 2.1</option>
-                <option value="2.2">Semester 2.2</option>
-                <option value="3.1">Semester 3.1</option>
-                <option value="3.2">Semester 3.2</option>
-                <option value="4.1">Semester 4.1</option>
-                <option value="4.2">Semester 4.2</option>
-              </select>
+              {/* Semester Filter */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase">
+                  Semester:
+                </span>
+                <select
+                  value={semesterFilter}
+                  onChange={(e) => {
+                    setSemesterFilter(e.target.value);
+                    setCoursePage(1);
+                  }}
+                  className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+                >
+                  <option value="">All Semesters</option>
+                  <option value="1.1">Semester 1.1</option>
+                  <option value="1.2">Semester 1.2</option>
+                  <option value="2.1">Semester 2.1</option>
+                  <option value="2.2">Semester 2.2</option>
+                  <option value="3.1">Semester 3.1</option>
+                  <option value="3.2">Semester 3.2</option>
+                  <option value="4.1">Semester 4.1</option>
+                  <option value="4.2">Semester 4.2</option>
+                </select>
+              </div>
+
+              {(deptFilter || degreeFilter || semesterFilter || courseSearch) && (
+                <button
+                  onClick={() => {
+                    setDeptFilter('');
+                    setDegreeFilter('');
+                    setSemesterFilter('');
+                    setCourseSearch('');
+                    setCoursePage(1);
+                  }}
+                  className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
+                >
+                  Reset
+                </button>
+              )}
             </div>
           </div>
 
@@ -472,7 +526,7 @@ export default function CoursesManagementPage() {
                           {course.department?.department_code}
                         </td>
                         <td className="px-6 py-4.5">
-                          <div className="flex flex-wrap gap-1 max-w-xs">
+                          <div className="flex flex-wrap gap-1 max-w-xs items-center">
                             {course.degrees && course.degrees.length > 0 ? (
                               course.degrees.map((d: any) => (
                                 <span
@@ -485,6 +539,30 @@ export default function CoursesManagementPage() {
                             ) : (
                               <span className="text-xs text-muted-foreground/60 italic">None</span>
                             )}
+                            {course.course_specializations &&
+                            course.course_specializations.length > 0 ? (
+                              course.course_specializations.map((cs: any) => (
+                                <span
+                                  key={cs.specialization_id}
+                                  title={`${cs.specialization?.specialization_name} (${cs.status})`}
+                                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold font-mono border ${
+                                    cs.status === 'COMPULSORY'
+                                      ? 'bg-primary/10 text-primary border-primary/30'
+                                      : 'bg-amber-500/10 text-amber-500 border-amber-500/30'
+                                  }`}
+                                >
+                                  {cs.specialization?.specialization_code || cs.specialization_id}:{' '}
+                                  {cs.status === 'COMPULSORY' ? 'C' : 'O'}
+                                </span>
+                              ))
+                            ) : course.specialization ? (
+                              <span
+                                title={`Specialization: ${course.specialization.specialization_name}`}
+                                className="inline-block px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded text-[10px] font-bold font-mono"
+                              >
+                                {course.specialization.specialization_code}
+                              </span>
+                            ) : null}
                           </div>
                         </td>
                         <td className="px-6 py-4.5 font-mono text-xs">{course.credit_value}</td>
@@ -742,13 +820,13 @@ export default function CoursesManagementPage() {
       {activeTab === 'lecturers' && isAdminOrStaff && (
         <div className="space-y-6 animate-fadeIn">
           {/* Sub-Navigation Bar */}
-          <div className="flex border-b border-border/60">
+          <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
             <button
               onClick={() => setLecturersSubTab('examiners')}
-              className={`px-6 py-3 font-semibold text-sm border-b-2 transition flex items-center gap-2 cursor-pointer ${
+              className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
                 lecturersSubTab === 'examiners'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  ? 'text-primary border-b-2 border-primary font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <UserCheck className="h-4 w-4" />
@@ -756,10 +834,10 @@ export default function CoursesManagementPage() {
             </button>
             <button
               onClick={() => setLecturersSubTab('faculty')}
-              className={`px-6 py-3 font-semibold text-sm border-b-2 transition flex items-center gap-2 cursor-pointer ${
+              className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
                 lecturersSubTab === 'faculty'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  ? 'text-primary border-b-2 border-primary font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <Users className="h-4 w-4" />
@@ -906,7 +984,7 @@ export default function CoursesManagementPage() {
                 </div>
                 <button
                   onClick={handleAddNewLecturer}
-                  className="px-4 py-2 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 cursor-pointer shadow-md"
+                  className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
                 >
                   <UserPlus className="h-4 w-4" /> Add New Lecturer
                 </button>
@@ -1026,6 +1104,12 @@ export default function CoursesManagementPage() {
         open={courseDialogOpen}
         onClose={() => setCourseDialogOpen(false)}
         course={selectedCourse}
+        onSuccess={refetchCourses}
+      />
+
+      <CourseImportDialog
+        open={courseImportDialogOpen}
+        onClose={() => setCourseImportDialogOpen(false)}
         onSuccess={refetchCourses}
       />
 

@@ -7,7 +7,7 @@ import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
 import UserDialog from '../../../components/users/user-dialog';
 import StudentImportDialog from '../../../components/users/student-import-dialog';
-import { Search, UserPlus, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
+import { Search, UserPlus, ChevronLeft, ChevronRight, Upload, X, Users } from 'lucide-react';
 
 const fetchUsers = async (page: number, search: string, roleId: string, status: string) => {
   const params: any = {
@@ -95,6 +95,7 @@ export default function UsersManagementPage() {
   };
 
   const users = data?.items || [];
+  const totalUsers = data?.total || 0;
   const totalPages = data?.totalPages || 1;
 
   return (
@@ -110,67 +111,106 @@ export default function UsersManagementPage() {
         <div className="flex flex-wrap gap-3 self-start sm:self-auto">
           <button
             onClick={() => setImportDialogOpen(true)}
-            className="inline-flex items-center gap-2 px-5 py-3 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition border border-border/80 text-sm"
+            className="px-4 py-2.5 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs flex items-center gap-2 border border-border/80 cursor-pointer shadow-sm"
           >
-            <Upload className="h-4.5 w-4.5" />
+            <Upload className="h-4 w-4" />
             Import Students
           </button>
           <button
             onClick={handleCreate}
-            className="inline-flex items-center gap-2 px-5 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition shadow-lg shadow-primary/20 text-sm"
+            className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
           >
-            <UserPlus className="h-4.5 w-4.5" />
+            <UserPlus className="h-4 w-4" />
             Add User Account
           </button>
         </div>
       </div>
 
-      {/* Filters Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-card/20 border border-border/60 p-4 rounded-2xl backdrop-blur-md">
-        <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search by name or email..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            className="w-full pl-10 pr-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
-          />
+      {/* Filter & Search Bar */}
+      <div className="bg-card border border-border/80 p-5 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Search Input & Count Badge */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1 max-w-xl">
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search by name or email..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="w-full pl-10 pr-4 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
+            />
+            {search && (
+              <button
+                onClick={() => {
+                  setSearch('');
+                  setPage(1);
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <div className="px-3 py-2 bg-background border border-border/80 rounded-xl text-xs font-mono font-bold text-foreground flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+            <Users className="h-3.5 w-3.5 text-primary" />
+            Showing {users.length} of {totalUsers} Records
+          </div>
         </div>
 
-        <div>
-          <select
-            value={roleFilter}
-            onChange={(e) => {
-              setRoleFilter(e.target.value);
-              setPage(1);
-            }}
-            className="w-full px-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
-          >
-            <option value="">All Roles</option>
-            <option value="4">Student</option>
-            <option value="3">Lecturer</option>
-            <option value="2">Exam Division Staff</option>
-            <option value="1">Administrator</option>
-          </select>
-        </div>
+        {/* Filter Dropdowns Row */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Role Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-muted-foreground uppercase">Role:</span>
+            <select
+              value={roleFilter}
+              onChange={(e) => {
+                setRoleFilter(e.target.value);
+                setPage(1);
+              }}
+              className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+            >
+              <option value="">All Roles</option>
+              <option value="4">Student</option>
+              <option value="3">Lecturer</option>
+              <option value="2">Exam Division Staff</option>
+              <option value="1">Administrator</option>
+            </select>
+          </div>
 
-        <div>
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value);
-              setPage(1);
-            }}
-            className="w-full px-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
-          >
-            <option value="">All Statuses</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
+          {/* Status Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-muted-foreground uppercase">Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+            >
+              <option value="">All Statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+
+          {(roleFilter || statusFilter || search) && (
+            <button
+              onClick={() => {
+                setRoleFilter('');
+                setStatusFilter('');
+                setSearch('');
+                setPage(1);
+              }}
+              className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
+            >
+              Reset
+            </button>
+          )}
         </div>
       </div>
 

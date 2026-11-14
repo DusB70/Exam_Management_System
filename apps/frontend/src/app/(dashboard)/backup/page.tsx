@@ -98,16 +98,16 @@ export default function BackupPage() {
             <button
               onClick={handleDownloadBackup}
               disabled={isDownloading}
-              className="py-3 px-6 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/95 transition flex items-center justify-center gap-2 text-sm shadow-lg shadow-primary/10 disabled:opacity-50"
+              className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center justify-center gap-2 shadow-lg shadow-primary/20 cursor-pointer disabled:opacity-50"
             >
               {isDownloading ? (
                 <>
-                  <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   Generating Backup...
                 </>
               ) : (
                 <>
-                  <Download className="h-4.5 w-4.5" />
+                  <Download className="h-4 w-4" />
                   Download Backup File
                 </>
               )}

@@ -5,7 +5,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
-import { Plus, Edit2, Trash2, Search, Clock } from 'lucide-react';
+import {
+  Plus,
+  Edit2,
+  Trash2,
+  Search,
+  Clock,
+  Building2,
+  GraduationCap,
+  Layers,
+  Users,
+  X,
+} from 'lucide-react';
 
 export default function AcademicStructurePage() {
   const queryClient = useQueryClient();
@@ -385,9 +396,9 @@ export default function AcademicStructurePage() {
                   : 'specialization',
             )
           }
-          className="inline-flex items-center gap-2 px-5 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition shadow-lg shadow-primary/20 self-start sm:self-auto text-sm"
+          className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer self-start sm:self-auto"
         >
-          <Plus className="h-4.5 w-4.5" />
+          <Plus className="h-4 w-4" />
           Add{' '}
           {activeTab === 'departments'
             ? 'Department'
@@ -398,18 +409,19 @@ export default function AcademicStructurePage() {
       </div>
 
       {/* Tabs Switcher */}
-      <div className="flex border-b border-border/80 gap-6">
+      <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
         <button
           onClick={() => {
             setActiveTab('departments');
             setSearchQuery('');
           }}
-          className={`pb-3 text-sm font-semibold border-b-2 transition-all ${
+          className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'departments'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'text-primary border-b-2 border-primary font-semibold'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
+          <Building2 className="h-4 w-4" />
           Departments ({departments.length})
         </button>
         <button
@@ -417,12 +429,13 @@ export default function AcademicStructurePage() {
             setActiveTab('degrees');
             setSearchQuery('');
           }}
-          className={`pb-3 text-sm font-semibold border-b-2 transition-all ${
+          className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'degrees'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'text-primary border-b-2 border-primary font-semibold'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
+          <GraduationCap className="h-4 w-4" />
           Degrees ({degrees.length})
         </button>
         <button
@@ -430,12 +443,13 @@ export default function AcademicStructurePage() {
             setActiveTab('specializations');
             setSearchQuery('');
           }}
-          className={`pb-3 text-sm font-semibold border-b-2 transition-all ${
+          className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'specializations'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'text-primary border-b-2 border-primary font-semibold'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
+          <Layers className="h-4 w-4" />
           Specializations ({specializations.length})
         </button>
         <button
@@ -443,26 +457,37 @@ export default function AcademicStructurePage() {
             setActiveTab('bulk-specialization');
             setSearchQuery('');
           }}
-          className={`pb-3 text-sm font-semibold border-b-2 transition-all ${
+          className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'bulk-specialization'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'text-primary border-b-2 border-primary font-semibold'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
+          <Users className="h-4 w-4" />
           Bulk Assign Specialization
         </button>
       </div>
 
-      {/* Search Bar */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder={`Search ${activeTab}...`}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 bg-secondary/30 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
-        />
+      {/* Filter & Search Bar */}
+      <div className="bg-card border border-border/80 p-5 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder={`Search ${activeTab}...`}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Lists & Grids */}
@@ -798,7 +823,7 @@ export default function AcademicStructurePage() {
                       }
                     }}
                     disabled={!bulkDegreeId || bulkLoading}
-                    className="px-4 py-2.5 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow hover:bg-primary/90 transition disabled:opacity-50 whitespace-nowrap cursor-pointer"
+                    className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer disabled:opacity-50 whitespace-nowrap"
                   >
                     {bulkLoading ? 'Loading...' : 'Load Students'}
                   </button>
@@ -833,7 +858,7 @@ export default function AcademicStructurePage() {
                         setSelectedStudentIds(bulkStudents.map((s) => s.student_id));
                       }
                     }}
-                    className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs font-bold rounded-lg border border-border/60 transition cursor-pointer"
+                    className="px-4 py-2.5 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs flex items-center gap-2 border border-border/80 cursor-pointer shadow-sm"
                   >
                     {selectedStudentIds.length === bulkStudents.length
                       ? 'Deselect All'
@@ -877,7 +902,7 @@ export default function AcademicStructurePage() {
                       }
                     }}
                     disabled={!bulkSpecId || selectedStudentIds.length === 0 || bulkAssigning}
-                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold rounded-xl shadow-md transition disabled:opacity-50"
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl shadow-lg shadow-emerald-600/20 transition text-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
                     {bulkAssigning
                       ? 'Assigning...'
@@ -980,7 +1005,7 @@ export default function AcademicStructurePage() {
 
       {/* Creation / Editing Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in !m-0">
           <div className="bg-card border border-border/80 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b border-border/60 flex items-center justify-between bg-secondary/5">
               <h3 className="font-bold text-lg">
@@ -1182,14 +1207,14 @@ export default function AcademicStructurePage() {
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 bg-secondary text-secondary-foreground font-medium rounded-xl hover:bg-secondary/90 transition text-xs"
+                  className="px-4 py-2.5 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs border border-border/80 cursor-pointer shadow-sm"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={createMutation.isPending || updateMutation.isPending}
-                  className="px-4 py-2 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs disabled:opacity-50"
+                  className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs shadow-lg shadow-primary/20 cursor-pointer disabled:opacity-50"
                 >
                   {createMutation.isPending || updateMutation.isPending
                     ? 'Saving...'
@@ -1202,7 +1227,7 @@ export default function AcademicStructurePage() {
       )}
       {/* Semester limits Modal */}
       {limitsModalOpen && limitDegree && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in !m-0">
           <div className="bg-card border border-border/80 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
             <div className="px-6 py-4 border-b border-border/60 flex items-center justify-between bg-secondary/5">
               <div>
@@ -1273,7 +1298,7 @@ export default function AcademicStructurePage() {
                 </div>
                 <button
                   type="submit"
-                  className="w-full py-2 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/95 transition text-xs shadow-md shadow-primary/10"
+                  className="w-full px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs shadow-lg shadow-primary/20 cursor-pointer flex items-center justify-center gap-2"
                 >
                   Save / Update Limit
                 </button>
@@ -1336,7 +1361,7 @@ export default function AcademicStructurePage() {
               <button
                 type="button"
                 onClick={() => setLimitsModalOpen(false)}
-                className="px-4 py-2 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs"
+                className="px-4 py-2.5 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs border border-border/80 cursor-pointer shadow-sm"
               >
                 Close Window
               </button>

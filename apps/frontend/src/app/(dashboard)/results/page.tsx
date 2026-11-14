@@ -157,7 +157,7 @@ export default function ResultsAndImportsPage() {
           {!isStudent && (
             <button
               onClick={() => setViolationModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold bg-rose-600 text-white rounded-xl shadow-md hover:bg-rose-500 transition-colors"
+              className="px-4 py-2.5 bg-rose-600 text-white font-semibold rounded-xl hover:bg-rose-500 transition text-xs flex items-center gap-2 shadow-lg shadow-rose-600/20 cursor-pointer"
             >
               <AlertTriangle className="h-4 w-4" />
               Mark Exam Violation
@@ -168,7 +168,7 @@ export default function ResultsAndImportsPage() {
               <button
                 onClick={handleDownloadMyPdf}
                 disabled={isDownloadingPdf}
-                className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold bg-primary text-primary-foreground rounded-xl shadow-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+                className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer disabled:opacity-50"
               >
                 {isDownloadingPdf ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -180,7 +180,7 @@ export default function ResultsAndImportsPage() {
               <button
                 onClick={handleDownloadMyExcel}
                 disabled={isDownloadingExcel}
-                className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold bg-emerald-600 text-white rounded-xl shadow-md hover:bg-emerald-500 transition-colors disabled:opacity-50"
+                className="px-4 py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-500 transition text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
               >
                 {isDownloadingExcel ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -194,17 +194,17 @@ export default function ResultsAndImportsPage() {
         </div>
       </div>
 
-      {/* Filters Bar */}
-      <div className="bg-card border border-border/80 p-4 rounded-3xl flex flex-wrap gap-4 items-center justify-between shadow-sm">
-        <div className="flex flex-wrap gap-4 items-center">
-          <div className="space-y-1">
-            <label className="block text-[10px] text-muted-foreground uppercase font-extrabold tracking-wider">
-              Year Filter
-            </label>
+      {/* Filter & Search Bar */}
+      <div className="bg-card border border-border/80 p-5 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Filter Dropdowns Row */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Year Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-muted-foreground uppercase">Year:</span>
             <select
               value={yearFilter}
               onChange={(e) => setYearFilter(e.target.value)}
-              className="px-3.5 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 transition font-semibold"
+              className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
             >
               <option value="all">All Years</option>
               <option value="1">Year 1</option>
@@ -214,14 +214,13 @@ export default function ResultsAndImportsPage() {
             </select>
           </div>
 
-          <div className="space-y-1">
-            <label className="block text-[10px] text-muted-foreground uppercase font-extrabold tracking-wider">
-              Semester Filter
-            </label>
+          {/* Semester Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-muted-foreground uppercase">Semester:</span>
             <select
               value={semesterFilter}
               onChange={(e) => setSemesterFilter(e.target.value)}
-              className="px-3.5 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 transition font-semibold"
+              className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
             >
               <option value="all">All Semesters</option>
               <option value="active">Active Semester ({activeSemester || 'N/A'})</option>
@@ -233,34 +232,33 @@ export default function ResultsAndImportsPage() {
             </select>
           </div>
 
-          <div className="space-y-1">
-            <label className="block text-[10px] text-muted-foreground uppercase font-extrabold tracking-wider">
-              Course Type
-            </label>
+          {/* Course Type Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-muted-foreground uppercase">Type:</span>
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="px-3.5 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 transition font-semibold"
+              className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
             >
               <option value="all">All Types</option>
               <option value="compulsory">Compulsory Only</option>
               <option value="optional">Optional Only</option>
             </select>
           </div>
-        </div>
 
-        {(yearFilter !== 'all' || semesterFilter !== 'active' || typeFilter !== 'all') && (
-          <button
-            onClick={() => {
-              setYearFilter('all');
-              setSemesterFilter('active');
-              setTypeFilter('all');
-            }}
-            className="px-3.5 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl border border-border/60 hover:bg-secondary/90 transition cursor-pointer"
-          >
-            Reset Filters
-          </button>
-        )}
+          {(yearFilter !== 'all' || semesterFilter !== 'active' || typeFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setYearFilter('all');
+                setSemesterFilter('active');
+                setTypeFilter('all');
+              }}
+              className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
+            >
+              Reset
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Results Table */}
@@ -429,7 +427,7 @@ export default function ResultsAndImportsPage() {
 
       {/* STAFF EXAM VIOLATION MODAL */}
       {violationModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm !m-0">
           <div className="bg-card border border-border/80 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden p-6 space-y-6">
             <div className="flex items-center justify-between border-b border-border/60 pb-4">
               <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
@@ -553,14 +551,14 @@ export default function ResultsAndImportsPage() {
                 <button
                   type="button"
                   onClick={() => setViolationModalOpen(false)}
-                  className="px-4 py-2 bg-secondary text-secondary-foreground font-bold rounded-xl"
+                  className="px-4 py-2.5 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs border border-border/80 cursor-pointer shadow-sm"
                 >
                   Close
                 </button>
                 <button
                   type="submit"
                   disabled={violationSubmitting}
-                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-extrabold rounded-xl shadow-md transition disabled:opacity-50"
+                  className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-xl shadow-lg shadow-rose-600/20 transition text-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {violationSubmitting ? 'Recording...' : 'Record Violation'}
                 </button>
@@ -574,7 +572,7 @@ export default function ResultsAndImportsPage() {
       {/* POPUP MODAL: RESULT PUBLISHING PROGRESS DIALOG */}
       {/* ========================================================================= */}
       {selectedProgressCourse && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm !m-0">
           <div className="bg-card border border-border/80 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden p-6 space-y-6">
             <div className="flex items-center justify-between border-b border-border/60 pb-4">
               <div>
@@ -693,7 +691,7 @@ export default function ResultsAndImportsPage() {
             <div className="flex justify-end pt-2 border-t border-border/60">
               <button
                 onClick={() => setSelectedProgressCourse(null)}
-                className="px-5 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl text-sm hover:bg-primary/95 transition"
+                className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
               >
                 Close Progress View
               </button>

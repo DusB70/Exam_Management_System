@@ -26,6 +26,14 @@ export class CourseDegreeDto {
   status!: DegreeCourseStatus;
 }
 
+export class CourseSpecializationDto {
+  @IsInt()
+  specializationId!: number;
+
+  @IsEnum(DegreeCourseStatus)
+  status!: DegreeCourseStatus;
+}
+
 export class CreateCourseDto {
   @IsString()
   @IsNotEmpty({ message: 'Course code is required' })
@@ -51,6 +59,12 @@ export class CreateCourseDto {
   @IsInt()
   @IsOptional()
   specializationId?: number;
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CourseSpecializationDto)
+  specializations?: CourseSpecializationDto[];
 
   @IsString()
   @IsNotEmpty({ message: 'Semester is required' })
@@ -92,6 +106,12 @@ export class UpdateCourseDto {
   @IsInt()
   @IsOptional()
   specializationId?: number;
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CourseSpecializationDto)
+  specializations?: CourseSpecializationDto[];
 
   @IsString()
   @IsOptional()

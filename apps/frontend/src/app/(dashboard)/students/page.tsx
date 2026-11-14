@@ -364,7 +364,6 @@ export default function StudentDirectoryPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-              <GraduationCap className="h-8 w-8 text-primary" />
               Student Directory & Academic History Console
             </h1>
             <p className="text-muted-foreground mt-1.5 text-sm">
@@ -376,19 +375,19 @@ export default function StudentDirectoryPage() {
         </div>
 
         {/* Quick Filter Status Tabs */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 pb-3">
+        <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
           <button
             onClick={() => {
               setStaffStatus('ALL');
               setStaffPage(1);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               staffStatus === 'ALL'
-                ? 'bg-primary text-primary-foreground shadow-md'
-                : 'bg-secondary/40 text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
+                ? 'text-primary border-b-2 border-primary font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <Users className="h-3.5 w-3.5" />
+            <Users className="h-4 w-4" />
             All Students
           </button>
           <button
@@ -396,13 +395,13 @@ export default function StudentDirectoryPage() {
               setStaffStatus('ACTIVE');
               setStaffPage(1);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               staffStatus === 'ACTIVE'
-                ? 'bg-emerald-500 text-white shadow-md'
-                : 'bg-secondary/40 text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
+                ? 'text-primary border-b-2 border-primary font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <CheckCircle2 className="h-3.5 w-3.5" />
+            <CheckCircle2 className="h-4 w-4" />
             Currently Studying (Active)
           </button>
           <button
@@ -410,13 +409,13 @@ export default function StudentDirectoryPage() {
               setStaffStatus('GRADUATED');
               setStaffPage(1);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               staffStatus === 'GRADUATED'
-                ? 'bg-purple-600 text-white shadow-md'
-                : 'bg-secondary/40 text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
+                ? 'text-primary border-b-2 border-primary font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <GraduationCap className="h-3.5 w-3.5" />
+            <GraduationCap className="h-4 w-4" />
             Past / Graduated Students
           </button>
           <button
@@ -424,20 +423,21 @@ export default function StudentDirectoryPage() {
               setStaffStatus('SUSPENDED');
               setStaffPage(1);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               staffStatus === 'SUSPENDED'
-                ? 'bg-amber-500 text-white shadow-md'
-                : 'bg-secondary/40 text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
+                ? 'text-primary border-b-2 border-primary font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <AlertTriangle className="h-3.5 w-3.5" />
+            <AlertTriangle className="h-4 w-4" />
             Suspended
           </button>
         </div>
 
-        {/* Filter and Search Bar (Matching Image 3 UI) */}
-        <div className="bg-card border border-border/80 rounded-3xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3 flex-1 min-w-[280px]">
+        {/* Filter and Search Bar */}
+        <div className="bg-card border border-border/80 p-5 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Search Input & Count Badge */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1 max-w-xl">
             <div className="relative flex-1">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
@@ -448,27 +448,38 @@ export default function StudentDirectoryPage() {
                   setStaffSearch(e.target.value);
                   setStaffPage(1);
                 }}
-                className="w-full pl-10 pr-4 py-2 bg-secondary/40 border border-border/80 rounded-2xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 font-medium"
+                className="w-full pl-10 pr-4 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
               />
+              {staffSearch && (
+                <button
+                  onClick={() => {
+                    setStaffSearch('');
+                    setStaffPage(1);
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
-            <div className="px-3 py-1.5 bg-background border border-border/80 rounded-xl text-xs font-mono font-bold text-foreground flex items-center gap-1.5 shrink-0">
+            <div className="px-3 py-2 bg-background border border-border/80 rounded-xl text-xs font-mono font-bold text-foreground flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
               <Users className="h-3.5 w-3.5 text-primary" />
               Showing {studentsList.length} of {totalStudents} Records
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <span className="uppercase text-[10px] tracking-wider font-extrabold text-muted-foreground">
-                DEGREE:
-              </span>
+          {/* Filter Dropdowns Row */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Degree Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase">Degree:</span>
               <select
                 value={staffDegreeId}
                 onChange={(e) => {
                   setStaffDegreeId(e.target.value);
                   setStaffPage(1);
                 }}
-                className="px-3 py-1.5 bg-secondary/40 border border-border/80 rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 font-semibold cursor-pointer"
+                className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 max-w-[200px] truncate cursor-pointer"
               >
                 <option value="">All Degrees</option>
                 {degreesList.map((d: any) => (
@@ -479,47 +490,60 @@ export default function StudentDirectoryPage() {
               </select>
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="uppercase text-[10px] tracking-wider font-extrabold text-muted-foreground">
-                BATCH:
-              </span>
+            {/* Batch Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase">Batch:</span>
               <select
                 value={staffBatch}
                 onChange={(e) => {
                   setStaffBatch(e.target.value);
                   setStaffPage(1);
                 }}
-                className="px-3 py-1.5 bg-secondary/40 border border-border/80 rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 font-semibold cursor-pointer"
+                className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
               >
                 <option value="">All Batches</option>
-                <option value="20/21">20/21</option>
-                <option value="21/22">21/22</option>
-                <option value="22/23">22/23</option>
-                <option value="23/24">23/24</option>
-                <option value="24/25">24/25</option>
-                <option value="25/26">25/26</option>
+                <option value="20/21">Batch 20/21</option>
+                <option value="21/22">Batch 21/22</option>
+                <option value="22/23">Batch 22/23</option>
+                <option value="23/24">Batch 23/24</option>
+                <option value="24/25">Batch 24/25</option>
+                <option value="25/26">Batch 25/26</option>
               </select>
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="uppercase text-[10px] tracking-wider font-extrabold text-muted-foreground">
-                STATUS:
-              </span>
+            {/* Status Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase">Status:</span>
               <select
                 value={staffStatus}
                 onChange={(e) => {
                   setStaffStatus(e.target.value);
                   setStaffPage(1);
                 }}
-                className="px-3 py-1.5 bg-secondary/40 border border-border/80 rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 font-semibold cursor-pointer"
+                className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
               >
                 <option value="ALL">All Statuses</option>
-                <option value="ACTIVE">ACTIVE (Currently Studying)</option>
-                <option value="GRADUATED">GRADUATED (Past Student)</option>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="GRADUATED">GRADUATED</option>
                 <option value="SUSPENDED">SUSPENDED</option>
                 <option value="WITHDRAWN">WITHDRAWN</option>
               </select>
             </div>
+
+            {(staffDegreeId || staffBatch || staffStatus !== 'ALL' || staffSearch) && (
+              <button
+                onClick={() => {
+                  setStaffDegreeId('');
+                  setStaffBatch('');
+                  setStaffStatus('ALL');
+                  setStaffSearch('');
+                  setStaffPage(1);
+                }}
+                className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
+              >
+                Reset
+              </button>
+            )}
           </div>
         </div>
 
@@ -658,7 +682,7 @@ export default function StudentDirectoryPage() {
         {/* FULL STUDENT ACADEMIC RECORD MODAL (STAFF) */}
         {/* ========================================== */}
         {selectedStudentRecordId && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-background/80 backdrop-blur-sm animate-fadeIn">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-background/80 backdrop-blur-sm animate-fadeIn !m-0">
             <div className="bg-card border border-border/80 w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] backdrop-blur-xl animate-scaleUp">
               {/* Modal Header */}
               <div className="px-6 py-4 border-b border-border/60 bg-secondary/15 flex items-center justify-between shrink-0">
@@ -732,46 +756,6 @@ export default function StudentDirectoryPage() {
                 </div>
               ) : (
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                  {/* Top Stats Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-secondary/10 p-4 rounded-2xl border border-border/40 text-xs">
-                    <div>
-                      <span className="block text-[10px] text-muted-foreground uppercase font-bold">
-                        Degree Program
-                      </span>
-                      <span className="font-bold text-foreground truncate block">
-                        {studentRecord?.degree?.degree_name} ({studentRecord?.degree?.degree_code})
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] text-muted-foreground uppercase font-bold">
-                        Specialization
-                      </span>
-                      <span className="font-bold text-foreground truncate block">
-                        {studentRecord?.specialization
-                          ? studentRecord.specialization.specialization_name
-                          : 'General'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] text-muted-foreground uppercase font-bold">
-                        Academic Year / Batch
-                      </span>
-                      <span className="font-bold font-mono text-foreground">
-                        {formatBatchDisplay(studentRecord)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] text-muted-foreground uppercase font-bold">
-                        Latest CGPA
-                      </span>
-                      <span className="font-extrabold font-mono text-primary text-sm">
-                        {semesterGpasList.length > 0
-                          ? semesterGpasList[semesterGpasList.length - 1].cumulative_gpa.toFixed(2)
-                          : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-
                   {/* Staff Status Control Bar */}
                   <div className="bg-primary/5 border border-primary/20 p-4 rounded-2xl space-y-3">
                     <div className="flex items-center justify-between">
@@ -846,49 +830,48 @@ export default function StudentDirectoryPage() {
                   </div>
 
                   {/* Tabs Bar */}
-                  <div className="flex items-center gap-2 border-b border-border/60">
+                  <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
                     <button
                       onClick={() => setRecordModalTab('history')}
-                      className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
                         recordModalTab === 'history'
-                          ? 'border-primary text-primary'
-                          : 'border-transparent text-muted-foreground hover:text-foreground'
+                          ? 'text-primary border-b-2 border-primary font-semibold'
+                          : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      <BookOpen className="h-3.5 w-3.5" /> Registered Courses & Marks (
+                      <BookOpen className="h-4 w-4" /> Registered Courses & Marks (
                       {courseGradesList.length})
                     </button>
                     <button
                       onClick={() => setRecordModalTab('grace')}
-                      className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
                         recordModalTab === 'grace'
-                          ? 'border-primary text-primary'
-                          : 'border-transparent text-muted-foreground hover:text-foreground'
+                          ? 'text-primary border-b-2 border-primary font-semibold'
+                          : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      <FileCheck className="h-3.5 w-3.5" /> Grace Chance Applications (
+                      <FileCheck className="h-4 w-4" /> Grace Chance Applications (
                       {graceAppsList.length})
                     </button>
                     <button
                       onClick={() => setRecordModalTab('recorrections')}
-                      className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
                         recordModalTab === 'recorrections'
-                          ? 'border-primary text-primary'
-                          : 'border-transparent text-muted-foreground hover:text-foreground'
+                          ? 'text-primary border-b-2 border-primary font-semibold'
+                          : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      <FileText className="h-3.5 w-3.5" /> Recorrections (
-                      {recorrectionReqsList.length})
+                      <FileText className="h-4 w-4" /> Recorrections ({recorrectionReqsList.length})
                     </button>
                     <button
                       onClick={() => setRecordModalTab('medicals')}
-                      className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
                         recordModalTab === 'medicals'
-                          ? 'border-primary text-primary'
-                          : 'border-transparent text-muted-foreground hover:text-foreground'
+                          ? 'text-primary border-b-2 border-primary font-semibold'
+                          : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      <Stethoscope className="h-3.5 w-3.5" /> Medicals ({medicalSubsList.length})
+                      <Stethoscope className="h-4 w-4" /> Medicals ({medicalSubsList.length})
                     </button>
                   </div>
 
@@ -1339,7 +1322,7 @@ export default function StudentDirectoryPage() {
 
         {/* STAFF EXAM VIOLATION MODAL */}
         {violationModalOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm !m-0">
             <div className="bg-card border border-border/80 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden p-6 space-y-6 animate-scaleUp">
               <div className="flex items-center justify-between border-b border-border/60 pb-4">
                 <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
@@ -2045,7 +2028,7 @@ export default function StudentDirectoryPage() {
 
       {/* Student Details Glass Modal (Lecturer) */}
       {selectedLecturerStudentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fadeIn !m-0">
           <div className="bg-card/95 border border-border rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl backdrop-blur-xl animate-scaleUp">
             <div className="flex justify-between items-center p-6 border-b border-border/60 bg-secondary/15">
               <div className="flex items-center gap-3">
