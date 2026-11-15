@@ -13,8 +13,25 @@ import {
   AlertCircle,
   CheckCircle2,
   Download,
+  AlertTriangle,
+  Eye,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import SpreadsheetInspectorModal, {
+  InspectorColumn,
+  SpreadsheetValidationResult,
+} from '../imports/spreadsheet-inspector-modal';
+import { validateCoursesSpreadsheetLocally } from '../../lib/spreadsheet-validator';
+
+const COURSE_INSPECTOR_COLUMNS: InspectorColumn[] = [
+  { key: 'courseCode', label: 'Course Code', cellClassName: 'font-mono font-bold text-foreground' },
+  { key: 'courseName', label: 'Course Name', cellClassName: 'font-semibold text-foreground' },
+  { key: 'creditValue', label: 'Credits', cellClassName: 'font-mono' },
+  { key: 'semester', label: 'Semester', cellClassName: 'font-mono font-bold' },
+  { key: 'department', label: 'Department' },
+  { key: 'degree', label: 'Degree' },
+  { key: 'status', label: 'Type', cellClassName: 'font-mono text-[11px]' },
+];
 
 interface CourseImportDialogProps {
   open: boolean;
@@ -29,8 +46,60 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showInspector, setShowInspector] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState<SpreadsheetValidationResult | null>(
+    null,
+  );
 
   if (!open) return null;
+
+  const resetFileState = () => {
+    setFile(null);
+    setValidationResult(null);
+    setShowInspector(false);
+    setError(null);
+  };
+
+  const handleClose = () => {
+    if (isLoading) return;
+    resetFileState();
+    setSuccess(null);
+    onClose();
+  };
+
+  const runLiveValidation = async (targetFile: File) => {
+    setIsValidating(true);
+    setValidationResult(null);
+    setShowInspector(true);
+
+    const formData = new FormData();
+    formData.append('file', targetFile);
+
+    try {
+      const response = await apiClient.post('/imports/courses/validate', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      if (response.data?.data) {
+        setValidationResult(response.data.data);
+        return;
+      }
+    } catch (err: any) {
+      const axiosError = err as AxiosError<ApiResponse>;
+      if (axiosError.response?.status && axiosError.response.status !== 404) {
+        const errMsg =
+          axiosError.response?.data?.message || 'Failed to validate spreadsheet on server.';
+        toast.error(Array.isArray(errMsg) ? errMsg.join(', ') : errMsg);
+      }
+    } finally {
+      setIsValidating(false);
+    }
+
+    const fallbackResult = await validateCoursesSpreadsheetLocally(targetFile);
+    setValidationResult(fallbackResult);
+  };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -57,6 +126,7 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
       ) {
         setFile(droppedFile);
         setError(null);
+        runLiveValidation(droppedFile);
       } else {
         setError('Only Excel spreadsheet files (.xlsx, .xls) are supported.');
       }
@@ -68,6 +138,8 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
       const selectedFile = e.target.files[0];
       setFile(selectedFile);
       setError(null);
+      e.target.value = '';
+      runLiveValidation(selectedFile);
     }
   };
 
@@ -80,7 +152,7 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
         semester: '1.1',
         department: 'ICT',
         degree: 'BICT',
-        status: 'COMPULSORY',
+        status: 'C',
         specialization: '',
         lecturer: '',
       },
@@ -91,19 +163,19 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
         semester: '1.1',
         department: 'ICT',
         degree: 'BICT',
-        status: 'COMPULSORY',
+        status: 'C',
         specialization: '',
         lecturer: '',
       },
       {
-        courseCode: 'EET1201',
-        courseName: 'Digital Electronics',
-        creditValue: 2.0,
-        semester: '1.2',
-        department: 'EET',
-        degree: 'BET',
-        status: 'OPTIONAL',
-        specialization: 'EET',
+        courseCode: 'ICT2101',
+        courseName: 'Software Engineering Principles',
+        creditValue: 3.0,
+        semester: '2.1',
+        department: 'ICT',
+        degree: 'BICT',
+        status: 'C',
+        specialization: 'SE(C), CS(O)',
         lecturer: '',
       },
     ];
@@ -114,10 +186,14 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
     XLSX.writeFile(wb, 'courses_bulk_import_template.xlsx');
   };
 
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitImport = async () => {
     if (!file) {
       setError('Please select a file to import.');
+      return;
+    }
+
+    if (validationResult?.hasBlockingErrors) {
+      setShowInspector(true);
       return;
     }
 
@@ -139,16 +215,19 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
         const msg = response.data?.message || 'Courses imported successfully!';
         setSuccess(msg);
         toast.success(msg);
+        setShowInspector(false);
         setFile(null);
+        setValidationResult(null);
         setTimeout(() => {
           onSuccess();
           onClose();
           setSuccess(null);
-        }, 1500);
+        }, 1200);
       } else {
         const msg = response.data?.message || 'Bulk import failed.';
         setError(msg);
         toast.error(msg);
+        setShowInspector(false);
       }
     } catch (err: any) {
       const axiosError = err as AxiosError<ApiResponse>;
@@ -156,9 +235,15 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
       const formatted = Array.isArray(errMsg) ? errMsg.join(', ') : errMsg;
       setError(formatted);
       toast.error(formatted);
+      setShowInspector(false);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitImport();
   };
 
   return (
@@ -178,7 +263,8 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
             </div>
           </div>
           <button
-            onClick={onClose}
+            type="button"
+            onClick={handleClose}
             className="p-1 hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition cursor-pointer"
           >
             <X className="h-5 w-5" />
@@ -222,16 +308,19 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
               <span>• courseCode</span>
               <span>• courseName</span>
               <span>• creditValue</span>
-              <span>• semester (e.g. 1.1, 1.2)</span>
+              <span>• semester (e.g. 1.1, 2.1)</span>
               <span>• department (e.g. ICT, EET)</span>
               <span>• degree (e.g. BICT, BET)</span>
-              <span>• status (COMPULSORY / OPTIONAL)</span>
-              <span>• specialization (optional)</span>
+              <span>• status (C / O)</span>
+              <span>• specialization (e.g. SE(C), CS(O))</span>
               <span>• lecturer (email/empNo, optional)</span>
             </div>
             <p className="text-[10px] italic pt-1">
-              Note: Course codes must be unique. Semester must be in format X.Y (1.1 to 4.2).
-              Multiple degrees can be comma-separated. Column headers are case-insensitive.
+              Note: Use <span className="font-mono font-semibold text-foreground">(C)</span> for
+              Compulsory and <span className="font-mono font-semibold text-foreground">(O)</span>{' '}
+              for Optional (case-insensitive), e.g.,{' '}
+              <span className="font-mono font-semibold text-foreground">SE(C), CS(o)</span>. If no
+              specialization is stated, the subject applies as compulsory to all mentioned degrees.
             </p>
           </div>
 
@@ -260,7 +349,11 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
 
             {file ? (
               <div className="space-y-3">
-                <FileSpreadsheet className="h-10 w-10 text-emerald-400 mx-auto" />
+                <FileSpreadsheet
+                  className={`h-10 w-10 mx-auto ${
+                    validationResult?.hasBlockingErrors ? 'text-destructive' : 'text-emerald-400'
+                  }`}
+                />
                 <div>
                   <p className="text-sm font-bold text-foreground max-w-[280px] truncate mx-auto">
                     {file.name}
@@ -269,13 +362,40 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
                     {(file.size / 1024).toFixed(1)} KB
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setFile(null)}
-                  className="px-3 py-1 bg-destructive/10 text-destructive text-xs font-semibold rounded-lg hover:bg-destructive/15 transition cursor-pointer"
-                >
-                  Remove File
-                </button>
+                {validationResult && (
+                  <div className="flex justify-center">
+                    {validationResult.hasBlockingErrors ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-destructive/10 text-destructive text-xs font-semibold rounded-lg border border-destructive/20">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {validationResult.hasHeaderErrors
+                          ? 'Header mismatch detected'
+                          : `${validationResult.invalidRowsCount} row(s) with errors`}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-semibold rounded-lg border border-emerald-500/20">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {validationResult.validRowsCount} valid row(s) ready to import
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowInspector(true)}
+                    className="px-3 py-1.5 bg-primary/10 text-primary text-xs font-semibold rounded-lg hover:bg-primary/15 transition cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Open Live Error Inspector
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetFileState}
+                    className="px-3 py-1.5 bg-destructive/10 text-destructive text-xs font-semibold rounded-lg hover:bg-destructive/15 transition cursor-pointer"
+                  >
+                    Remove File
+                  </button>
+                </div>
               </div>
             ) : (
               <label htmlFor="course-file-upload" className="cursor-pointer space-y-3">
@@ -301,7 +421,7 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/60">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               disabled={isLoading}
               className="px-5 py-2.5 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-sm disabled:opacity-50 cursor-pointer"
             >
@@ -309,7 +429,9 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
             </button>
             <button
               type="submit"
-              disabled={isLoading || !file}
+              disabled={
+                isLoading || isValidating || !file || Boolean(validationResult?.hasBlockingErrors)
+              }
               className="px-5 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-sm disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-lg shadow-primary/20"
             >
               {isLoading ? (
@@ -324,6 +446,19 @@ export default function CourseImportDialog({ open, onClose, onSuccess }: CourseI
           </div>
         </form>
       </div>
+
+      <SpreadsheetInspectorModal
+        open={showInspector}
+        fileName={file?.name}
+        subtitle="Bulk Course Import Validation — Inspect column headers, format rules & existing course conflicts"
+        isValidating={isValidating}
+        isSubmitting={isLoading}
+        validationResult={validationResult}
+        columns={COURSE_INSPECTOR_COLUMNS}
+        confirmLabel={`Import ${validationResult?.validRowsCount || 0} Courses`}
+        onClose={() => setShowInspector(false)}
+        onConfirm={submitImport}
+      />
     </div>
   );
 }

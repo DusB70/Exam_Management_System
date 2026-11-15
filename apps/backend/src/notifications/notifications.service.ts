@@ -233,30 +233,48 @@ export class NotificationsService {
   }
 
   /**
-   * Notifies the 1st Marker when an exam is held and papers are ready for collection at the AR office.
+   * Notifies the 1st Marker when an exam is held and papers are ready for collection / dispatch.
    */
   async sendFirstMarkerExamHeldNotification(
     markerEmail: string,
     markerName: string,
     courseCode: string,
     courseName: string,
+    options?: {
+      isSameAsInCharge?: boolean;
+      inChargeName?: string;
+      isExternal?: boolean;
+    },
   ): Promise<void> {
-    const subject = `Exam Held: Paper Packet Ready for Collection - ${courseCode}`;
+    const isSeparateFromInCharge =
+      options?.isSameAsInCharge === false || options?.isExternal === true;
+    const inChargeLabel = options?.inChargeName || 'the Course In-Charge';
+
+    const subject = isSeparateFromInCharge
+      ? `Exam Held Notification & Paper Packet Notice - ${courseCode}`
+      : `Exam Held: Paper Packet Ready for Collection - ${courseCode}`;
+
+    const actionHtml = isSeparateFromInCharge
+      ? `<p style="margin:6px 0 0;color:#64748b;font-size:14px;">The examination has been held and you will receive the examination paper packet in due time. Please evaluate/mark the papers and send the completed marksheet personally to <strong>${inChargeLabel}</strong> (Course In-Charge), who is responsible for entering the marks into the system.</p>`
+      : '<p style="margin:6px 0 0;color:#64748b;font-size:14px;">The examination has been held and you will receive / can collect the examination paper packet from the Assistant Registrar (AR) Office in due time to begin the 1st marking evaluation and enter the marks into the system.</p>';
+
     const htmlContent = `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fff;padding:24px;border-radius:12px;border:1px solid #e2e8f0;">
         <h2 style="color:#0f172a;margin-top:0;">Examination Conducted Notice</h2>
         <p>Dear <strong>${markerName}</strong>,</p>
         <p>The examination for <strong>${courseCode} — ${courseName}</strong> has been conducted.</p>
         <div style="background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e2e8f0;margin:16px 0;">
-          <p style="margin:0;color:#334155;font-weight:600;">Paper Packet Action Required:</p>
-          <p style="margin:6px 0 0;color:#64748b;font-size:14px;">Please visit the Assistant Registrar (AR) Office to collect the examination paper packet and begin the 1st marking evaluation.</p>
+          <p style="margin:0;color:#334155;font-weight:600;">1st Marking & Paper Packet Instructions:</p>
+          ${actionHtml}
         </div>
         <p style="color:#64748b;font-size:12px;margin-top:24px;">Metropolitan University of Technology — Examinations Division</p>
       </div>
     `.trim();
 
     if (!this.client) {
-      this.logger.log(`[SIMULATED EMAIL] First Marker Exam Held -> ${markerEmail} (${courseCode})`);
+      this.logger.log(
+        `[SIMULATED EMAIL] First Marker Exam Held (sameAsInCharge=${!isSeparateFromInCharge}) -> ${markerEmail} (${courseCode})`,
+      );
       return;
     }
 
@@ -271,6 +289,55 @@ export class NotificationsService {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Failed to send exam held email to ${markerEmail}: ${msg}`);
+    }
+  }
+
+  /**
+   * Notifies the Course In-Charge when an exam is held (especially when 1st marker is separate from In-Charge).
+   */
+  async sendInChargeExamHeldNotification(
+    inChargeEmail: string,
+    inChargeName: string,
+    courseCode: string,
+    courseName: string,
+    firstMarkerName?: string,
+  ): Promise<void> {
+    const subject = `Exam Held Notification (Course In-Charge) - ${courseCode}`;
+    const markerInfo = firstMarkerName
+      ? `Once the assigned 1st Marker (<strong>${firstMarkerName}</strong>) evaluates the paper packet and sends the marksheet to you personally, you are responsible for entering the marks into the Marks Registry.`
+      : 'You are responsible for coordinating the 1st marking marksheet and entering the marks into the Marks Registry.';
+
+    const htmlContent = `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#fff;padding:24px;border-radius:12px;border:1px solid #e2e8f0;">
+        <h2 style="color:#0f172a;margin-top:0;">Examination Conducted Notice — Course In-Charge</h2>
+        <p>Dear <strong>${inChargeName}</strong>,</p>
+        <p>This is to notify you that the examination for <strong>${courseCode} — ${courseName}</strong> has been held.</p>
+        <div style="background:#eff6ff;padding:16px;border-radius:8px;border:1px solid #bfdbfe;margin:16px 0;">
+          <p style="margin:0;color:#1e40af;font-weight:600;">Course In-Charge Responsibility:</p>
+          <p style="margin:6px 0 0;color:#1d4ed8;font-size:14px;">${markerInfo}</p>
+        </div>
+        <p style="color:#64748b;font-size:12px;margin-top:24px;">Metropolitan University of Technology — Examinations Division</p>
+      </div>
+    `.trim();
+
+    if (!this.client) {
+      this.logger.log(
+        `[SIMULATED EMAIL] Course In-Charge Exam Held -> ${inChargeEmail} (${courseCode})`,
+      );
+      return;
+    }
+
+    try {
+      await this.client.transactionalEmails.sendTransacEmail({
+        subject,
+        htmlContent,
+        sender: { name: this.senderName, email: this.senderEmail },
+        to: [{ email: inChargeEmail, name: inChargeName }],
+      });
+      this.logger.log(`Course in-charge exam held email sent to ${inChargeEmail}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to send in-charge exam held email to ${inChargeEmail}: ${msg}`);
     }
   }
 

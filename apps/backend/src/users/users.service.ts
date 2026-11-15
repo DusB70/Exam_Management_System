@@ -511,6 +511,8 @@ export class UsersService {
         },
         department: {
           select: {
+            department_id: true,
+            department_code: true,
             department_name: true,
           },
         },

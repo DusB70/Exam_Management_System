@@ -16,6 +16,8 @@ import {
   UpdateCourseDto,
   AssignLecturerDto,
   AssignMarkersDto,
+  SetCourseLecturerDto,
+  SetCourseInChargeDto,
 } from './dtos/courses.dto';
 import {
   CreatePeriodDto,
@@ -217,6 +219,44 @@ export class CoursesController {
     return {
       success: true,
       message: 'Lecturer removed from course successfully',
+    };
+  }
+
+  @Put(':id/lecturer')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async setCourseLecturer(
+    @Param('id', ParseIntPipe) courseId: number,
+    @Body() dto: SetCourseLecturerDto,
+    @GetUser('id') executorId: number,
+  ) {
+    const course = await this.coursesService.setCourseLecturer(
+      courseId,
+      dto.lecturerId,
+      executorId,
+    );
+    return {
+      success: true,
+      message: 'Course lecturer updated successfully',
+      data: course,
+    };
+  }
+
+  @Patch(':id/in-charge')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async setCourseInCharge(
+    @Param('id', ParseIntPipe) courseId: number,
+    @Body() dto: SetCourseInChargeDto,
+    @GetUser('id') executorId: number,
+  ) {
+    const course = await this.coursesService.setCourseInCharge(
+      courseId,
+      dto.inChargeLecturerId,
+      executorId,
+    );
+    return {
+      success: true,
+      message: 'Course in-charge updated successfully',
+      data: course,
     };
   }
 

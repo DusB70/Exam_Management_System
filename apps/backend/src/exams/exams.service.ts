@@ -1084,10 +1084,80 @@ export class ExamsService {
 
     const coursesWithTimetables = courses.filter((c) => c.timetables && c.timetables.length > 0);
 
+    // Collect lecturer IDs referenced in marks_config (inChargeLecturerId + additionalFirstMarkers)
+    const extraLecturerIds = new Set<number>();
+    for (const c of coursesWithTimetables) {
+      const cfg = (c.marks_config as any) || {};
+      if (cfg.inChargeLecturerId) extraLecturerIds.add(Number(cfg.inChargeLecturerId));
+      if (Array.isArray(cfg.additionalFirstMarkers)) {
+        for (const m of cfg.additionalFirstMarkers) {
+          if (m?.type === 'INTERNAL' && m?.lecturerId) {
+            extraLecturerIds.add(Number(m.lecturerId));
+          }
+        }
+      }
+    }
+
+    const extraLecturerMap = new Map<number, any>();
+    if (extraLecturerIds.size > 0) {
+      const extraLecturers = await this.prisma.lecturer.findMany({
+        where: { lecturer_id: { in: Array.from(extraLecturerIds) } },
+        include: { user: true },
+      });
+      for (const l of extraLecturers) {
+        extraLecturerMap.set(l.lecturer_id, l);
+      }
+    }
+
     const results = await Promise.all(
       coursesWithTimetables.map(async (course) => {
         const prog = course.publishing_progress;
         const mainTimetable = course.timetables[0];
+        const cfg = (course.marks_config as any) || {};
+
+        const isSameAsInCharge =
+          cfg.isFirstMarkerSameAsInCharge !== undefined
+            ? Boolean(cfg.isFirstMarkerSameAsInCharge)
+            : true;
+
+        const inChargeId =
+          cfg.inChargeLecturerId !== undefined
+            ? cfg.inChargeLecturerId
+              ? Number(cfg.inChargeLecturerId)
+              : null
+            : isSameAsInCharge && course.first_marker_type !== 'EXTERNAL'
+              ? course.first_marker_lecturer_id || null
+              : null;
+
+        const inChargeLecturer = inChargeId
+          ? extraLecturerMap.get(inChargeId) ||
+            (course.first_marker_lecturer_id === inChargeId ? course.first_marker_lecturer : null)
+          : null;
+
+        const primaryFirstMarkerName =
+          course.first_marker_type === 'EXTERNAL'
+            ? course.first_marker_name || null
+            : course.first_marker_lecturer?.user.full_name || null;
+
+        const additionalNames: string[] = [];
+        if (Array.isArray(cfg.additionalFirstMarkers)) {
+          for (const m of cfg.additionalFirstMarkers) {
+            if (m?.type === 'INTERNAL' && m?.lecturerId) {
+              const lec = extraLecturerMap.get(Number(m.lecturerId));
+              if (lec?.user?.full_name) additionalNames.push(lec.user.full_name);
+            } else if (m?.type === 'EXTERNAL' && m?.name) {
+              additionalNames.push(m.name);
+            }
+          }
+        }
+
+        const combinedFirstMarkerName = primaryFirstMarkerName
+          ? additionalNames.length > 0
+            ? `${primaryFirstMarkerName} (+${additionalNames.join(', ')})`
+            : primaryFirstMarkerName
+          : additionalNames.length > 0
+            ? `Unassigned (Addl: ${additionalNames.join(', ')})`
+            : 'Unassigned';
 
         const effectiveExamHeld = prog?.exam_held || 'PENDING';
 
@@ -1100,10 +1170,9 @@ export class ExamsService {
           exam_name: mainTimetable?.exam_name || 'End Semester Examination 2026',
           exam_date: mainTimetable?.exam_date || null,
           department_name: course.department.department_name,
-          first_marker_name:
-            course.first_marker_type === 'EXTERNAL'
-              ? course.first_marker_name || 'External Marker'
-              : course.first_marker_lecturer?.user.full_name || 'Unassigned',
+          in_charge_name: inChargeLecturer?.user?.full_name || 'Unassigned',
+          is_first_marker_same_as_in_charge: isSameAsInCharge,
+          first_marker_name: combinedFirstMarkerName,
           second_marker_name:
             course.second_marker_type === 'EXTERNAL'
               ? course.second_marker_name || 'External Marker'
@@ -1218,8 +1287,42 @@ export class ExamsService {
       },
     });
 
-    // 1. Trigger Email to 1st Marker when exam_held becomes "HELD"
+    // 1. Trigger Email to 1st Marker(s) and Course In-Charge when exam_held becomes "HELD"
     if (dto.examHeld === 'HELD' && prevProgress?.exam_held !== 'HELD') {
+      const cfg = (course.marks_config as any) || {};
+      const isSameAsInCharge =
+        cfg.isFirstMarkerSameAsInCharge !== undefined
+          ? Boolean(cfg.isFirstMarkerSameAsInCharge)
+          : true;
+
+      const inChargeId =
+        cfg.inChargeLecturerId !== undefined
+          ? cfg.inChargeLecturerId
+            ? Number(cfg.inChargeLecturerId)
+            : null
+          : isSameAsInCharge && course.first_marker_type !== 'EXTERNAL'
+            ? course.first_marker_lecturer_id || null
+            : null;
+
+      let inChargeName: string | undefined;
+      let inChargeEmail: string | undefined;
+
+      if (inChargeId) {
+        if (course.first_marker_lecturer_id === inChargeId && course.first_marker_lecturer?.user) {
+          inChargeName = course.first_marker_lecturer.user.full_name;
+          inChargeEmail = course.first_marker_lecturer.user.email;
+        } else {
+          const inChargeLec = await this.prisma.lecturer.findUnique({
+            where: { lecturer_id: inChargeId },
+            include: { user: true },
+          });
+          inChargeName = inChargeLec?.user?.full_name;
+          inChargeEmail = inChargeLec?.user?.email;
+        }
+      }
+
+      const notifiedFirstMarkerEmails = new Set<string>();
+
       const markerEmail =
         course.first_marker_type === 'EXTERNAL'
           ? course.first_marker_email
@@ -1230,11 +1333,76 @@ export class ExamsService {
           : course.first_marker_lecturer?.user?.full_name || 'First Marker';
 
       if (markerEmail) {
+        notifiedFirstMarkerEmails.add(markerEmail.toLowerCase());
         await this.notificationsService.sendFirstMarkerExamHeldNotification(
           markerEmail,
           markerName,
           course.course_code,
           course.course_name,
+          {
+            isSameAsInCharge,
+            inChargeName,
+            isExternal: course.first_marker_type === 'EXTERNAL',
+          },
+        );
+      }
+
+      // Also notify any additional 1st markers
+      if (Array.isArray(cfg.additionalFirstMarkers)) {
+        for (const addMarker of cfg.additionalFirstMarkers) {
+          if (addMarker?.type === 'INTERNAL' && addMarker?.lecturerId) {
+            const lec = await this.prisma.lecturer.findUnique({
+              where: { lecturer_id: Number(addMarker.lecturerId) },
+              include: { user: true },
+            });
+            const addEmail = lec?.user?.email;
+            const addName = lec?.user?.full_name || 'First Marker';
+            if (addEmail && !notifiedFirstMarkerEmails.has(addEmail.toLowerCase())) {
+              notifiedFirstMarkerEmails.add(addEmail.toLowerCase());
+              await this.notificationsService.sendFirstMarkerExamHeldNotification(
+                addEmail,
+                addName,
+                course.course_code,
+                course.course_name,
+                {
+                  isSameAsInCharge: true,
+                  inChargeName,
+                  isExternal: false,
+                },
+              );
+            }
+          } else if (addMarker?.type === 'EXTERNAL' && addMarker?.email) {
+            const addEmail = String(addMarker.email).trim();
+            const addName = addMarker.name || 'First Marker';
+            if (addEmail && !notifiedFirstMarkerEmails.has(addEmail.toLowerCase())) {
+              notifiedFirstMarkerEmails.add(addEmail.toLowerCase());
+              await this.notificationsService.sendFirstMarkerExamHeldNotification(
+                addEmail,
+                addName,
+                course.course_code,
+                course.course_name,
+                {
+                  isSameAsInCharge: false,
+                  inChargeName,
+                  isExternal: true,
+                },
+              );
+            }
+          }
+        }
+      }
+
+      // Notify the Course In-Charge when 1st marker is different from In-Charge (or In-Charge hasn't been notified yet)
+      if (
+        inChargeEmail &&
+        (!isSameAsInCharge || !notifiedFirstMarkerEmails.has(inChargeEmail.toLowerCase()))
+      ) {
+        await this.notificationsService.sendInChargeExamHeldNotification(
+          inChargeEmail,
+          inChargeName || 'Course In-Charge',
+          course.course_code,
+          course.course_name,
+          markerEmail ? markerName : undefined,
         );
       }
     }

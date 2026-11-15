@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { CreateCourseDto, UpdateCourseDto } from './dtos/courses.dto';
+import { CreateCourseDto, UpdateCourseDto, AssignMarkersDto } from './dtos/courses.dto';
 import { CreatePeriodDto, PeriodStatus } from './dtos/registration-periods.dto';
 import { Prisma, Course, RegistrationPeriod } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -16,6 +16,95 @@ export class CoursesService {
 
   private isEligibleForSpecialization(sem?: string): boolean {
     return Boolean(sem && sem !== '1.1' && sem !== '1.2');
+  }
+
+  private async enrichCoursesWithAllocationDetails(courses: any[]) {
+    if (!courses || courses.length === 0) return courses;
+
+    const lecturerIdsToFetch = new Set<number>();
+    for (const c of courses) {
+      const cfg = (c.marks_config as any) || {};
+      if (cfg.inChargeLecturerId) {
+        lecturerIdsToFetch.add(Number(cfg.inChargeLecturerId));
+      }
+      if (Array.isArray(cfg.additionalFirstMarkers)) {
+        for (const m of cfg.additionalFirstMarkers) {
+          if (m?.type === 'INTERNAL' && m?.lecturerId) {
+            lecturerIdsToFetch.add(Number(m.lecturerId));
+          }
+        }
+      }
+    }
+
+    const lecturerMap = new Map<number, any>();
+    if (lecturerIdsToFetch.size > 0) {
+      const lecturers = await this.prisma.lecturer.findMany({
+        where: { lecturer_id: { in: Array.from(lecturerIdsToFetch) } },
+        include: {
+          user: { select: { full_name: true, email: true } },
+          department: {
+            select: {
+              department_id: true,
+              department_code: true,
+              department_name: true,
+            },
+          },
+        },
+      });
+      for (const l of lecturers) {
+        lecturerMap.set(l.lecturer_id, l);
+      }
+    }
+
+    return courses.map((c) => {
+      const cfg = (c.marks_config as any) || {};
+      const isSameAsInCharge =
+        cfg.isFirstMarkerSameAsInCharge !== undefined
+          ? Boolean(cfg.isFirstMarkerSameAsInCharge)
+          : true;
+
+      const inChargeLecturerId =
+        cfg.inChargeLecturerId !== undefined
+          ? cfg.inChargeLecturerId
+            ? Number(cfg.inChargeLecturerId)
+            : null
+          : isSameAsInCharge && c.first_marker_type !== 'EXTERNAL'
+            ? c.first_marker_lecturer_id || null
+            : null;
+
+      const inChargeLecturer = inChargeLecturerId
+        ? lecturerMap.get(inChargeLecturerId) ||
+          (c.first_marker_lecturer_id === inChargeLecturerId ? c.first_marker_lecturer : null) ||
+          c.lecturers?.find((cl: any) => cl.lecturer_id === inChargeLecturerId)?.lecturer ||
+          null
+        : null;
+
+      const rawAdditional = Array.isArray(cfg.additionalFirstMarkers)
+        ? cfg.additionalFirstMarkers
+        : [];
+      const additionalFirstMarkers = rawAdditional.map((m: any, idx: number) => {
+        const lecId = m?.lecturerId ? Number(m.lecturerId) : null;
+        const lecObj = m?.type === 'INTERNAL' && lecId ? lecturerMap.get(lecId) || null : null;
+        return {
+          id: m?.id || `add-fm-${idx}`,
+          type: m?.type || 'INTERNAL',
+          lecturerId: lecId,
+          name:
+            m?.type === 'INTERNAL' ? lecObj?.user?.full_name || m?.name || null : m?.name || null,
+          email:
+            m?.type === 'INTERNAL' ? lecObj?.user?.email || m?.email || null : m?.email || null,
+          lecturer: lecObj,
+        };
+      });
+
+      return {
+        ...c,
+        is_first_marker_same_as_in_charge: isSameAsInCharge,
+        in_charge_lecturer_id: inChargeLecturerId,
+        in_charge_lecturer: inChargeLecturer,
+        additional_first_markers: additionalFirstMarkers,
+      };
+    });
   }
 
   async findAll(
@@ -34,6 +123,8 @@ export class CoursesService {
       where.OR = [
         { course_code: { contains: search, mode: 'insensitive' } },
         { course_name: { contains: search, mode: 'insensitive' } },
+        { department: { department_name: { contains: search, mode: 'insensitive' } } },
+        { department: { department_code: { contains: search, mode: 'insensitive' } } },
       ];
     }
 
@@ -115,8 +206,10 @@ export class CoursesService {
       this.prisma.course.count({ where }),
     ]);
 
+    const enrichedItems = await this.enrichCoursesWithAllocationDetails(items);
+
     return {
-      items,
+      items: enrichedItems,
       total,
       page,
       limit,
@@ -149,6 +242,26 @@ export class CoursesService {
             },
           },
         },
+        first_marker_lecturer: {
+          include: {
+            user: {
+              select: {
+                full_name: true,
+                email: true,
+              },
+            },
+          },
+        },
+        second_marker_lecturer: {
+          include: {
+            user: {
+              select: {
+                full_name: true,
+                email: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -156,7 +269,8 @@ export class CoursesService {
       throw new NotFoundException(`Course with ID ${id} not found`);
     }
 
-    return course;
+    const [enriched] = await this.enrichCoursesWithAllocationDetails([course]);
+    return enriched;
   }
 
   async create(createCourseDto: CreateCourseDto, executorId: number): Promise<Course> {
@@ -667,7 +781,56 @@ export class CoursesService {
     return deleted;
   }
 
-  async assignCourseMarkers(courseId: number, dto: any, executorId: number) {
+  async setCourseLecturer(
+    courseId: number,
+    lecturerId: number | null | undefined,
+    executorId: number,
+  ) {
+    const existingCourse = await this.findOne(courseId);
+
+    if (lecturerId) {
+      const lecturer = await this.prisma.lecturer.findUnique({
+        where: { lecturer_id: lecturerId },
+      });
+      if (!lecturer) {
+        throw new NotFoundException(`Lecturer with ID ${lecturerId} not found`);
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.courseLecturer.deleteMany({
+        where: { course_id: courseId },
+      });
+
+      if (lecturerId) {
+        await tx.courseLecturer.create({
+          data: {
+            course_id: courseId,
+            lecturer_id: lecturerId,
+          },
+        });
+      }
+    });
+
+    const updated = await this.findOne(courseId);
+
+    await this.auditService.logAction(
+      executorId,
+      'COURSE_SET_LECTURER',
+      'course_lecturers',
+      courseId.toString(),
+      existingCourse,
+      updated,
+    );
+
+    return updated;
+  }
+
+  async setCourseInCharge(
+    courseId: number,
+    inChargeLecturerId: number | null | undefined,
+    executorId: number,
+  ) {
     const course = await this.prisma.course.findUnique({
       where: { course_id: courseId },
     });
@@ -676,31 +839,187 @@ export class CoursesService {
       throw new NotFoundException(`Course with ID ${courseId} not found`);
     }
 
-    const updated = await this.prisma.course.update({
+    if (inChargeLecturerId) {
+      const lecturer = await this.prisma.lecturer.findUnique({
+        where: { lecturer_id: inChargeLecturerId },
+      });
+      if (!lecturer) {
+        throw new NotFoundException(`Lecturer with ID ${inChargeLecturerId} not found`);
+      }
+    }
+
+    const existingConfig =
+      course.marks_config && typeof course.marks_config === 'object'
+        ? { ...(course.marks_config as Record<string, any>) }
+        : {};
+
+    const normalizedInChargeId = inChargeLecturerId ? Number(inChargeLecturerId) : null;
+
+    // Determine whether 1st marker and in-charge are the same based on current 1st marker
+    let isSameAsInCharge =
+      existingConfig.isFirstMarkerSameAsInCharge !== undefined
+        ? Boolean(existingConfig.isFirstMarkerSameAsInCharge)
+        : true;
+
+    const hasPrimaryFirstMarker = Boolean(
+      course.first_marker_lecturer_id || course.first_marker_name,
+    );
+
+    if (hasPrimaryFirstMarker) {
+      if (
+        course.first_marker_type !== 'EXTERNAL' &&
+        course.first_marker_lecturer_id &&
+        normalizedInChargeId &&
+        course.first_marker_lecturer_id === normalizedInChargeId
+      ) {
+        isSameAsInCharge = true;
+      } else {
+        isSameAsInCharge = false;
+      }
+    }
+
+    const updatedConfig = {
+      ...existingConfig,
+      inChargeLecturerId: normalizedInChargeId,
+      isFirstMarkerSameAsInCharge: isSameAsInCharge,
+    };
+
+    await this.prisma.course.update({
       where: { course_id: courseId },
       data: {
-        first_marker_type: dto.firstMarkerType || 'INTERNAL',
-        first_marker_lecturer_id: dto.firstMarkerLecturerId || null,
-        first_marker_name: dto.firstMarkerName || null,
-        first_marker_email: dto.firstMarkerEmail || null,
-        second_marker_type: dto.secondMarkerType || null,
-        second_marker_lecturer_id: dto.secondMarkerLecturerId || null,
-        second_marker_name: dto.secondMarkerName || null,
-        second_marker_email: dto.secondMarkerEmail || null,
-      },
-      include: {
-        first_marker_lecturer: {
-          include: {
-            user: { select: { full_name: true, email: true } },
-          },
-        },
-        second_marker_lecturer: {
-          include: {
-            user: { select: { full_name: true, email: true } },
-          },
-        },
+        marks_config: updatedConfig as any,
       },
     });
+
+    const updated = await this.findOne(courseId);
+
+    await this.auditService.logAction(
+      executorId,
+      'COURSE_SET_IN_CHARGE',
+      'courses',
+      courseId.toString(),
+      course,
+      updated,
+    );
+
+    return updated;
+  }
+
+  async assignCourseMarkers(courseId: number, dto: AssignMarkersDto, executorId: number) {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+    });
+
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    const existingConfig =
+      course.marks_config && typeof course.marks_config === 'object'
+        ? { ...(course.marks_config as Record<string, any>) }
+        : {};
+
+    const isSameAsInCharge =
+      dto.isFirstMarkerSameAsInCharge !== undefined
+        ? Boolean(dto.isFirstMarkerSameAsInCharge)
+        : existingConfig.isFirstMarkerSameAsInCharge !== undefined
+          ? Boolean(existingConfig.isFirstMarkerSameAsInCharge)
+          : true;
+
+    // Primary 1st marker fields — explicitly allow clearing to null without shifting 2nd marker or additional 1st markers
+    const hasFirstMarkerInternal =
+      dto.firstMarkerType === 'INTERNAL' && Boolean(dto.firstMarkerLecturerId);
+    const hasFirstMarkerExternal =
+      dto.firstMarkerType === 'EXTERNAL' && Boolean(dto.firstMarkerName?.trim());
+
+    const firstMarkerType = hasFirstMarkerInternal
+      ? 'INTERNAL'
+      : hasFirstMarkerExternal
+        ? 'EXTERNAL'
+        : null;
+    const firstMarkerLecturerId = hasFirstMarkerInternal ? Number(dto.firstMarkerLecturerId) : null;
+    const firstMarkerName = hasFirstMarkerExternal ? dto.firstMarkerName!.trim() : null;
+    const firstMarkerEmail = hasFirstMarkerExternal ? dto.firstMarkerEmail?.trim() || null : null;
+
+    // 2nd marker fields — completely independent from 1st marker
+    const hasSecondMarkerInternal =
+      dto.secondMarkerType === 'INTERNAL' && Boolean(dto.secondMarkerLecturerId);
+    const hasSecondMarkerExternal =
+      dto.secondMarkerType === 'EXTERNAL' && Boolean(dto.secondMarkerName?.trim());
+
+    const secondMarkerType = hasSecondMarkerInternal
+      ? 'INTERNAL'
+      : hasSecondMarkerExternal
+        ? 'EXTERNAL'
+        : null;
+    const secondMarkerLecturerId = hasSecondMarkerInternal
+      ? Number(dto.secondMarkerLecturerId)
+      : null;
+    const secondMarkerName = hasSecondMarkerExternal ? dto.secondMarkerName!.trim() : null;
+    const secondMarkerEmail = hasSecondMarkerExternal
+      ? dto.secondMarkerEmail?.trim() || null
+      : null;
+
+    // Resolve In-Charge Lecturer ID
+    let inChargeLecturerId: number | null =
+      existingConfig.inChargeLecturerId !== undefined
+        ? existingConfig.inChargeLecturerId
+          ? Number(existingConfig.inChargeLecturerId)
+          : null
+        : course.first_marker_type !== 'EXTERNAL' && course.first_marker_lecturer_id
+          ? course.first_marker_lecturer_id
+          : null;
+
+    if (dto.inChargeLecturerId !== undefined) {
+      inChargeLecturerId = dto.inChargeLecturerId ? Number(dto.inChargeLecturerId) : null;
+    } else if (isSameAsInCharge && firstMarkerLecturerId) {
+      inChargeLecturerId = firstMarkerLecturerId;
+    }
+
+    // Resolve Additional 1st Markers
+    let additionalFirstMarkers = Array.isArray(existingConfig.additionalFirstMarkers)
+      ? existingConfig.additionalFirstMarkers
+      : [];
+
+    if (dto.additionalFirstMarkers !== undefined) {
+      additionalFirstMarkers = (dto.additionalFirstMarkers || [])
+        .filter((m) => {
+          if (m.type === 'INTERNAL') return Boolean(m.lecturerId);
+          if (m.type === 'EXTERNAL') return Boolean(m.name && m.name.trim());
+          return false;
+        })
+        .map((m, idx) => ({
+          id: m.id || `add-fm-${Date.now()}-${idx}`,
+          type: m.type === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL',
+          lecturerId: m.type === 'INTERNAL' && m.lecturerId ? Number(m.lecturerId) : null,
+          name: m.type === 'EXTERNAL' && m.name ? m.name.trim() : null,
+          email: m.type === 'EXTERNAL' && m.email ? m.email.trim() : null,
+        }));
+    }
+
+    const updatedConfig = {
+      ...existingConfig,
+      isFirstMarkerSameAsInCharge: isSameAsInCharge,
+      inChargeLecturerId,
+      additionalFirstMarkers,
+    };
+
+    await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        first_marker_type: firstMarkerType,
+        first_marker_lecturer_id: firstMarkerLecturerId,
+        first_marker_name: firstMarkerName,
+        first_marker_email: firstMarkerEmail,
+        second_marker_type: secondMarkerType,
+        second_marker_lecturer_id: secondMarkerLecturerId,
+        second_marker_name: secondMarkerName,
+        second_marker_email: secondMarkerEmail,
+        marks_config: updatedConfig as any,
+      },
+    });
+
+    const updated = await this.findOne(courseId);
 
     await this.auditService.logAction(
       executorId,

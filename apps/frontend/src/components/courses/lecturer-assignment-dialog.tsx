@@ -99,6 +99,17 @@ export default function LecturerAssignmentDialog({
   // Filter out lecturers that are already assigned
   const assignableLecturers = allLecturers.filter((l: any) => !assignedIds.has(l.lecturer_id));
 
+  // Group assignable lecturers by department
+  const lecturersByDepartment = React.useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    for (const lec of assignableLecturers) {
+      const deptName = lec.department?.department_name || 'Other / General Faculty';
+      if (!groups[deptName]) groups[deptName] = [];
+      groups[deptName].push(lec);
+    }
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [assignableLecturers]);
+
   const handleAssign = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedLecturerId) return;
@@ -148,10 +159,18 @@ export default function LecturerAssignmentDialog({
                 className="w-full px-4 py-2 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground disabled:opacity-50"
               >
                 <option value="">Choose lecturer...</option>
-                {assignableLecturers.map((l: any) => (
-                  <option key={l.lecturer_id} value={l.lecturer_id} className="bg-card">
-                    {l.user?.full_name} ({l.employee_number})
-                  </option>
+                {lecturersByDepartment.map(([deptName, deptLecturers]) => (
+                  <optgroup key={deptName} label={deptName} className="bg-card font-semibold">
+                    {deptLecturers.map((l: any) => (
+                      <option
+                        key={l.lecturer_id}
+                        value={l.lecturer_id}
+                        className="bg-card font-normal"
+                      >
+                        {l.user?.full_name} ({l.employee_number})
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>

@@ -53,6 +53,36 @@ export class ImportsController {
     };
   }
 
+  @Post('students/validate')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  @UseInterceptors(FileInterceptor('file'))
+  async validateStudents(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Excel/CSV spreadsheet file is required.');
+    }
+    const result = await this.importsService.validateStudentsImport(file.buffer);
+    return {
+      success: true,
+      message: 'Student spreadsheet validation completed.',
+      data: result,
+    };
+  }
+
+  @Post('courses/validate')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  @UseInterceptors(FileInterceptor('file'))
+  async validateCourses(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Excel/CSV spreadsheet file is required.');
+    }
+    const result = await this.importsService.validateCoursesImport(file.buffer);
+    return {
+      success: true,
+      message: 'Course spreadsheet validation completed.',
+      data: result,
+    };
+  }
+
   @Post('exams/:examId/marks')
   @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR)
   @UseInterceptors(FileInterceptor('file'))

@@ -26,9 +26,7 @@ import {
   Edit3,
   UserCheck,
   User,
-  UserPlus,
   Check,
-  Users,
   Upload,
   X,
 } from 'lucide-react';
@@ -45,14 +43,19 @@ export default function CoursesManagementPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const [activeTab, setActiveTab] = useState<'courses' | 'periods' | 'lecturers'>('courses');
-  const [lecturersSubTab, setLecturersSubTab] = useState<'examiners' | 'faculty'>('examiners');
 
-  // Filters State for Courses
+  // Filters State for Courses Catalog
   const [coursePage, setCoursePage] = useState(1);
   const [courseSearch, setCourseSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
   const [semesterFilter, setSemesterFilter] = useState('');
   const [degreeFilter, setDegreeFilter] = useState('');
+
+  // Filters State for Lecturer & Examiner Allocations (Exam Console layout)
+  const [allocSearch, setAllocSearch] = useState('');
+  const [allocSemesterFilter, setAllocSemesterFilter] = useState('ALL');
+  const [allocDeptFilter, setAllocDeptFilter] = useState('ALL');
+  const [updatingCourseId, setUpdatingCourseId] = useState<number | null>(null);
 
   // Course Dialog States
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
@@ -85,58 +88,202 @@ export default function CoursesManagementPage() {
     queryFn: fetchDepartments,
   });
 
-  // Fetch Lecturers for Assignments & Faculty Tab
-  const {
-    data: lecturersList = [],
-    isLoading: isLecturersLoading,
-    refetch: refetchLecturers,
-  } = useQuery({
+  // Fetch Lecturers for Assignments
+  const { data: lecturersList = [], refetch: refetchLecturers } = useQuery({
     queryKey: ['lecturers-list-assignment'],
     queryFn: async () => {
       const response = await apiClient.get('/lecturers');
       return response.data?.data || [];
     },
+    enabled: activeTab === 'lecturers' || markerDialogOpen,
+  });
+
+  // Group lecturers by department for categorized dropdowns
+  const lecturersByDepartment = React.useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    for (const lec of lecturersList || []) {
+      const deptName = lec.department?.department_name || 'Other / General Faculty';
+      if (!groups[deptName]) {
+        groups[deptName] = [];
+      }
+      groups[deptName].push(lec);
+    }
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [lecturersList]);
+
+  // Fetch all courses for Lecturer & Examiner Allocations table
+  const {
+    data: allocationCoursesData,
+    isLoading: isAllocationCoursesLoading,
+    refetch: refetchAllocationCourses,
+  } = useQuery({
+    queryKey: ['courses-allocations-all'],
+    queryFn: async () => {
+      const response = await apiClient.get('/courses', {
+        params: { page: 1, limit: 500 },
+      });
+      return response.data?.data;
+    },
     enabled: activeTab === 'lecturers',
   });
 
-  // Fetch Courses Lookup for assigning courses to lecturer
-  const { data: coursesLookup = [] } = useQuery({
-    queryKey: ['courses-lookup-list'],
-    queryFn: async () => {
-      const response = await apiClient.get('/reports/courses');
-      return response.data?.data || [];
-    },
-    enabled: activeTab === 'lecturers' && lecturersSubTab === 'faculty',
-  });
-
-  const handleAssignCourseToLecturer = async (courseId: number, lecturerId: number) => {
+  const handleSetCourseLecturerInline = async (courseId: number, lecturerIdStr: string) => {
+    setUpdatingCourseId(courseId);
     try {
-      await apiClient.post(`/courses/${courseId}/lecturers`, { lecturerId });
-      toast.success('Lecturer assigned successfully.');
-      refetchLecturers();
+      const lecturerId = lecturerIdStr ? parseInt(lecturerIdStr, 10) : null;
+      await apiClient.put(`/courses/${courseId}/lecturer`, { lecturerId });
+      toast.success(
+        lecturerId ? 'Course lecturer assigned successfully.' : 'Course lecturer cleared.',
+      );
+      refetchAllocationCourses();
       refetchCourses();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to assign lecturer.');
+      toast.error(err.response?.data?.message || 'Failed to update course lecturer.');
+    } finally {
+      setUpdatingCourseId(null);
     }
   };
 
-  const handleRemoveCourseFromLecturer = async (courseId: number, lecturerId: number) => {
+  const handleSetCourseInChargeInline = async (courseId: number, inChargeIdStr: string) => {
+    setUpdatingCourseId(courseId);
+    try {
+      const inChargeLecturerId = inChargeIdStr ? parseInt(inChargeIdStr, 10) : null;
+      await apiClient.patch(`/courses/${courseId}/in-charge`, { inChargeLecturerId });
+      toast.success(
+        inChargeLecturerId
+          ? 'Course In-Charge assigned successfully.'
+          : 'Course In-Charge cleared.',
+      );
+      refetchAllocationCourses();
+      refetchCourses();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to update Course In-Charge.');
+    } finally {
+      setUpdatingCourseId(null);
+    }
+  };
+
+  const handleRemovePrimaryFirstMarker = async (c: any) => {
     const confirmed = await confirm({
-      title: 'Remove Course Assignment?',
-      message:
-        'Are you sure you want to remove this course assignment? The lecturer will no longer be attached to this course module.',
+      title: 'Remove 1st Marker?',
+      message: `Are you sure you want to remove the assigned primary 1st Marker from ${c.course_code}? The 1st Marker position will remain empty (2nd Marker will not be shifted).`,
+      confirmText: 'Remove 1st Marker',
+      variant: 'destructive',
+    });
+    if (!confirmed) return;
+
+    setUpdatingCourseId(c.course_id);
+    try {
+      await apiClient.put(`/courses/${c.course_id}/markers`, {
+        isFirstMarkerSameAsInCharge: c.is_first_marker_same_as_in_charge ?? true,
+        inChargeLecturerId: c.in_charge_lecturer_id || null,
+        firstMarkerType: null,
+        firstMarkerLecturerId: null,
+        firstMarkerName: null,
+        firstMarkerEmail: null,
+        additionalFirstMarkers: (c.additional_first_markers || []).map((m: any) => ({
+          id: m.id,
+          type: m.type,
+          lecturerId: m.lecturerId || null,
+          name: m.name || null,
+          email: m.email || null,
+        })),
+        secondMarkerType: c.second_marker_type || null,
+        secondMarkerLecturerId: c.second_marker_lecturer_id || null,
+        secondMarkerName: c.second_marker_name || null,
+        secondMarkerEmail: c.second_marker_email || null,
+      });
+      toast.success('1st Marker removed. The 1st Marker slot is now empty.');
+      refetchAllocationCourses();
+      refetchCourses();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to remove 1st Marker.');
+    } finally {
+      setUpdatingCourseId(null);
+    }
+  };
+
+  const handleRemoveAdditionalFirstMarkerInline = async (c: any, markerId: string) => {
+    const confirmed = await confirm({
+      title: 'Remove Additional 1st Marker?',
+      message: `Remove this additional 1st marker from ${c.course_code}?`,
       confirmText: 'Remove',
       variant: 'destructive',
     });
-    if (confirmed) {
-      try {
-        await apiClient.delete(`/courses/${courseId}/lecturers/${lecturerId}`);
-        toast.success('Course assignment removed successfully.');
-        refetchLecturers();
-        refetchCourses();
-      } catch (err: any) {
-        toast.error(err.response?.data?.message || 'Failed to remove lecturer.');
-      }
+    if (!confirmed) return;
+
+    setUpdatingCourseId(c.course_id);
+    try {
+      const remaining = (c.additional_first_markers || [])
+        .filter((m: any) => m.id !== markerId)
+        .map((m: any) => ({
+          id: m.id,
+          type: m.type,
+          lecturerId: m.lecturerId || null,
+          name: m.name || null,
+          email: m.email || null,
+        }));
+
+      await apiClient.put(`/courses/${c.course_id}/markers`, {
+        isFirstMarkerSameAsInCharge: c.is_first_marker_same_as_in_charge ?? true,
+        inChargeLecturerId: c.in_charge_lecturer_id || null,
+        firstMarkerType: c.first_marker_type || null,
+        firstMarkerLecturerId: c.first_marker_lecturer_id || null,
+        firstMarkerName: c.first_marker_name || null,
+        firstMarkerEmail: c.first_marker_email || null,
+        additionalFirstMarkers: remaining,
+        secondMarkerType: c.second_marker_type || null,
+        secondMarkerLecturerId: c.second_marker_lecturer_id || null,
+        secondMarkerName: c.second_marker_name || null,
+        secondMarkerEmail: c.second_marker_email || null,
+      });
+      toast.success('Additional 1st Marker removed.');
+      refetchAllocationCourses();
+      refetchCourses();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to remove additional 1st Marker.');
+    } finally {
+      setUpdatingCourseId(null);
+    }
+  };
+
+  const handleRemoveSecondMarkerInline = async (c: any) => {
+    const confirmed = await confirm({
+      title: 'Remove 2nd Marker?',
+      message: `Are you sure you want to remove the assigned 2nd Marker from ${c.course_code}?`,
+      confirmText: 'Remove 2nd Marker',
+      variant: 'destructive',
+    });
+    if (!confirmed) return;
+
+    setUpdatingCourseId(c.course_id);
+    try {
+      await apiClient.put(`/courses/${c.course_id}/markers`, {
+        isFirstMarkerSameAsInCharge: c.is_first_marker_same_as_in_charge ?? true,
+        inChargeLecturerId: c.in_charge_lecturer_id || null,
+        firstMarkerType: c.first_marker_type || null,
+        firstMarkerLecturerId: c.first_marker_lecturer_id || null,
+        firstMarkerName: c.first_marker_name || null,
+        firstMarkerEmail: c.first_marker_email || null,
+        additionalFirstMarkers: (c.additional_first_markers || []).map((m: any) => ({
+          id: m.id,
+          type: m.type,
+          lecturerId: m.lecturerId || null,
+          name: m.name || null,
+          email: m.email || null,
+        })),
+        secondMarkerType: null,
+        secondMarkerLecturerId: null,
+        secondMarkerName: null,
+        secondMarkerEmail: null,
+      });
+      toast.success('2nd Marker removed.');
+      refetchAllocationCourses();
+      refetchCourses();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to remove 2nd Marker.');
+    } finally {
+      setUpdatingCourseId(null);
     }
   };
 
@@ -257,708 +404,544 @@ export default function CoursesManagementPage() {
     }
   };
 
-  const handleAddNewLecturer = () => {
-    setSelectedUserForEdit({ role_id: 3 }); // Preset to Lecturer role
-    setUserDialogOpen(true);
-  };
-
   const courses = courseData?.items || [];
   const totalPages = courseData?.totalPages || 1;
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Title Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Courses & Curriculum Management</h1>
-          <p className="text-muted-foreground mt-1.5 text-sm">
-            Manage course catalog, registration windows, semester structures, and lecturer/examiner
-            allocations.
-          </p>
-        </div>
+    <>
+      <div className="space-y-6 animate-fadeIn">
+        {/* Title Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Courses & Curriculum Management</h1>
+            <p className="text-muted-foreground mt-1.5 text-sm">
+              Manage course catalog, registration windows, semester structures, and
+              lecturer/examiner allocations.
+            </p>
+          </div>
 
-        {isAdminOrStaff && (
-          <div className="flex items-center gap-3">
-            {activeTab === 'courses' && (
-              <>
+          {isAdminOrStaff && (
+            <div className="flex items-center gap-3">
+              {activeTab === 'courses' && (
+                <>
+                  <button
+                    onClick={() => setCourseImportDialogOpen(true)}
+                    className="px-4 py-2.5 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs flex items-center gap-2 border border-border/80 cursor-pointer shadow-sm"
+                  >
+                    <Upload className="h-4 w-4" /> Bulk Import Courses
+                  </button>
+                  <button
+                    onClick={handleCreateCourse}
+                    className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
+                  >
+                    <Plus className="h-4 w-4" /> Add New Course
+                  </button>
+                </>
+              )}
+              {activeTab === 'periods' && (
                 <button
-                  onClick={() => setCourseImportDialogOpen(true)}
-                  className="px-4 py-2.5 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs flex items-center gap-2 border border-border/80 cursor-pointer shadow-sm"
-                >
-                  <Upload className="h-4 w-4" /> Bulk Import Courses
-                </button>
-                <button
-                  onClick={handleCreateCourse}
+                  onClick={() => setPeriodDialogOpen(true)}
                   className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
                 >
-                  <Plus className="h-4 w-4" /> Add New Course
+                  <Plus className="h-4 w-4" /> Open Registration Window
                 </button>
-              </>
-            )}
-            {activeTab === 'periods' && (
-              <button
-                onClick={() => setPeriodDialogOpen(true)}
-                className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
-              >
-                <Plus className="h-4 w-4" /> Open Registration Window
-              </button>
-            )}
-            {activeTab === 'lecturers' && (
-              <button
-                onClick={handleAddNewLecturer}
-                className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
-              >
-                <UserPlus className="h-4 w-4" /> Add New Lecturer
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+              )}
+            </div>
+          )}
+        </div>
 
-      {/* Tabs Control */}
-      <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
-        <button
-          onClick={() => setActiveTab('courses')}
-          className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
-            activeTab === 'courses'
-              ? 'text-primary border-b-2 border-primary font-semibold'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <BookOpen className="h-4 w-4" /> Course Catalog ({courseData?.total || 0})
-        </button>
-        <button
-          onClick={() => setActiveTab('periods')}
-          className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
-            activeTab === 'periods'
-              ? 'text-primary border-b-2 border-primary font-semibold'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <Calendar className="h-4 w-4" /> Registration Windows ({periods.length})
-        </button>
-        {isAdminOrStaff && (
+        {/* Tabs Control */}
+        <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
           <button
-            onClick={() => setActiveTab('lecturers')}
+            onClick={() => setActiveTab('courses')}
             className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
-              activeTab === 'lecturers'
+              activeTab === 'courses'
                 ? 'text-primary border-b-2 border-primary font-semibold'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <UserCheck className="h-4 w-4" /> Lecturer & Examiner Allocations
+            <BookOpen className="h-4 w-4" /> Course Catalog ({courseData?.total || 0})
           </button>
-        )}
-      </div>
+          <button
+            onClick={() => setActiveTab('periods')}
+            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
+              activeTab === 'periods'
+                ? 'text-primary border-b-2 border-primary font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Calendar className="h-4 w-4" /> Registration Windows ({periods.length})
+          </button>
+          {isAdminOrStaff && (
+            <button
+              onClick={() => setActiveTab('lecturers')}
+              className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
+                activeTab === 'lecturers'
+                  ? 'text-primary border-b-2 border-primary font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <UserCheck className="h-4 w-4" /> Lecturer & Examiner Allocations
+            </button>
+          )}
+        </div>
 
-      {/* ========================================== */}
-      {/* TAB 1: COURSES CATALOG (ORDERED BY SEMESTER) */}
-      {/* ========================================== */}
-      {activeTab === 'courses' && (
-        <div className="space-y-6">
-          {/* Filter & Search Bar */}
-          <div className="bg-card border border-border/80 p-5 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-            {/* Search Input */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search course code or title..."
-                value={courseSearch}
-                onChange={(e) => {
-                  setCourseSearch(e.target.value);
-                  setCoursePage(1);
-                }}
-                className="w-full pl-10 pr-4 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
-              />
-              {courseSearch && (
-                <button
-                  onClick={() => {
-                    setCourseSearch('');
-                    setCoursePage(1);
-                  }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Filter Dropdowns Row */}
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Department Filter */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-bold text-muted-foreground uppercase">
-                  Department:
-                </span>
-                <select
-                  value={deptFilter}
+        {/* ========================================== */}
+        {/* TAB 1: COURSES CATALOG (ORDERED BY SEMESTER) */}
+        {/* ========================================== */}
+        {activeTab === 'courses' && (
+          <div className="space-y-6 animate-tabSwipeUp">
+            {/* Filter & Search Bar */}
+            <div className="bg-card border border-border/80 p-5 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              {/* Search Input */}
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search course code or title..."
+                  value={courseSearch}
                   onChange={(e) => {
-                    setDeptFilter(e.target.value);
+                    setCourseSearch(e.target.value);
                     setCoursePage(1);
                   }}
-                  className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 max-w-[180px] truncate cursor-pointer"
-                >
-                  <option value="">All Departments</option>
-                  {departments.map((d: any) => (
-                    <option key={d.department_id} value={d.department_id} className="bg-card">
-                      {d.department_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Degree Filter */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-bold text-muted-foreground uppercase">
-                  Degree:
-                </span>
-                <select
-                  value={degreeFilter}
-                  onChange={(e) => {
-                    setDegreeFilter(e.target.value);
-                    setCoursePage(1);
-                  }}
-                  className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 max-w-[200px] truncate cursor-pointer"
-                >
-                  <option value="">All Degree Programs</option>
-                  {degrees.map((deg: any) => (
-                    <option key={deg.degree_id} value={deg.degree_id} className="bg-card">
-                      {deg.degree_code} - {deg.degree_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Semester Filter */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-bold text-muted-foreground uppercase">
-                  Semester:
-                </span>
-                <select
-                  value={semesterFilter}
-                  onChange={(e) => {
-                    setSemesterFilter(e.target.value);
-                    setCoursePage(1);
-                  }}
-                  className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
-                >
-                  <option value="">All Semesters</option>
-                  <option value="1.1">Semester 1.1</option>
-                  <option value="1.2">Semester 1.2</option>
-                  <option value="2.1">Semester 2.1</option>
-                  <option value="2.2">Semester 2.2</option>
-                  <option value="3.1">Semester 3.1</option>
-                  <option value="3.2">Semester 3.2</option>
-                  <option value="4.1">Semester 4.1</option>
-                  <option value="4.2">Semester 4.2</option>
-                </select>
-              </div>
-
-              {(deptFilter || degreeFilter || semesterFilter || courseSearch) && (
-                <button
-                  onClick={() => {
-                    setDeptFilter('');
-                    setDegreeFilter('');
-                    setSemesterFilter('');
-                    setCourseSearch('');
-                    setCoursePage(1);
-                  }}
-                  className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
-                >
-                  Reset
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Courses Table */}
-          <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
-                    <th className="px-6 py-4">Semester</th>
-                    <th className="px-6 py-4">Course Code</th>
-                    <th className="px-6 py-4">Course Name</th>
-                    <th className="px-6 py-4">Department</th>
-                    <th className="px-6 py-4">Degrees</th>
-                    <th className="px-6 py-4">Credits</th>
-                    {isAdminOrStaff && <th className="px-6 py-4 text-right">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60 text-sm font-medium">
-                  {isCoursesLoading ? (
-                    <tr>
-                      <td
-                        colSpan={isAdminOrStaff ? 7 : 6}
-                        className="text-center py-20 text-muted-foreground"
-                      >
-                        <span className="inline-flex items-center gap-2">
-                          <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></span>
-                          Loading courses catalog (ordered by semester)...
-                        </span>
-                      </td>
-                    </tr>
-                  ) : courses.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={isAdminOrStaff ? 7 : 6}
-                        className="text-center py-20 text-muted-foreground"
-                      >
-                        No courses found matching your criteria.
-                      </td>
-                    </tr>
-                  ) : (
-                    courses.map((course: any) => (
-                      <tr
-                        key={course.course_id}
-                        className="hover:bg-secondary/15 transition-colors"
-                      >
-                        <td className="px-6 py-4.5 font-bold font-mono text-primary text-xs">
-                          Sem {course.semester}
-                        </td>
-                        <td className="px-6 py-4.5 font-bold text-foreground font-mono">
-                          {course.course_code}
-                        </td>
-                        <td className="px-6 py-4.5 text-foreground">{course.course_name}</td>
-                        <td className="px-6 py-4.5 text-xs text-muted-foreground uppercase font-semibold">
-                          {course.department?.department_code}
-                        </td>
-                        <td className="px-6 py-4.5">
-                          <div className="flex flex-wrap gap-1 max-w-xs items-center">
-                            {course.degrees && course.degrees.length > 0 ? (
-                              course.degrees.map((d: any) => (
-                                <span
-                                  key={d.degree_id}
-                                  className="inline-block px-2 py-0.5 bg-secondary text-secondary-foreground rounded text-[10px] font-bold font-mono"
-                                >
-                                  {d.degree?.degree_code || d.degree_id}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="text-xs text-muted-foreground/60 italic">None</span>
-                            )}
-                            {course.course_specializations &&
-                            course.course_specializations.length > 0 ? (
-                              course.course_specializations.map((cs: any) => (
-                                <span
-                                  key={cs.specialization_id}
-                                  title={`${cs.specialization?.specialization_name} (${cs.status})`}
-                                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold font-mono border ${
-                                    cs.status === 'COMPULSORY'
-                                      ? 'bg-primary/10 text-primary border-primary/30'
-                                      : 'bg-amber-500/10 text-amber-500 border-amber-500/30'
-                                  }`}
-                                >
-                                  {cs.specialization?.specialization_code || cs.specialization_id}:{' '}
-                                  {cs.status === 'COMPULSORY' ? 'C' : 'O'}
-                                </span>
-                              ))
-                            ) : course.specialization ? (
-                              <span
-                                title={`Specialization: ${course.specialization.specialization_name}`}
-                                className="inline-block px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded text-[10px] font-bold font-mono"
-                              >
-                                {course.specialization.specialization_code}
-                              </span>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4.5 font-mono text-xs">{course.credit_value}</td>
-                        {isAdminOrStaff && (
-                          <td className="px-6 py-4.5 text-right space-x-2 whitespace-nowrap">
-                            <button
-                              onClick={() => handleEditCourse(course)}
-                              className="px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg transition text-xs font-semibold cursor-pointer"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteCourse(course.course_id)}
-                              className="px-3 py-1.5 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-lg transition text-xs font-semibold cursor-pointer"
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <div className="px-6 py-4 border-t border-border/80 flex items-center justify-between bg-secondary/10">
-                <span className="text-xs text-muted-foreground">
-                  Page {coursePage} of {totalPages}
-                </span>
-                <div className="flex items-center gap-2">
+                  className="w-full pl-10 pr-4 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
+                />
+                {courseSearch && (
                   <button
-                    onClick={() => setCoursePage((p) => Math.max(1, p - 1))}
-                    disabled={coursePage === 1}
-                    className="p-1.5 bg-secondary rounded-lg text-muted-foreground disabled:opacity-50 cursor-pointer"
+                    onClick={() => {
+                      setCourseSearch('');
+                      setCoursePage(1);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
                   >
-                    <ChevronLeft className="h-4 w-4" />
+                    <X className="h-3.5 w-3.5" />
                   </button>
-                  <button
-                    onClick={() => setCoursePage((p) => Math.min(totalPages, p + 1))}
-                    disabled={coursePage === totalPages}
-                    className="p-1.5 bg-secondary rounded-lg text-muted-foreground disabled:opacity-50 cursor-pointer"
+                )}
+              </div>
+
+              {/* Filter Dropdowns Row */}
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Department Filter */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase">
+                    Department:
+                  </span>
+                  <select
+                    value={deptFilter}
+                    onChange={(e) => {
+                      setDeptFilter(e.target.value);
+                      setCoursePage(1);
+                    }}
+                    className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 max-w-[180px] truncate cursor-pointer"
                   >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+                    <option value="">All Departments</option>
+                    {departments.map((d: any) => (
+                      <option key={d.department_id} value={d.department_id} className="bg-card">
+                        {d.department_name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
+                {/* Degree Filter */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase">
+                    Degree:
+                  </span>
+                  <select
+                    value={degreeFilter}
+                    onChange={(e) => {
+                      setDegreeFilter(e.target.value);
+                      setCoursePage(1);
+                    }}
+                    className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 max-w-[200px] truncate cursor-pointer"
+                  >
+                    <option value="">All Degree Programs</option>
+                    {degrees.map((deg: any) => (
+                      <option key={deg.degree_id} value={deg.degree_id} className="bg-card">
+                        {deg.degree_code} - {deg.degree_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Semester Filter */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase">
+                    Semester:
+                  </span>
+                  <select
+                    value={semesterFilter}
+                    onChange={(e) => {
+                      setSemesterFilter(e.target.value);
+                      setCoursePage(1);
+                    }}
+                    className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+                  >
+                    <option value="">All Semesters</option>
+                    <option value="1.1">Semester 1.1</option>
+                    <option value="1.2">Semester 1.2</option>
+                    <option value="2.1">Semester 2.1</option>
+                    <option value="2.2">Semester 2.2</option>
+                    <option value="3.1">Semester 3.1</option>
+                    <option value="3.2">Semester 3.2</option>
+                    <option value="4.1">Semester 4.1</option>
+                    <option value="4.2">Semester 4.2</option>
+                  </select>
+                </div>
+
+                {(deptFilter || degreeFilter || semesterFilter || courseSearch) && (
+                  <button
+                    onClick={() => {
+                      setDeptFilter('');
+                      setDegreeFilter('');
+                      setSemesterFilter('');
+                      setCourseSearch('');
+                      setCoursePage(1);
+                    }}
+                    className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                )}
               </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ========================================== */}
-      {/* TAB 2: REGISTRATION WINDOWS */}
-      {/* ========================================== */}
-      {activeTab === 'periods' && (
-        <div className="space-y-6 animate-fadeIn">
-          <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
-                    <th className="px-6 py-4">Batch / Academic Year</th>
-                    <th className="px-6 py-4">Semester</th>
-                    <th className="px-6 py-4">Window Type</th>
-                    <th className="px-6 py-4">Start Date</th>
-                    <th className="px-6 py-4">End Date</th>
-                    <th className="px-6 py-4">Status</th>
-                    {isAdminOrStaff && <th className="px-6 py-4 text-right">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60 text-sm font-medium">
-                  {isPeriodsLoading ? (
-                    <tr>
-                      <td
-                        colSpan={isAdminOrStaff ? 7 : 6}
-                        className="text-center py-20 text-muted-foreground"
-                      >
-                        <span className="inline-flex items-center gap-2">
-                          <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></span>
-                          Loading registration windows...
-                        </span>
-                      </td>
-                    </tr>
-                  ) : periods.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={isAdminOrStaff ? 7 : 6}
-                        className="text-center py-20 text-muted-foreground"
-                      >
-                        No registration periods have been created yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    periods.map((p: any) => {
-                      const startStr = new Date(p.start_date).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                      });
-                      const endStr = new Date(p.end_date).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                      });
-
-                      const isOpen = p.status === 'OPEN';
-                      const isSuspended = p.status === 'SUSPENDED';
-                      const isMedicalRepeat =
-                        p.window_type === 'MEDICAL_REPEAT_REGISTRATION' ||
-                        p.window_type === 'PROPER_REPEAT_REGISTRATION';
-
-                      const isEditingEnd = editingEndDatePeriodId === p.period_id;
-
-                      return (
-                        <tr key={p.period_id} className="hover:bg-secondary/15 transition-colors">
-                          <td className="px-6 py-4.5 font-semibold text-foreground font-mono">
-                            {p.batch ? `Batch ${p.batch}` : `Year ${p.academic_year}`}
-                          </td>
-                          <td className="px-6 py-4.5 font-mono text-muted-foreground">
-                            Semester {p.semester}
-                          </td>
-                          <td className="px-6 py-4.5">
-                            <span
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold font-mono border ${
-                                isMedicalRepeat
-                                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                                  : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                              }`}
-                            >
-                              {isMedicalRepeat ? 'Medical / Repeat' : 'Semester Registration'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4.5 text-muted-foreground">{startStr}</td>
-                          <td className="px-6 py-4.5 text-muted-foreground">
-                            {isEditingEnd ? (
-                              <div className="flex items-center gap-1.5">
-                                <input
-                                  type="date"
-                                  value={editingEndDateValue}
-                                  onChange={(e) => setEditingEndDateValue(e.target.value)}
-                                  className="px-2 py-1 bg-background border border-border rounded text-xs text-foreground font-medium"
-                                />
-                                <button
-                                  onClick={() => handleSaveEndDate(p.period_id)}
-                                  className="p-1 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition cursor-pointer"
-                                  title="Save End Date"
-                                >
-                                  <Check className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => setEditingEndDatePeriodId(null)}
-                                  className="p-1 bg-secondary text-muted-foreground rounded hover:text-foreground transition cursor-pointer"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <span>{endStr}</span>
-                                {isAdminOrStaff && (
-                                  <button
-                                    onClick={() => {
-                                      setEditingEndDatePeriodId(p.period_id);
-                                      setEditingEndDateValue(
-                                        new Date(p.end_date).toISOString().split('T')[0],
-                                      );
-                                    }}
-                                    className="p-1 text-muted-foreground hover:text-primary hover:bg-secondary/40 rounded transition cursor-pointer"
-                                    title="Edit End Date"
-                                  >
-                                    <Edit3 className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4.5">
-                            <span
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
-                                isOpen
-                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                  : isSuspended
-                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                    : 'bg-red-500/10 text-red-400 border-red-500/20'
-                              }`}
-                            >
-                              <span
-                                className={`h-1.5 w-1.5 rounded-full ${
-                                  isOpen
-                                    ? 'bg-emerald-400'
-                                    : isSuspended
-                                      ? 'bg-amber-400'
-                                      : 'bg-red-400'
-                                }`}
-                              />
-                              {p.status}
-                            </span>
-                          </td>
-                          {isAdminOrStaff && (
-                            <td className="px-6 py-4.5 text-right space-x-1.5 whitespace-nowrap">
-                              {!isOpen && (
-                                <button
-                                  onClick={() => handlePeriodStatusChange(p.period_id, 'OPEN')}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition text-xs font-semibold cursor-pointer"
-                                >
-                                  <Play className="h-3 w-3" />
-                                  Open
-                                </button>
-                              )}
-                              {isOpen && (
-                                <button
-                                  onClick={() => handlePeriodStatusChange(p.period_id, 'SUSPENDED')}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 rounded-lg transition text-xs font-semibold cursor-pointer"
-                                >
-                                  <Pause className="h-3 w-3" />
-                                  Suspend
-                                </button>
-                              )}
-                              {p.status !== 'CLOSED' && (
-                                <button
-                                  onClick={() => handlePeriodStatusChange(p.period_id, 'CLOSED')}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg transition text-xs font-semibold cursor-pointer"
-                                >
-                                  <StopCircle className="h-3 w-3" />
-                                  Close
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleDeletePeriod(p.period_id)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-lg transition text-xs font-semibold cursor-pointer"
-                                title="Delete Window"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                                Delete
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* ========================================== */}
-      {/* TAB 3: LECTURER & EXAMINER ALLOCATIONS */}
-      {/* ========================================== */}
-      {activeTab === 'lecturers' && isAdminOrStaff && (
-        <div className="space-y-6 animate-fadeIn">
-          {/* Sub-Navigation Bar */}
-          <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
-            <button
-              onClick={() => setLecturersSubTab('examiners')}
-              className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
-                lecturersSubTab === 'examiners'
-                  ? 'text-primary border-b-2 border-primary font-semibold'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <UserCheck className="h-4 w-4" />
-              Course Examiner Allocations
-            </button>
-            <button
-              onClick={() => setLecturersSubTab('faculty')}
-              className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
-                lecturersSubTab === 'faculty'
-                  ? 'text-primary border-b-2 border-primary font-semibold'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Users className="h-4 w-4" />
-              Faculty Lecturers Directory & Management
-            </button>
-          </div>
-
-          {/* SUB-TAB 1: COURSE EXAMINER ALLOCATIONS */}
-          {lecturersSubTab === 'examiners' && (
+            {/* Courses Table */}
             <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
-              <div className="px-6 py-4 border-b border-border/60 bg-secondary/15 flex justify-between items-center">
-                <div>
-                  <h3 className="text-base font-bold text-foreground">
-                    Course Examiner Allocations
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Assign 1st Examiner (default course lecturer or external 1st marker) and 2nd
-                    Examiner (internal or external 2nd marker) per course subject.
-                  </p>
-                </div>
-              </div>
-
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs sm:text-sm">
+                <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
                       <th className="px-6 py-4">Semester</th>
-                      <th className="px-6 py-4">Course Code & Name</th>
+                      <th className="px-6 py-4">Course Code</th>
+                      <th className="px-6 py-4">Course Name</th>
                       <th className="px-6 py-4">Department</th>
-                      <th className="px-6 py-4">1st Examiner / Marker</th>
-                      <th className="px-6 py-4">2nd Examiner / Marker</th>
-                      <th className="px-6 py-4 text-right">Action</th>
+                      <th className="px-6 py-4">Degrees</th>
+                      <th className="px-6 py-4">Credits</th>
+                      {isAdminOrStaff && <th className="px-6 py-4 text-right">Actions</th>}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/60 font-medium">
+                  <tbody className="divide-y divide-border/60 text-sm font-medium">
                     {isCoursesLoading ? (
                       <tr>
-                        <td colSpan={6} className="text-center py-20 text-muted-foreground">
+                        <td
+                          colSpan={isAdminOrStaff ? 7 : 6}
+                          className="text-center py-20 text-muted-foreground"
+                        >
                           <span className="inline-flex items-center gap-2">
                             <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></span>
-                            Loading course marker allocations...
+                            Loading courses catalog (ordered by semester)...
                           </span>
                         </td>
                       </tr>
                     ) : courses.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center py-20 text-muted-foreground">
-                          No courses found in the database.
+                        <td
+                          colSpan={isAdminOrStaff ? 7 : 6}
+                          className="text-center py-20 text-muted-foreground"
+                        >
+                          No courses found matching your criteria.
                         </td>
                       </tr>
                     ) : (
-                      courses.map((c: any) => {
-                        const isFirstExt = c.first_marker_type === 'EXTERNAL';
-                        const firstMarkerName = isFirstExt
-                          ? c.first_marker_name
-                            ? `${c.first_marker_name} (External)`
-                            : 'External Marker'
-                          : c.first_marker_lecturer?.user?.full_name ||
-                            c.lecturers?.[0]?.lecturer?.user?.full_name ||
-                            'Unassigned';
-
-                        const isSecondExt = c.second_marker_type === 'EXTERNAL';
-                        const secondMarkerName = isSecondExt
-                          ? c.second_marker_name
-                            ? `${c.second_marker_name} (External)`
-                            : 'External 2nd Marker'
-                          : c.second_marker_lecturer?.user?.full_name || 'Unassigned';
-
-                        return (
-                          <tr key={c.course_id} className="hover:bg-secondary/15 transition-colors">
-                            <td className="px-6 py-4 font-bold font-mono text-primary text-xs">
-                              Sem {c.semester}
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="font-bold text-foreground font-mono">
-                                {c.course_code}
-                              </div>
-                              <div className="text-xs text-muted-foreground">{c.course_name}</div>
-                            </td>
-                            <td className="px-6 py-4 text-xs text-muted-foreground uppercase font-semibold">
-                              {c.department?.department_code}
-                            </td>
-                            <td className="px-6 py-4">
-                              <span
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                                  isFirstExt
-                                    ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-                                    : firstMarkerName !== 'Unassigned'
-                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                      : 'bg-secondary text-muted-foreground/60'
-                                }`}
-                              >
-                                <UserCheck className="h-3.5 w-3.5" />
-                                {firstMarkerName}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                                  isSecondExt
-                                    ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-                                    : secondMarkerName !== 'Unassigned'
-                                      ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                                      : 'bg-secondary text-muted-foreground/60'
-                                }`}
-                              >
-                                <User className="h-3.5 w-3.5" />
-                                {secondMarkerName}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-right">
+                      courses.map((course: any) => (
+                        <tr
+                          key={course.course_id}
+                          className="hover:bg-secondary/15 transition-colors"
+                        >
+                          <td className="px-6 py-4.5 font-bold font-mono text-primary text-xs">
+                            Sem {course.semester}
+                          </td>
+                          <td className="px-6 py-4.5 font-bold text-foreground font-mono">
+                            {course.course_code}
+                          </td>
+                          <td className="px-6 py-4.5 text-foreground">{course.course_name}</td>
+                          <td className="px-6 py-4.5 text-xs text-muted-foreground uppercase font-semibold">
+                            {course.department?.department_code}
+                          </td>
+                          <td className="px-6 py-4.5">
+                            <div className="flex flex-wrap gap-1 max-w-xs items-center">
+                              {course.degrees && course.degrees.length > 0 ? (
+                                course.degrees.map((d: any) => (
+                                  <span
+                                    key={d.degree_id}
+                                    className="inline-block px-2 py-0.5 bg-secondary text-secondary-foreground rounded text-[10px] font-bold font-mono"
+                                  >
+                                    {d.degree?.degree_code || d.degree_id}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-muted-foreground/60 italic">
+                                  None
+                                </span>
+                              )}
+                              {course.course_specializations &&
+                              course.course_specializations.length > 0 ? (
+                                course.course_specializations.map((cs: any) => (
+                                  <span
+                                    key={cs.specialization_id}
+                                    title={`${cs.specialization?.specialization_name} (${cs.status})`}
+                                    className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold font-mono border ${
+                                      cs.status === 'COMPULSORY'
+                                        ? 'bg-primary/10 text-primary border-primary/30'
+                                        : 'bg-amber-500/10 text-amber-500 border-amber-500/30'
+                                    }`}
+                                  >
+                                    {cs.specialization?.specialization_code || cs.specialization_id}
+                                    : {cs.status === 'COMPULSORY' ? 'C' : 'O'}
+                                  </span>
+                                ))
+                              ) : course.specialization ? (
+                                <span
+                                  title={`Specialization: ${course.specialization.specialization_name}`}
+                                  className="inline-block px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded text-[10px] font-bold font-mono"
+                                >
+                                  {course.specialization.specialization_code}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4.5 font-mono text-xs">{course.credit_value}</td>
+                          {isAdminOrStaff && (
+                            <td className="px-6 py-4.5 text-right space-x-2 whitespace-nowrap">
                               <button
-                                onClick={() => {
-                                  setMarkerCourse(c);
-                                  setMarkerDialogOpen(true);
-                                }}
-                                className="px-3.5 py-1.5 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-1.5 ml-auto cursor-pointer shadow-md shadow-primary/10"
+                                onClick={() => handleEditCourse(course)}
+                                className="px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg transition text-xs font-semibold cursor-pointer"
                               >
-                                <Edit3 className="h-3.5 w-3.5" /> Assign Markers
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCourse(course.course_id)}
+                                className="px-3 py-1.5 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-lg transition text-xs font-semibold cursor-pointer"
+                              >
+                                Delete
                               </button>
                             </td>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="px-6 py-4 border-t border-border/80 flex items-center justify-between bg-secondary/10">
+                  <span className="text-xs text-muted-foreground">
+                    Page {coursePage} of {totalPages}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCoursePage((p) => Math.max(1, p - 1))}
+                      disabled={coursePage === 1}
+                      className="p-1.5 bg-secondary rounded-lg text-muted-foreground disabled:opacity-50 cursor-pointer"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setCoursePage((p) => Math.min(totalPages, p + 1))}
+                      disabled={coursePage === totalPages}
+                      className="p-1.5 bg-secondary rounded-lg text-muted-foreground disabled:opacity-50 cursor-pointer"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================== */}
+        {/* TAB 2: REGISTRATION WINDOWS */}
+        {/* ========================================== */}
+        {activeTab === 'periods' && (
+          <div className="space-y-6 animate-tabSwipeUp">
+            <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
+                      <th className="px-6 py-4">Batch / Academic Year</th>
+                      <th className="px-6 py-4">Semester</th>
+                      <th className="px-6 py-4">Window Type</th>
+                      <th className="px-6 py-4">Start Date</th>
+                      <th className="px-6 py-4">End Date</th>
+                      <th className="px-6 py-4">Status</th>
+                      {isAdminOrStaff && <th className="px-6 py-4 text-right">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60 text-sm font-medium">
+                    {isPeriodsLoading ? (
+                      <tr>
+                        <td
+                          colSpan={isAdminOrStaff ? 7 : 6}
+                          className="text-center py-20 text-muted-foreground"
+                        >
+                          <span className="inline-flex items-center gap-2">
+                            <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></span>
+                            Loading registration windows...
+                          </span>
+                        </td>
+                      </tr>
+                    ) : periods.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={isAdminOrStaff ? 7 : 6}
+                          className="text-center py-20 text-muted-foreground"
+                        >
+                          No registration periods have been created yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      periods.map((p: any) => {
+                        const startStr = new Date(p.start_date).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        });
+                        const endStr = new Date(p.end_date).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        });
+
+                        const isOpen = p.status === 'OPEN';
+                        const isSuspended = p.status === 'SUSPENDED';
+                        const isMedicalRepeat =
+                          p.window_type === 'MEDICAL_REPEAT_REGISTRATION' ||
+                          p.window_type === 'PROPER_REPEAT_REGISTRATION';
+
+                        const isEditingEnd = editingEndDatePeriodId === p.period_id;
+
+                        return (
+                          <tr key={p.period_id} className="hover:bg-secondary/15 transition-colors">
+                            <td className="px-6 py-4.5 font-semibold text-foreground font-mono">
+                              {p.batch ? `Batch ${p.batch}` : `Year ${p.academic_year}`}
+                            </td>
+                            <td className="px-6 py-4.5 font-mono text-muted-foreground">
+                              Semester {p.semester}
+                            </td>
+                            <td className="px-6 py-4.5">
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold font-mono border ${
+                                  isMedicalRepeat
+                                    ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                    : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                }`}
+                              >
+                                {isMedicalRepeat ? 'Medical / Repeat' : 'Semester Registration'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4.5 text-muted-foreground">{startStr}</td>
+                            <td className="px-6 py-4.5 text-muted-foreground">
+                              {isEditingEnd ? (
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="date"
+                                    value={editingEndDateValue}
+                                    onChange={(e) => setEditingEndDateValue(e.target.value)}
+                                    className="px-2 py-1 bg-background border border-border rounded text-xs text-foreground font-medium"
+                                  />
+                                  <button
+                                    onClick={() => handleSaveEndDate(p.period_id)}
+                                    className="p-1 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition cursor-pointer"
+                                    title="Save End Date"
+                                  >
+                                    <Check className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingEndDatePeriodId(null)}
+                                    className="p-1 bg-secondary text-muted-foreground rounded hover:text-foreground transition cursor-pointer"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <span>{endStr}</span>
+                                  {isAdminOrStaff && (
+                                    <button
+                                      onClick={() => {
+                                        setEditingEndDatePeriodId(p.period_id);
+                                        setEditingEndDateValue(
+                                          new Date(p.end_date).toISOString().split('T')[0],
+                                        );
+                                      }}
+                                      className="p-1 text-muted-foreground hover:text-primary hover:bg-secondary/40 rounded transition cursor-pointer"
+                                      title="Edit End Date"
+                                    >
+                                      <Edit3 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-6 py-4.5">
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                                  isOpen
+                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                    : isSuspended
+                                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                      : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                }`}
+                              >
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full ${
+                                    isOpen
+                                      ? 'bg-emerald-400'
+                                      : isSuspended
+                                        ? 'bg-amber-400'
+                                        : 'bg-red-400'
+                                  }`}
+                                />
+                                {p.status}
+                              </span>
+                            </td>
+                            {isAdminOrStaff && (
+                              <td className="px-6 py-4.5 text-right space-x-1.5 whitespace-nowrap">
+                                {!isOpen && (
+                                  <button
+                                    onClick={() => handlePeriodStatusChange(p.period_id, 'OPEN')}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition text-xs font-semibold cursor-pointer"
+                                  >
+                                    <Play className="h-3 w-3" />
+                                    Open
+                                  </button>
+                                )}
+                                {isOpen && (
+                                  <button
+                                    onClick={() =>
+                                      handlePeriodStatusChange(p.period_id, 'SUSPENDED')
+                                    }
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 rounded-lg transition text-xs font-semibold cursor-pointer"
+                                  >
+                                    <Pause className="h-3 w-3" />
+                                    Suspend
+                                  </button>
+                                )}
+                                {p.status !== 'CLOSED' && (
+                                  <button
+                                    onClick={() => handlePeriodStatusChange(p.period_id, 'CLOSED')}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg transition text-xs font-semibold cursor-pointer"
+                                  >
+                                    <StopCircle className="h-3 w-3" />
+                                    Close
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleDeletePeriod(p.period_id)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-lg transition text-xs font-semibold cursor-pointer"
+                                  title="Delete Window"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                  Delete
+                                </button>
+                              </td>
+                            )}
                           </tr>
                         );
                       })
@@ -967,150 +950,451 @@ export default function CoursesManagementPage() {
                 </table>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* SUB-TAB 2: FACULTY LECTURERS DIRECTORY */}
-          {lecturersSubTab === 'faculty' && (
+        {/* ========================================== */}
+        {/* TAB 3: LECTURER & EXAMINER ALLOCATIONS */}
+        {/* ========================================== */}
+        {activeTab === 'lecturers' && isAdminOrStaff && (
+          <div className="space-y-4 animate-tabSwipeUp">
+            {/* Filter & Search Bar (Same UI layout as Exam Console) */}
+            <div className="bg-card/40 border border-border/80 p-4 rounded-2xl flex flex-wrap items-center gap-4 shadow-sm backdrop-blur-md">
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={allocSearch}
+                  onChange={(e) => setAllocSearch(e.target.value)}
+                  placeholder="Search by Course Code, Subject Name, Lecturer, or Marker..."
+                  className="w-full pl-9 pr-4 py-2 bg-background border border-border/80 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary/40 text-foreground"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  Semester:
+                </span>
+                <select
+                  value={allocSemesterFilter}
+                  onChange={(e) => setAllocSemesterFilter(e.target.value)}
+                  className="px-3 py-2 bg-background border border-border/80 rounded-xl text-xs text-foreground font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
+                >
+                  <option value="ALL">All Semesters</option>
+                  {['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2'].map((sem) => (
+                    <option key={sem} value={sem}>
+                      Semester {sem}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  Department:
+                </span>
+                <select
+                  value={allocDeptFilter}
+                  onChange={(e) => setAllocDeptFilter(e.target.value)}
+                  className="px-3 py-2 bg-background border border-border/80 rounded-xl text-xs text-foreground font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
+                >
+                  <option value="ALL">All Departments</option>
+                  {departments.map((d: any) => (
+                    <option key={d.department_id} value={d.department_id.toString()}>
+                      {d.department_name} ({d.department_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {(allocSearch !== '' ||
+                allocSemesterFilter !== 'ALL' ||
+                allocDeptFilter !== 'ALL') && (
+                <button
+                  onClick={() => {
+                    setAllocSearch('');
+                    setAllocSemesterFilter('ALL');
+                    setAllocDeptFilter('ALL');
+                  }}
+                  className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground text-xs font-semibold rounded-xl transition cursor-pointer"
+                >
+                  Reset Filters
+                </button>
+              )}
+            </div>
+
+            {/* COURSE LECTURER, IN-CHARGE & EXAMINER ALLOCATIONS TABLE */}
             <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
               <div className="px-6 py-4 border-b border-border/60 bg-secondary/15 flex justify-between items-center">
                 <div>
                   <h3 className="text-base font-bold text-foreground">
-                    Faculty Lecturers Directory
+                    Course Examiner Allocations
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Add new academic lecturers, manage department allocations, and view assigned
-                    classes.
+                    Select the Course Lecturer and Course In-Charge directly or configure 1st
+                    Examiner (including additional/outside markers) and 2nd Examiner per course
+                    subject.
                   </p>
                 </div>
-                <button
-                  onClick={handleAddNewLecturer}
-                  className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
-                >
-                  <UserPlus className="h-4 w-4" /> Add New Lecturer
-                </button>
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full text-left border-collapse text-xs sm:text-sm">
                   <thead>
                     <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
-                      <th className="px-6 py-4">Lecturer Name</th>
-                      <th className="px-6 py-4">Email</th>
-                      <th className="px-6 py-4">Department</th>
-                      <th className="px-6 py-4">Assigned Courses</th>
-                      <th className="px-6 py-4 text-right">Course Allocation</th>
+                      <th className="px-5 py-4">Semester</th>
+                      <th className="px-5 py-4">Course Code & Name</th>
+                      <th className="px-4 py-4">Department</th>
+                      <th className="px-5 py-4">Lecturer</th>
+                      <th className="px-5 py-4">In-Charge</th>
+                      <th className="px-5 py-4">1st Examiner / Marker</th>
+                      <th className="px-5 py-4">2nd Examiner / Marker</th>
+                      <th className="px-5 py-4 text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/60 text-sm font-medium">
-                    {isLecturersLoading ? (
+                  <tbody className="divide-y divide-border/60 font-medium">
+                    {isAllocationCoursesLoading ? (
                       <tr>
-                        <td colSpan={5} className="text-center py-20 text-muted-foreground">
+                        <td colSpan={8} className="text-center py-20 text-muted-foreground">
                           <span className="inline-flex items-center gap-2">
                             <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></span>
-                            Loading lecturers list...
+                            Loading course marker allocations...
                           </span>
                         </td>
                       </tr>
-                    ) : lecturersList.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="text-center py-20 text-muted-foreground">
-                          No lecturers found in the database.
-                        </td>
-                      </tr>
                     ) : (
-                      lecturersList.map((lec: any) => (
-                        <tr
-                          key={lec.lecturer_id}
-                          className="hover:bg-secondary/15 transition-colors"
-                        >
-                          <td className="px-6 py-4 font-bold text-foreground">
-                            {lec.user?.full_name}
-                          </td>
-                          <td className="px-6 py-4 text-muted-foreground text-xs">
-                            {lec.user?.email}
-                          </td>
-                          <td className="px-6 py-4 text-xs text-muted-foreground uppercase font-semibold">
-                            {lec.department?.department_name}
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-wrap gap-1.5 max-w-md">
-                              {lec.courses && lec.courses.length > 0 ? (
-                                lec.courses.map((c: any) => (
-                                  <span
-                                    key={c.course?.course_id}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg text-xs font-bold font-mono"
-                                  >
-                                    {c.course?.course_code}
-                                    <button
-                                      onClick={() =>
-                                        handleRemoveCourseFromLecturer(
-                                          c.course?.course_id,
-                                          lec.lecturer_id,
-                                        )
-                                      }
-                                      className="hover:text-destructive hover:bg-destructive/10 rounded p-0.5"
-                                      title="Unassign course"
+                      (() => {
+                        const rawAllocCourses = allocationCoursesData?.items || courses || [];
+                        const filteredAllocCourses = rawAllocCourses.filter((c: any) => {
+                          if (allocSemesterFilter !== 'ALL' && c.semester !== allocSemesterFilter) {
+                            return false;
+                          }
+                          if (
+                            allocDeptFilter !== 'ALL' &&
+                            c.department_id?.toString() !== allocDeptFilter
+                          ) {
+                            return false;
+                          }
+                          if (allocSearch.trim() !== '') {
+                            const q = allocSearch.toLowerCase();
+                            const matchCode = c.course_code?.toLowerCase().includes(q);
+                            const matchName = c.course_name?.toLowerCase().includes(q);
+                            const matchDept =
+                              c.department?.department_name?.toLowerCase().includes(q) ||
+                              c.department?.department_code?.toLowerCase().includes(q);
+                            const matchLec = c.lecturers?.some((cl: any) =>
+                              cl.lecturer?.user?.full_name?.toLowerCase().includes(q),
+                            );
+                            const matchInCharge = c.in_charge_lecturer?.user?.full_name
+                              ?.toLowerCase()
+                              .includes(q);
+                            const matchFirst =
+                              c.first_marker_lecturer?.user?.full_name?.toLowerCase().includes(q) ||
+                              c.first_marker_name?.toLowerCase().includes(q);
+                            const matchSecond =
+                              c.second_marker_lecturer?.user?.full_name
+                                ?.toLowerCase()
+                                .includes(q) || c.second_marker_name?.toLowerCase().includes(q);
+                            if (
+                              !matchCode &&
+                              !matchName &&
+                              !matchDept &&
+                              !matchLec &&
+                              !matchInCharge &&
+                              !matchFirst &&
+                              !matchSecond
+                            ) {
+                              return false;
+                            }
+                          }
+                          return true;
+                        });
+
+                        if (filteredAllocCourses.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={8} className="text-center py-20 text-muted-foreground">
+                                No courses match the selected filters.
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return filteredAllocCourses.map((c: any) => {
+                          const assignedLecturerId = c.lecturers?.[0]?.lecturer_id
+                            ? c.lecturers[0].lecturer_id.toString()
+                            : '';
+                          const assignedInChargeId = c.in_charge_lecturer_id
+                            ? c.in_charge_lecturer_id.toString()
+                            : '';
+
+                          // IMPORTANT: Never fallback to c.lecturers[0] or 2nd marker when 1st marker is unassigned/removed
+                          const isFirstExt = c.first_marker_type === 'EXTERNAL';
+                          const hasPrimaryFirstMarker = Boolean(
+                            (isFirstExt && c.first_marker_name) ||
+                            (!isFirstExt && c.first_marker_lecturer_id),
+                          );
+                          const primaryFirstMarkerName = isFirstExt
+                            ? c.first_marker_name
+                              ? `${c.first_marker_name} (Outside)`
+                              : null
+                            : c.first_marker_lecturer?.user?.full_name || null;
+
+                          const additionalFirstMarkers = Array.isArray(c.additional_first_markers)
+                            ? c.additional_first_markers
+                            : [];
+
+                          const isSecondExt = c.second_marker_type === 'EXTERNAL';
+                          const hasSecondMarker = Boolean(
+                            (isSecondExt && c.second_marker_name) ||
+                            (!isSecondExt && c.second_marker_lecturer_id),
+                          );
+                          const secondMarkerName = isSecondExt
+                            ? c.second_marker_name
+                              ? `${c.second_marker_name} (Outside)`
+                              : 'Unassigned'
+                            : c.second_marker_lecturer?.user?.full_name || 'Unassigned';
+
+                          const isRowUpdating = updatingCourseId === c.course_id;
+
+                          return (
+                            <tr
+                              key={c.course_id}
+                              className="hover:bg-secondary/15 transition-colors"
+                            >
+                              <td className="px-5 py-4 font-bold font-mono text-primary text-xs whitespace-nowrap">
+                                Sem {c.semester}
+                              </td>
+                              <td className="px-5 py-4 min-w-[200px]">
+                                <div className="font-bold text-foreground font-mono">
+                                  {c.course_code}
+                                </div>
+                                <div className="text-xs text-muted-foreground">{c.course_name}</div>
+                              </td>
+                              <td className="px-4 py-4 text-xs text-muted-foreground uppercase font-semibold whitespace-nowrap">
+                                {c.department?.department_code}
+                              </td>
+
+                              {/* Column: Lecturer (Categorized by Department) */}
+                              <td className="px-5 py-4 min-w-[190px]">
+                                <select
+                                  value={assignedLecturerId}
+                                  disabled={isRowUpdating}
+                                  onChange={(e) =>
+                                    handleSetCourseLecturerInline(c.course_id, e.target.value)
+                                  }
+                                  className={`w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+                                    assignedLecturerId
+                                      ? 'bg-background border-border/80 text-foreground'
+                                      : 'bg-secondary/40 border-border/60 text-muted-foreground'
+                                  }`}
+                                >
+                                  <option value="">Unassigned</option>
+                                  {lecturersByDepartment.map(([deptName, deptLecturers]) => (
+                                    <optgroup
+                                      key={deptName}
+                                      label={deptName}
+                                      className="bg-card font-bold text-foreground"
                                     >
-                                      ✕
+                                      {deptLecturers.map((lec: any) => (
+                                        <option
+                                          key={lec.lecturer_id}
+                                          value={lec.lecturer_id}
+                                          className="bg-card font-normal text-foreground"
+                                        >
+                                          {lec.user?.full_name}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  ))}
+                                </select>
+                              </td>
+
+                              {/* Column: In-Charge (Categorized by Department) */}
+                              <td className="px-5 py-4 min-w-[190px]">
+                                <select
+                                  value={assignedInChargeId}
+                                  disabled={isRowUpdating}
+                                  onChange={(e) =>
+                                    handleSetCourseInChargeInline(c.course_id, e.target.value)
+                                  }
+                                  className={`w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+                                    assignedInChargeId
+                                      ? 'bg-primary/5 border-primary/30 text-foreground'
+                                      : 'bg-secondary/40 border-border/60 text-muted-foreground'
+                                  }`}
+                                >
+                                  <option value="">Unassigned</option>
+                                  {lecturersByDepartment.map(([deptName, deptLecturers]) => (
+                                    <optgroup
+                                      key={deptName}
+                                      label={deptName}
+                                      className="bg-card font-bold text-foreground"
+                                    >
+                                      {deptLecturers.map((lec: any) => (
+                                        <option
+                                          key={lec.lecturer_id}
+                                          value={lec.lecturer_id}
+                                          className="bg-card font-normal text-foreground"
+                                        >
+                                          {lec.user?.full_name}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  ))}
+                                </select>
+                              </td>
+
+                              {/* Column: 1st Examiner / Marker */}
+                              <td className="px-5 py-4 min-w-[200px]">
+                                <div className="flex flex-col gap-1.5">
+                                  {hasPrimaryFirstMarker && primaryFirstMarkerName ? (
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span
+                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                                          isFirstExt
+                                            ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                                            : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                        }`}
+                                      >
+                                        <UserCheck className="h-3.5 w-3.5 shrink-0" />
+                                        <span>{primaryFirstMarkerName}</span>
+                                        {c.is_first_marker_same_as_in_charge === false && (
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/25 font-bold">
+                                            Separate from In-Charge
+                                          </span>
+                                        )}
+                                        <button
+                                          type="button"
+                                          disabled={isRowUpdating}
+                                          onClick={() => handleRemovePrimaryFirstMarker(c)}
+                                          className="ml-1 hover:text-destructive transition cursor-pointer"
+                                          title="Remove primary 1st Marker (keeps slot empty)"
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </button>
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-secondary text-muted-foreground/60 w-fit">
+                                      <UserCheck className="h-3.5 w-3.5" />
+                                      Unassigned
+                                    </span>
+                                  )}
+
+                                  {/* Additional / Backup 1st Markers */}
+                                  {additionalFirstMarkers.map((addM: any, idx: number) => {
+                                    const isAddExt = addM.type === 'EXTERNAL';
+                                    const addLabel = isAddExt
+                                      ? `${addM.name || 'External'} (Outside)`
+                                      : addM.lecturer?.user?.full_name ||
+                                        addM.name ||
+                                        'Faculty Marker';
+                                    return (
+                                      <div key={addM.id || idx} className="flex items-center gap-1">
+                                        <span
+                                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold ${
+                                            isAddExt
+                                              ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                                              : 'bg-teal-500/10 text-teal-400 border border-teal-500/20'
+                                          }`}
+                                        >
+                                          <Plus className="h-3 w-3 shrink-0" />
+                                          <span>
+                                            1st Marker #{idx + 2}: {addLabel}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            disabled={isRowUpdating}
+                                            onClick={() =>
+                                              handleRemoveAdditionalFirstMarkerInline(c, addM.id)
+                                            }
+                                            className="ml-1 hover:text-destructive transition cursor-pointer"
+                                            title="Remove additional 1st Marker"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </td>
+
+                              {/* Column: 2nd Examiner / Marker */}
+                              <td className="px-5 py-4 min-w-[180px]">
+                                {hasSecondMarker && secondMarkerName !== 'Unassigned' ? (
+                                  <span
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                                      isSecondExt
+                                        ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                                        : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                    }`}
+                                  >
+                                    <User className="h-3.5 w-3.5 shrink-0" />
+                                    <span>{secondMarkerName}</span>
+                                    <button
+                                      type="button"
+                                      disabled={isRowUpdating}
+                                      onClick={() => handleRemoveSecondMarkerInline(c)}
+                                      className="ml-1 hover:text-destructive transition cursor-pointer"
+                                      title="Remove 2nd Marker"
+                                    >
+                                      <X className="h-3 w-3" />
                                     </button>
                                   </span>
-                                ))
-                              ) : (
-                                <span className="text-xs text-muted-foreground/60 italic">
-                                  No courses assigned
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <select
-                              onChange={(e) => {
-                                const courseId = parseInt(e.target.value, 10);
-                                if (courseId) {
-                                  handleAssignCourseToLecturer(courseId, lec.lecturer_id);
-                                  e.target.value = '';
-                                }
-                              }}
-                              className="px-3 py-1.5 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/90 transition text-xs font-semibold"
-                            >
-                              <option value="">+ Assign Course...</option>
-                              {coursesLookup
-                                .filter(
-                                  (c: any) =>
-                                    !lec.courses?.some(
-                                      (ac: any) => ac.course?.course_id === c.course_id,
-                                    ),
-                                )
-                                .map((c: any) => (
-                                  <option key={c.course_id} value={c.course_id}>
-                                    {c.course_code} - {c.course_name}
-                                  </option>
-                                ))}
-                            </select>
-                          </td>
-                        </tr>
-                      ))
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-secondary text-muted-foreground/60">
+                                    <User className="h-3.5 w-3.5" />
+                                    Unassigned
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Column: Action */}
+                              <td className="px-5 py-4 text-right whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMarkerCourse(c);
+                                    setMarkerDialogOpen(true);
+                                  }}
+                                  className="px-3.5 py-1.5 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-1.5 ml-auto cursor-pointer shadow-md shadow-primary/10"
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" /> Assign Markers
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()
                     )}
                   </tbody>
                 </table>
               </div>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
-      {/* Dialogs */}
+      {/* Dialogs rendered outside animated page containers so fixed overlays anchor to viewport */}
       <CourseDialog
         open={courseDialogOpen}
         onClose={() => setCourseDialogOpen(false)}
         course={selectedCourse}
-        onSuccess={refetchCourses}
+        onSuccess={() => {
+          refetchCourses();
+          refetchAllocationCourses();
+        }}
       />
 
       <CourseImportDialog
         open={courseImportDialogOpen}
         onClose={() => setCourseImportDialogOpen(false)}
-        onSuccess={refetchCourses}
+        onSuccess={() => {
+          refetchCourses();
+          refetchAllocationCourses();
+        }}
       />
 
       {assignmentCourse && (
@@ -1145,7 +1429,10 @@ export default function CoursesManagementPage() {
         }}
         course={markerCourse}
         lecturersList={lecturersList}
-        onSuccess={refetchCourses}
+        onSuccess={() => {
+          refetchCourses();
+          refetchAllocationCourses();
+        }}
       />
 
       <UserDialog
@@ -1161,6 +1448,6 @@ export default function CoursesManagementPage() {
           setSelectedUserForEdit(null);
         }}
       />
-    </div>
+    </>
   );
 }

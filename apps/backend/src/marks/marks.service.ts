@@ -30,23 +30,100 @@ export class MarksService {
     return lecturer;
   }
 
+  private isLecturerAuthorizedForCourseObj(course: any, lecturerId: number): boolean {
+    const cfg =
+      course.marks_config && typeof course.marks_config === 'object'
+        ? (course.marks_config as Record<string, any>)
+        : {};
+
+    const isSameAsInCharge =
+      cfg.isFirstMarkerSameAsInCharge !== undefined
+        ? Boolean(cfg.isFirstMarkerSameAsInCharge)
+        : true;
+
+    const inChargeId =
+      cfg.inChargeLecturerId !== undefined
+        ? cfg.inChargeLecturerId
+          ? Number(cfg.inChargeLecturerId)
+          : null
+        : isSameAsInCharge && course.first_marker_type !== 'EXTERNAL'
+          ? course.first_marker_lecturer_id || null
+          : null;
+
+    // 1. Course In-Charge is always authorized to enter marks
+    if (inChargeId && inChargeId === lecturerId) {
+      return true;
+    }
+
+    // 2. Primary 1st Marker is authorized ONLY when 1st Marker and In-Charge are the same
+    if (
+      isSameAsInCharge &&
+      course.first_marker_type !== 'EXTERNAL' &&
+      course.first_marker_lecturer_id === lecturerId
+    ) {
+      return true;
+    }
+
+    // 3. Any newly added 1st Marker from the faculty (INTERNAL) is authorized to enter marks
+    if (Array.isArray(cfg.additionalFirstMarkers)) {
+      const isAdditionalInternal = cfg.additionalFirstMarkers.some(
+        (m: any) => m?.type === 'INTERNAL' && Number(m?.lecturerId) === lecturerId,
+      );
+      if (isAdditionalInternal) {
+        return true;
+      }
+    }
+
+    // 4. If 1st Marker is explicitly different from In-Charge, the 1st Marker does not enter marks in the system
+    if (
+      !isSameAsInCharge &&
+      course.first_marker_type !== 'EXTERNAL' &&
+      course.first_marker_lecturer_id === lecturerId &&
+      inChargeId !== lecturerId
+    ) {
+      return false;
+    }
+
+    // 5.Assigned course lecturer
+    if (Array.isArray(course.lecturers)) {
+      const isCourseLecturer = course.lecturers.some(
+        (cl: any) => Number(cl.lecturer_id) === lecturerId,
+      );
+      if (isCourseLecturer) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private async canLecturerAccessCourseMarks(
+    courseId: number,
+    lecturerId: number,
+  ): Promise<boolean> {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+      include: { lecturers: true },
+    });
+    if (!course) return false;
+    return this.isLecturerAuthorizedForCourseObj(course, lecturerId);
+  }
+
   async findMyCourses(lecturerUserId: number) {
     const lecturer = await this.getLecturerByUserId(lecturerUserId);
 
-    return this.prisma.course.findMany({
-      where: {
-        lecturers: {
-          some: { lecturer_id: lecturer.lecturer_id },
-        },
-      },
+    const allCourses = await this.prisma.course.findMany({
       include: {
         department: true,
+        lecturers: true,
         _count: {
           select: { registrations: true },
         },
       },
       orderBy: { course_code: 'asc' },
     });
+
+    return allCourses.filter((c) => this.isLecturerAuthorizedForCourseObj(c, lecturer.lecturer_id));
   }
 
   async getStudentsRegisteredForCourse(courseId: number) {
@@ -196,14 +273,10 @@ export class MarksService {
     // 1. Verify permissions if Lecturer
     if (isLecturer) {
       const lecturer = await this.getLecturerByUserId(executorUserId);
-      const isAssigned = await this.prisma.courseLecturer.findUnique({
-        where: {
-          course_id_lecturer_id: {
-            course_id: exam.course_id,
-            lecturer_id: lecturer.lecturer_id,
-          },
-        },
-      });
+      const isAssigned = await this.canLecturerAccessCourseMarks(
+        exam.course_id,
+        lecturer.lecturer_id,
+      );
 
       if (!isAssigned) {
         throw new BadRequestException('You are not authorized to grade this course.');
@@ -294,14 +367,10 @@ export class MarksService {
     // Verify Lecturer assigned
     if (isLecturer) {
       const lecturer = await this.getLecturerByUserId(executorUserId);
-      const isAssigned = await this.prisma.courseLecturer.findUnique({
-        where: {
-          course_id_lecturer_id: {
-            course_id: exam.course_id,
-            lecturer_id: lecturer.lecturer_id,
-          },
-        },
-      });
+      const isAssigned = await this.canLecturerAccessCourseMarks(
+        exam.course_id,
+        lecturer.lecturer_id,
+      );
 
       if (!isAssigned) {
         throw new BadRequestException('You are not authorized to grade this course.');
@@ -563,14 +632,7 @@ export class MarksService {
     // 1. Verify lecturer course assignment
     if (isLecturer) {
       const lecturer = await this.getLecturerByUserId(executorUserId);
-      const isAssigned = await this.prisma.courseLecturer.findUnique({
-        where: {
-          course_id_lecturer_id: {
-            course_id: courseId,
-            lecturer_id: lecturer.lecturer_id,
-          },
-        },
-      });
+      const isAssigned = await this.canLecturerAccessCourseMarks(courseId, lecturer.lecturer_id);
       if (!isAssigned) {
         throw new BadRequestException('You are not authorized to access this course.');
       }
@@ -664,14 +726,7 @@ export class MarksService {
     if (isLecturer) {
       const lecturer = await this.getLecturerByUserId(lecturerUserId);
       if (!lecturer.is_head && !lecturer.is_dean) {
-        const isAssigned = await this.prisma.courseLecturer.findUnique({
-          where: {
-            course_id_lecturer_id: {
-              course_id: courseId,
-              lecturer_id: lecturer.lecturer_id,
-            },
-          },
-        });
+        const isAssigned = await this.canLecturerAccessCourseMarks(courseId, lecturer.lecturer_id);
         if (!isAssigned) {
           throw new BadRequestException('You are not authorized to grade this course.');
         }
@@ -736,23 +791,28 @@ export class MarksService {
   ) {
     if (isLecturer) {
       const lecturer = await this.getLecturerByUserId(lecturerUserId);
-      const isAssigned = await this.prisma.courseLecturer.findUnique({
-        where: {
-          course_id_lecturer_id: {
-            course_id: courseId,
-            lecturer_id: lecturer.lecturer_id,
-          },
-        },
-      });
+      const isAssigned = await this.canLecturerAccessCourseMarks(courseId, lecturer.lecturer_id);
       if (!isAssigned) {
         throw new BadRequestException('You are not authorized to configure this course.');
       }
     }
 
+    const existingCourse = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+      select: { marks_config: true },
+    });
+    const existingConfig =
+      existingCourse?.marks_config && typeof existingCourse.marks_config === 'object'
+        ? (existingCourse.marks_config as Record<string, any>)
+        : {};
+
     return this.prisma.course.update({
       where: { course_id: courseId },
       data: {
-        marks_config: config,
+        marks_config: {
+          ...existingConfig,
+          ...(config || {}),
+        },
       },
     });
   }
@@ -772,14 +832,7 @@ export class MarksService {
   ) {
     if (isLecturer) {
       const lecturer = await this.getLecturerByUserId(lecturerUserId);
-      const isAssigned = await this.prisma.courseLecturer.findUnique({
-        where: {
-          course_id_lecturer_id: {
-            course_id: courseId,
-            lecturer_id: lecturer.lecturer_id,
-          },
-        },
-      });
+      const isAssigned = await this.canLecturerAccessCourseMarks(courseId, lecturer.lecturer_id);
       if (!isAssigned) {
         throw new BadRequestException('You are not authorized to manage exams for this course.');
       }
@@ -831,14 +884,7 @@ export class MarksService {
   ) {
     if (isLecturer) {
       const lecturer = await this.getLecturerByUserId(lecturerUserId);
-      const isAssigned = await this.prisma.courseLecturer.findUnique({
-        where: {
-          course_id_lecturer_id: {
-            course_id: courseId,
-            lecturer_id: lecturer.lecturer_id,
-          },
-        },
-      });
+      const isAssigned = await this.canLecturerAccessCourseMarks(courseId, lecturer.lecturer_id);
       if (!isAssigned) {
         throw new BadRequestException('You are not authorized to manage exams for this course.');
       }
@@ -862,14 +908,7 @@ export class MarksService {
   ) {
     if (isLecturer) {
       const lecturer = await this.getLecturerByUserId(lecturerUserId);
-      const isAssigned = await this.prisma.courseLecturer.findUnique({
-        where: {
-          course_id_lecturer_id: {
-            course_id: courseId,
-            lecturer_id: lecturer.lecturer_id,
-          },
-        },
-      });
+      const isAssigned = await this.canLecturerAccessCourseMarks(courseId, lecturer.lecturer_id);
       if (!isAssigned) {
         throw new BadRequestException('You are not authorized to manage exams for this course.');
       }
@@ -899,14 +938,7 @@ export class MarksService {
 
     if (isLecturer) {
       const lecturer = await this.getLecturerByUserId(executorUserId);
-      const isAssigned = await this.prisma.courseLecturer.findUnique({
-        where: {
-          course_id_lecturer_id: {
-            course_id: courseId,
-            lecturer_id: lecturer.lecturer_id,
-          },
-        },
-      });
+      const isAssigned = await this.canLecturerAccessCourseMarks(courseId, lecturer.lecturer_id);
       if (!isAssigned) {
         throw new BadRequestException('You are not authorized to grade this course.');
       }
@@ -992,14 +1024,7 @@ export class MarksService {
 
     if (isLecturer) {
       const lecturer = await this.getLecturerByUserId(executorUserId);
-      const isAssigned = await this.prisma.courseLecturer.findUnique({
-        where: {
-          course_id_lecturer_id: {
-            course_id: courseId,
-            lecturer_id: lecturer.lecturer_id,
-          },
-        },
-      });
+      const isAssigned = await this.canLecturerAccessCourseMarks(courseId, lecturer.lecturer_id);
       if (!isAssigned) {
         throw new BadRequestException('You are not authorized to revoke marks for this course.');
       }
@@ -1413,16 +1438,9 @@ export class MarksService {
 
   async publishCourseCA(courseId: number, lecturerUserId: number) {
     const lecturer = await this.getLecturerByUserId(lecturerUserId);
-    const isAssigned = await this.prisma.courseLecturer.findUnique({
-      where: {
-        course_id_lecturer_id: {
-          course_id: courseId,
-          lecturer_id: lecturer.lecturer_id,
-        },
-      },
-    });
+    const isAssigned = await this.canLecturerAccessCourseMarks(courseId, lecturer.lecturer_id);
     if (!isAssigned) {
-      throw new ForbiddenException('You are not assigned to teach this course.');
+      throw new ForbiddenException('You are not assigned to teach or manage this course.');
     }
 
     await this.prisma.course.update({
@@ -1800,20 +1818,40 @@ export class MarksService {
       create: { course_id: courseId, second_marking_submitted: true },
     });
 
-    // Trigger notification email to In-charge / First Marker
-    const firstMarkerEmail =
-      course.first_marker_type === 'EXTERNAL'
-        ? course.first_marker_email
-        : course.first_marker_lecturer?.user?.email;
-    const firstMarkerName =
-      course.first_marker_type === 'EXTERNAL'
-        ? course.first_marker_name || 'Course In-Charge'
-        : course.first_marker_lecturer?.user?.full_name || 'Course In-Charge';
+    // Trigger notification email to Course In-Charge (and First Marker if same)
+    let recipientEmail: string | undefined;
+    let recipientName: string = 'Course In-Charge';
 
-    if (firstMarkerEmail) {
+    const inChargeId = existingConfig.inChargeLecturerId
+      ? Number(existingConfig.inChargeLecturerId)
+      : null;
+
+    if (inChargeId) {
+      const inChargeLec = await this.prisma.lecturer.findUnique({
+        where: { lecturer_id: inChargeId },
+        include: { user: true },
+      });
+      if (inChargeLec?.user?.email) {
+        recipientEmail = inChargeLec.user.email;
+        recipientName = inChargeLec.user.full_name || 'Course In-Charge';
+      }
+    }
+
+    if (!recipientEmail) {
+      recipientEmail =
+        course.first_marker_type === 'EXTERNAL'
+          ? course.first_marker_email || undefined
+          : course.first_marker_lecturer?.user?.email;
+      recipientName =
+        course.first_marker_type === 'EXTERNAL'
+          ? course.first_marker_name || 'Course In-Charge'
+          : course.first_marker_lecturer?.user?.full_name || 'Course In-Charge';
+    }
+
+    if (recipientEmail) {
       await this.notificationsService.sendFirstMarkerSecondMarkingDoneNotification(
-        firstMarkerEmail,
-        firstMarkerName,
+        recipientEmail,
+        recipientName,
         course.course_code,
         course.course_name,
       );

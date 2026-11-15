@@ -29,6 +29,7 @@ import {
   Edit3,
   Check,
   AlertCircle,
+  Download,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -785,6 +786,42 @@ export default function ExamsManagementPage() {
       }
     };
     reader.readAsBinaryString(file);
+  };
+
+  const handleDownloadTemplate = () => {
+    const sampleCourses =
+      availableCourses.length > 0
+        ? availableCourses.slice(0, 2)
+        : [
+            { course_code: 'ICT1101', semester: '1.1' },
+            { course_code: 'ICT1102', semester: '1.1' },
+          ];
+
+    const sampleData = sampleCourses.map((course: any, idx: number) => ({
+      Batch: wizardBatch || '21/22',
+      Semester: course.semester || wizardSemester || '1.1',
+      'Examination Name': wizardExamName || 'End Semester Examination 2026',
+      'Course Code': course.course_code,
+      Date: idx === 0 ? '15-10-2026' : '17-10-2026',
+      'Start Time': idx === 0 ? '09:00 AM' : '01:30 PM',
+      'End Time': idx === 0 ? '12:00 PM' : '04:30 PM',
+      Venue: idx === 0 ? 'Main Exam Hall A' : 'Auditorium B',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    ws['!cols'] = [
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 32 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 20 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Exam Timetable');
+    XLSX.writeFile(wb, 'exam_timetable_import_template.xlsx');
   };
 
   // ==========================================
@@ -2185,8 +2222,14 @@ export default function ExamsManagementPage() {
                                         {item.course_name}
                                       </div>
                                       <div className="text-[10px] text-muted-foreground/80 mt-0.5">
-                                        {item.first_marker_name}
+                                        1st Marker: {item.first_marker_name}
                                       </div>
+                                      {item.is_first_marker_same_as_in_charge === false &&
+                                        item.in_charge_name && (
+                                          <div className="text-[10px] text-primary/90 font-semibold mt-0.5">
+                                            In-Charge: {item.in_charge_name}
+                                          </div>
+                                        )}
                                     </td>
 
                                     {/* EXAM HELD STATUS DROPDOWN */}
@@ -2198,9 +2241,15 @@ export default function ExamsManagementPage() {
                                           const currentVal = item.exam_held || 'TBH';
                                           if (newVal === currentVal) return;
 
+                                          const isSeparateInCharge =
+                                            item.is_first_marker_same_as_in_charge === false;
+                                          const notifyDetails = isSeparateInCharge
+                                            ? `Setting status to HELD will automatically send email notifications to both the 1st Marker (${item.first_marker_name || '1st Marker'}) and the Course In-Charge (${item.in_charge_name || 'Course In-Charge'}).`
+                                            : `Setting status to HELD will automatically trigger an email notification to the 1st Marker / In-Charge (${item.first_marker_name || '1st Marker'}) regarding the examination paper packet.`;
+
                                           const confirmed = await confirm({
                                             title: 'Change Exam Status?',
-                                            message: `Are you sure you want to change the Exam Held status for ${item.course_code} (${item.course_name}) to "${newVal}"? Setting status to HELD will automatically trigger an email notification to 1st Marker (${item.first_marker_name || '1st Marker'}) to collect exam papers from the AR Office.`,
+                                            message: `Are you sure you want to change the Exam Held status for ${item.course_code} (${item.course_name}) to "${newVal}"? ${notifyDetails}`,
                                             confirmText: 'Change Status',
                                             variant: newVal === 'HELD' ? 'primary' : 'warning',
                                           });
@@ -2580,12 +2629,23 @@ export default function ExamsManagementPage() {
                       className="hidden"
                     />
 
-                    <label
-                      htmlFor="wizardExcelInput"
-                      className="px-5 py-2.5 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow-md hover:bg-primary/90 transition cursor-pointer mt-2"
-                    >
-                      Browse Excel Spreadsheet
-                    </label>
+                    <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
+                      <label
+                        htmlFor="wizardExcelInput"
+                        className="px-5 py-2.5 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow-md hover:bg-primary/90 transition cursor-pointer"
+                      >
+                        Browse Excel Spreadsheet
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={handleDownloadTemplate}
+                        className="px-4 py-2.5 bg-secondary text-secondary-foreground border border-border/80 text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Download Template
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

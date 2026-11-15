@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsBoolean,
   Max,
   Min,
   Matches,
@@ -130,36 +131,83 @@ export class AssignLecturerDto {
   lecturerId!: number;
 }
 
+export class SetCourseLecturerDto {
+  @IsInt()
+  @IsOptional()
+  lecturerId?: number | null;
+}
+
+export class SetCourseInChargeDto {
+  @IsInt()
+  @IsOptional()
+  inChargeLecturerId?: number | null;
+}
+
+export class AdditionalFirstMarkerDto {
+  @IsString()
+  @IsOptional()
+  id?: string;
+
+  @IsString()
+  type!: string;
+
+  @IsInt()
+  @IsOptional()
+  lecturerId?: number | null;
+
+  @IsString()
+  @IsOptional()
+  name?: string | null;
+
+  @IsString()
+  @IsOptional()
+  email?: string | null;
+}
+
 export class AssignMarkersDto {
-  @IsString()
+  @IsBoolean()
   @IsOptional()
-  firstMarkerType?: string;
+  isFirstMarkerSameAsInCharge?: boolean;
 
   @IsInt()
   @IsOptional()
-  firstMarkerLecturerId?: number;
+  inChargeLecturerId?: number | null;
 
   @IsString()
   @IsOptional()
-  firstMarkerName?: string;
-
-  @IsString()
-  @IsOptional()
-  firstMarkerEmail?: string;
-
-  @IsString()
-  @IsOptional()
-  secondMarkerType?: string;
+  firstMarkerType?: string | null;
 
   @IsInt()
   @IsOptional()
-  secondMarkerLecturerId?: number;
+  firstMarkerLecturerId?: number | null;
 
   @IsString()
   @IsOptional()
-  secondMarkerName?: string;
+  firstMarkerName?: string | null;
 
   @IsString()
   @IsOptional()
-  secondMarkerEmail?: string;
+  firstMarkerEmail?: string | null;
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AdditionalFirstMarkerDto)
+  additionalFirstMarkers?: AdditionalFirstMarkerDto[];
+
+  @IsString()
+  @IsOptional()
+  secondMarkerType?: string | null;
+
+  @IsInt()
+  @IsOptional()
+  secondMarkerLecturerId?: number | null;
+
+  @IsString()
+  @IsOptional()
+  secondMarkerName?: string | null;
+
+  @IsString()
+  @IsOptional()
+  secondMarkerEmail?: string | null;
 }
