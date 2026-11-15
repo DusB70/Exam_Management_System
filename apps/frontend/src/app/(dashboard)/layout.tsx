@@ -113,15 +113,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <RouteGuard>
       <div className="min-h-screen flex bg-background text-foreground">
         {/* Desktop Sidebar */}
-        <aside className="hidden md:flex flex-col w-64 bg-card/30 border-r border-border/80 p-5 backdrop-blur-md shrink-0">
-          <div className="flex items-center gap-3 px-2 mb-8">
-            <div className="p-2 bg-primary/10 text-primary rounded-xl">
+        <aside className="sticky top-0 h-screen hidden md:flex flex-col w-64 bg-card/30 border-r border-border/80 p-5 backdrop-blur-md shrink-0 z-30">
+          <div className="flex items-center gap-3 px-2 mb-6 shrink-0">
+            <div className="p-2 bg-primary/10 text-primary rounded-xl shrink-0">
               <GraduationCap className="h-6 w-6" />
             </div>
-            <span className="font-bold text-lg tracking-tight">University EMS</span>
+            <span className="font-bold text-lg tracking-tight truncate">University EMS</span>
           </div>
 
-          <nav className="flex-1 space-y-1">
+          <nav className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
             {navItems.map((item) => {
               const active = pathname === item.href;
               return (
@@ -134,16 +134,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground'
                   }`}
                 >
-                  <item.icon className="h-4 w-4" />
-                  {item.name}
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{item.name}</span>
                 </Link>
               );
             })}
           </nav>
 
-          <div className="border-t border-border/80 pt-4 mt-auto">
+          <div className="border-t border-border/80 pt-4 mt-auto shrink-0">
             <div className="flex items-center gap-3 px-2 mb-4">
-              <div className="p-2 bg-secondary rounded-full">
+              <div className="p-2 bg-secondary rounded-full shrink-0">
                 <UserIcon className="h-4 w-4 text-muted-foreground" />
               </div>
               <div className="min-w-0 flex-1">
@@ -155,7 +155,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               onClick={handleLogout}
               className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-xl transition-colors"
             >
-              <LogOut className="h-4 w-4" />
+              <LogOut className="h-4 w-4 shrink-0" />
               Sign Out
             </button>
           </div>
@@ -193,7 +193,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             mobileOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center justify-between mb-6 shrink-0">
             <span className="font-bold text-lg">University EMS</span>
             <button
               onClick={() => setMobileOpen(false)}
@@ -203,7 +203,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
           </div>
 
-          <nav className="flex-1 space-y-1" onClick={() => setMobileOpen(false)}>
+          <nav
+            className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 custom-scrollbar"
+            onClick={() => setMobileOpen(false)}
+          >
             {navItems.map((item) => {
               const active = pathname === item.href;
               return (
@@ -216,19 +219,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground'
                   }`}
                 >
-                  <item.icon className="h-4 w-4" />
-                  {item.name}
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{item.name}</span>
                 </Link>
               );
             })}
           </nav>
 
-          <div className="border-t border-border pt-4 mt-auto">
+          <div className="border-t border-border pt-4 mt-auto shrink-0">
+            <div className="flex items-center gap-3 px-2 mb-4">
+              <div className="p-2 bg-secondary rounded-full shrink-0">
+                <UserIcon className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold truncate leading-none mb-1">{user?.fullName}</p>
+                <p className="text-xs text-muted-foreground truncate leading-none">{user?.role}</p>
+              </div>
+            </div>
             <button
               onClick={handleLogout}
               className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-xl transition-colors"
             >
-              <LogOut className="h-4 w-4" />
+              <LogOut className="h-4 w-4 shrink-0" />
               Sign Out
             </button>
           </div>

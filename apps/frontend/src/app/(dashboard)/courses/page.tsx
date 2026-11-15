@@ -91,25 +91,67 @@ const renderCourseStatus = (course: any) => {
   }
 
   if (entries.length === 0) {
+    if (course.specialization) {
+      return (
+        <span
+          title={`Specialization: ${course.specialization.specialization_name}`}
+          className="inline-block px-2 py-0.5 bg-secondary/70 text-secondary-foreground border border-border/60 rounded text-[10px] font-bold font-mono"
+        >
+          {course.specialization.specialization_code}
+        </span>
+      );
+    }
     return <span className="text-xs text-muted-foreground/60 italic">—</span>;
   }
+
+  const specCodes = Array.from(
+    new Set(
+      specs.length > 0
+        ? specs.map(
+            (cs: any) => cs.specialization?.specialization_code || String(cs.specialization_id),
+          )
+        : course.specialization
+          ? [course.specialization.specialization_code || String(course.specialization_id)]
+          : [],
+    ),
+  ).filter(Boolean);
 
   const allCompulsory = entries.every((e) => e.status === 'COMPULSORY');
   const allOptional = entries.every((e) => e.status === 'OPTIONAL');
 
   if (allCompulsory) {
     return (
-      <span className="inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-primary/10 text-primary border-primary/30">
-        Compulsory
-      </span>
+      <div className="flex flex-wrap gap-1 items-center">
+        <span className="inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-primary/10 text-primary border-primary/30">
+          Compulsory
+        </span>
+        {specCodes.map((code) => (
+          <span
+            key={code}
+            className="inline-block px-2 py-0.5 bg-secondary/70 text-secondary-foreground border border-border/60 rounded text-[10px] font-bold font-mono"
+          >
+            {code}
+          </span>
+        ))}
+      </div>
     );
   }
 
   if (allOptional) {
     return (
-      <span className="inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-amber-500/10 text-amber-500 border-amber-500/30">
-        Optional
-      </span>
+      <div className="flex flex-wrap gap-1 items-center">
+        <span className="inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-amber-500/10 text-amber-500 border-amber-500/30">
+          Optional
+        </span>
+        {specCodes.map((code) => (
+          <span
+            key={code}
+            className="inline-block px-2 py-0.5 bg-secondary/70 text-secondary-foreground border border-border/60 rounded text-[10px] font-bold font-mono"
+          >
+            {code}
+          </span>
+        ))}
+      </div>
     );
   }
 
@@ -953,25 +995,6 @@ export default function CoursesManagementPage() {
                                   None
                                 </span>
                               )}
-                              {course.course_specializations &&
-                              course.course_specializations.length > 0 ? (
-                                course.course_specializations.map((cs: any) => (
-                                  <span
-                                    key={cs.specialization_id}
-                                    title={cs.specialization?.specialization_name}
-                                    className="inline-block px-2 py-0.5 bg-secondary/70 text-secondary-foreground border border-border/60 rounded text-[10px] font-bold font-mono"
-                                  >
-                                    {cs.specialization?.specialization_code || cs.specialization_id}
-                                  </span>
-                                ))
-                              ) : course.specialization ? (
-                                <span
-                                  title={`Specialization: ${course.specialization.specialization_name}`}
-                                  className="inline-block px-2 py-0.5 bg-secondary/70 text-secondary-foreground border border-border/60 rounded text-[10px] font-bold font-mono"
-                                >
-                                  {course.specialization.specialization_code}
-                                </span>
-                              ) : null}
                             </div>
                           </td>
                           <td className="px-6 py-4.5">{renderCourseStatus(course)}</td>

@@ -12,6 +12,23 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Starting database seed...');
 
+  // Safety guard: never mutate an already-populated database unless explicitly opted in
+  const [existingDeptCount, existingUserCount, existingCourseCount] = await Promise.all([
+    prisma.department.count(),
+    prisma.user.count(),
+    prisma.course.count(),
+  ]);
+
+  if (
+    (existingDeptCount > 0 || existingUserCount > 1 || existingCourseCount > 0) &&
+    process.env.ALLOW_SEED_ON_POPULATED_DB !== 'true'
+  ) {
+    console.log(
+      '⚠️ Database already populated; skipping seed. Set ALLOW_SEED_ON_POPULATED_DB=true to run explicitly.',
+    );
+    return;
+  }
+
   // ─── 1. Roles ────────────────────────────────────────────────────────────
   const roles = [
     { role_id: 1, role_name: 'Administrator' },
@@ -33,7 +50,7 @@ async function main() {
   const activeDepartments = [
     {
       department_name: 'Department of Information and Communication Technology',
-      department_code: 'ICT',
+      department_code: 'ITT',
     },
     {
       department_name: 'Department of Electrical and Electronic Technology',
@@ -71,7 +88,7 @@ async function main() {
     {
       degree_name: 'Bachelor of Information and Communication Technology',
       degree_code: 'BICT',
-      department_code: 'ICT',
+      department_code: 'ITT',
     },
   ];
 
@@ -93,8 +110,7 @@ async function main() {
   console.log('✅ Degrees seeded');
 
   // ─── 4. Specializations ──────────────────────────────────────────────────
-  // Clear any existing specializations first to avoid outdated definitions
-  await prisma.specialization.deleteMany();
+  // Upsert real specializations safely without wiping existing specialization records
 
   const specializations = [
     {
@@ -105,9 +121,9 @@ async function main() {
     },
     {
       specialization_name: 'Materials Technology',
-      specialization_code: 'MT',
+      specialization_code: 'MTT',
       degree_code: 'BET',
-      dept_code: 'MT',
+      dept_code: 'MTT',
     },
     {
       specialization_name: 'Bio Process Technology',
@@ -117,9 +133,9 @@ async function main() {
     },
     {
       specialization_name: 'Food Technology',
-      specialization_code: 'FT',
+      specialization_code: 'FDT',
       degree_code: 'BBST',
-      dept_code: 'FT',
+      dept_code: 'FDT',
     },
   ];
 
@@ -154,7 +170,7 @@ async function main() {
   const adminHash = await bcrypt.hash('AdminPassword123', SALT_ROUNDS);
   const admin = await prisma.user.upsert({
     where: { email: 'admin@ems.com' },
-    update: { password_hash: adminHash },
+    update: process.env.RESET_ADMIN_PASSWORD === 'true' ? { password_hash: adminHash } : {},
     create: {
       full_name: 'System Administrator',
       name_with_initials: 'S. Administrator',
@@ -209,14 +225,14 @@ async function main() {
     },
   });
   // Lecturer sub-profile (required by the system)
-  const ictDept = seededDepts['ICT'];
+  const ittDept = seededDepts['ITT'];
   await prisma.lecturer.upsert({
     where: { user_id: lecturer.user_id },
-    update: { department_id: ictDept.department_id },
+    update: { department_id: ittDept.department_id },
     create: {
       user_id: lecturer.user_id,
       employee_number: 'EMP-001',
-      department_id: ictDept.department_id,
+      department_id: ittDept.department_id,
       specialization: 'General',
     },
   });

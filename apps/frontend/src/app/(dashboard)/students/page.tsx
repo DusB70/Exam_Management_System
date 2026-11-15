@@ -8,6 +8,13 @@ import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
 import { useBulkSelection, runBulkDelete } from '../../../hooks/use-bulk-selection';
 import { BulkDeleteButton, SelectAllCheckbox } from '../../../components/ui/bulk-delete-button';
+import {
+  useProgressiveInfiniteQuery,
+  LAZY_LOAD_INITIAL_LIMIT,
+  LAZY_LOAD_BATCH_SIZE,
+  LAZY_LOAD_CLIENT_DELAY_MS,
+} from '../../../hooks/use-progressive-load';
+import { ProgressiveLoadFooter } from '../../../components/ui/progressive-load-footer';
 import UserDialog from '../../../components/users/user-dialog';
 import { UserRole } from '@ems/shared';
 import {
@@ -26,13 +33,10 @@ import {
   ExternalLink,
   Lock,
   Unlock,
-  ChevronLeft,
-  ChevronRight,
   FileCheck,
   Stethoscope,
   Save,
   User,
-  UserPlus,
   Mail,
   Phone,
   MapPin,
@@ -92,10 +96,10 @@ export default function StudentDirectoryPage() {
   const [selectedLecturerStudentModal, setSelectedLecturerStudentModal] = useState<any | null>(
     null,
   );
-  const [visibleStudentsLimit, setVisibleStudentsLimit] = useState<number>(100);
+  const [visibleStudentsLimit, setVisibleStudentsLimit] = useState<number>(LAZY_LOAD_INITIAL_LIMIT);
 
   React.useEffect(() => {
-    setVisibleStudentsLimit(100);
+    setVisibleStudentsLimit(LAZY_LOAD_INITIAL_LIMIT);
   }, [
     selectedLecturerCourseId,
     studentsSearchQuery,
@@ -121,7 +125,6 @@ export default function StudentDirectoryPage() {
   const [staffStatus, setStaffStatus] = useState<string>('ALL');
   const [staffDegreeId, setStaffDegreeId] = useState<string>('');
   const [staffBatch, setStaffBatch] = useState<string>('');
-  const [staffPage, setStaffPage] = useState<number>(1);
   const [addMemberDialogOpen, setAddMemberDialogOpen] = useState<boolean>(false);
 
   // Selected Student Record Modal State
@@ -189,13 +192,13 @@ export default function StudentDirectoryPage() {
     ? enrolledStudentsData
     : STABLE_EMPTY_ARRAY;
 
-  // Auto progressive background loading effect (first 100 loaded, then automatically loads remaining)
+  // Auto progressive background loading effect (first 50 loaded, then automatically loads remaining)
   React.useEffect(() => {
     const totalCount = enrolledStudents.length;
     if (totalCount > visibleStudentsLimit) {
       const timer = setTimeout(() => {
-        setVisibleStudentsLimit((prev) => Math.min(prev + 100, totalCount));
-      }, 150);
+        setVisibleStudentsLimit((prev) => Math.min(prev + LAZY_LOAD_BATCH_SIZE, totalCount));
+      }, LAZY_LOAD_CLIENT_DELAY_MS);
       return () => clearTimeout(timer);
     }
   }, [visibleStudentsLimit, enrolledStudents.length]);
@@ -238,19 +241,23 @@ export default function StudentDirectoryPage() {
     enabled: isStaffOrAdmin,
   });
 
-  const { data: staffStudentsData, isLoading: isStaffStudentsLoading } = useQuery({
-    queryKey: [
-      'staff-students-directory',
-      staffPage,
-      staffSearch,
-      staffStatus,
-      staffDegreeId,
-      staffBatch,
-    ],
-    queryFn: async () => {
+  const getStudentKey = React.useCallback((st: any) => st.student_id, []);
+
+  const {
+    items: studentsList,
+    total: totalStudents,
+    loadedCount: loadedStudentsCount,
+    isLoading: isStaffStudentsLoading,
+    isFetchingNextPage: isFetchingNextStudentsPage,
+    hasNextPage: hasNextStudentsPage,
+    isFetchNextPageError: isStudentsNextError,
+    fetchNextPage: fetchNextStudentsPage,
+  } = useProgressiveInfiniteQuery<any>({
+    queryKey: ['staff-students-directory', staffSearch, staffStatus, staffDegreeId, staffBatch],
+    queryFn: async (page, limit) => {
       const params: any = {
-        page: staffPage,
-        limit: 10,
+        page,
+        limit,
         search: staffSearch || undefined,
         status: staffStatus !== 'ALL' ? staffStatus : undefined,
         degreeId: staffDegreeId || undefined,
@@ -260,6 +267,7 @@ export default function StudentDirectoryPage() {
       return response.data?.data;
     },
     enabled: isStaffOrAdmin,
+    getItemKey: getStudentKey,
   });
 
   // Query for student full academic record
@@ -350,10 +358,6 @@ export default function StudentDirectoryPage() {
   // RENDER STAFF / ADMIN CONSOLE
   // ==========================================
   if (isStaffOrAdmin) {
-    const studentsList = staffStudentsData?.items || [];
-    const totalPages = staffStudentsData?.totalPages || 1;
-    const totalStudents = staffStudentsData?.total || 0;
-
     const studentRecord = fullRecordData?.student;
     const registrationsList = fullRecordData?.registrations || [];
     const courseGradesList = fullRecordData?.courseGrades || [];
@@ -425,24 +429,14 @@ export default function StudentDirectoryPage() {
               and result withheld flags.
             </p>
           </div>
-          <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
-            <button
-              onClick={() => setAddMemberDialogOpen(true)}
-              className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
-            >
-              <UserPlus className="h-4 w-4" />
-              Add Member
-            </button>
-          </div>
+          <div className="flex items-center gap-3 self-start md:self-auto shrink-0"></div>
         </div>
 
         {/* Quick Filter Status Tabs */}
+        {/* Quick Filter Status Tabs */}
         <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
           <button
-            onClick={() => {
-              setStaffStatus('ALL');
-              setStaffPage(1);
-            }}
+            onClick={() => setStaffStatus('ALL')}
             className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               staffStatus === 'ALL'
                 ? 'text-primary border-b-2 border-primary font-semibold'
@@ -453,10 +447,7 @@ export default function StudentDirectoryPage() {
             All Students
           </button>
           <button
-            onClick={() => {
-              setStaffStatus('ACTIVE');
-              setStaffPage(1);
-            }}
+            onClick={() => setStaffStatus('ACTIVE')}
             className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               staffStatus === 'ACTIVE'
                 ? 'text-primary border-b-2 border-primary font-semibold'
@@ -467,10 +458,7 @@ export default function StudentDirectoryPage() {
             Currently Studying (Active)
           </button>
           <button
-            onClick={() => {
-              setStaffStatus('GRADUATED');
-              setStaffPage(1);
-            }}
+            onClick={() => setStaffStatus('GRADUATED')}
             className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               staffStatus === 'GRADUATED'
                 ? 'text-primary border-b-2 border-primary font-semibold'
@@ -481,10 +469,7 @@ export default function StudentDirectoryPage() {
             Past / Graduated Students
           </button>
           <button
-            onClick={() => {
-              setStaffStatus('SUSPENDED');
-              setStaffPage(1);
-            }}
+            onClick={() => setStaffStatus('SUSPENDED')}
             className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
               staffStatus === 'SUSPENDED'
                 ? 'text-primary border-b-2 border-primary font-semibold'
@@ -506,18 +491,12 @@ export default function StudentDirectoryPage() {
                 type="text"
                 placeholder="Search index, registration no, student name..."
                 value={staffSearch}
-                onChange={(e) => {
-                  setStaffSearch(e.target.value);
-                  setStaffPage(1);
-                }}
+                onChange={(e) => setStaffSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
               />
               {staffSearch && (
                 <button
-                  onClick={() => {
-                    setStaffSearch('');
-                    setStaffPage(1);
-                  }}
+                  onClick={() => setStaffSearch('')}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -544,10 +523,7 @@ export default function StudentDirectoryPage() {
               <span className="text-[11px] font-bold text-muted-foreground uppercase">Degree:</span>
               <select
                 value={staffDegreeId}
-                onChange={(e) => {
-                  setStaffDegreeId(e.target.value);
-                  setStaffPage(1);
-                }}
+                onChange={(e) => setStaffDegreeId(e.target.value)}
                 className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 max-w-[200px] truncate cursor-pointer"
               >
                 <option value="">All Degrees</option>
@@ -564,10 +540,7 @@ export default function StudentDirectoryPage() {
               <span className="text-[11px] font-bold text-muted-foreground uppercase">Batch:</span>
               <select
                 value={staffBatch}
-                onChange={(e) => {
-                  setStaffBatch(e.target.value);
-                  setStaffPage(1);
-                }}
+                onChange={(e) => setStaffBatch(e.target.value)}
                 className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
               >
                 <option value="">All Batches</option>
@@ -585,10 +558,7 @@ export default function StudentDirectoryPage() {
               <span className="text-[11px] font-bold text-muted-foreground uppercase">Status:</span>
               <select
                 value={staffStatus}
-                onChange={(e) => {
-                  setStaffStatus(e.target.value);
-                  setStaffPage(1);
-                }}
+                onChange={(e) => setStaffStatus(e.target.value)}
                 className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
               >
                 <option value="ALL">All Statuses</option>
@@ -606,7 +576,6 @@ export default function StudentDirectoryPage() {
                   setStaffBatch('');
                   setStaffStatus('ALL');
                   setStaffSearch('');
-                  setStaffPage(1);
                 }}
                 className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
               >
@@ -748,30 +717,16 @@ export default function StudentDirectoryPage() {
             </table>
           </div>
 
-          {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="px-6 py-4 border-t border-border/60 bg-secondary/10 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                Page {staffPage} of {totalPages}
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setStaffPage((p) => Math.max(1, p - 1))}
-                  disabled={staffPage === 1}
-                  className="p-1.5 bg-secondary hover:bg-secondary/80 rounded-lg text-muted-foreground disabled:opacity-50 cursor-pointer"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setStaffPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={staffPage === totalPages}
-                  className="p-1.5 bg-secondary hover:bg-secondary/80 rounded-lg text-muted-foreground disabled:opacity-50 cursor-pointer"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          )}
+          {/* Progressive Auto-Loading Footer Indicator */}
+          <ProgressiveLoadFooter
+            loadedCount={loadedStudentsCount}
+            totalCount={totalStudents}
+            isLoadingMore={isFetchingNextStudentsPage}
+            hasMore={hasNextStudentsPage}
+            isError={isStudentsNextError}
+            onRetry={() => fetchNextStudentsPage()}
+            entityLabel="student records"
+          />
         </div>
 
         {/* ========================================== */}
@@ -2356,30 +2311,13 @@ export default function StudentDirectoryPage() {
                   </table>
 
                   {/* Progressive Auto-Loading Footer Indicator */}
-                  {filteredLecturerStudents.length > 100 && (
-                    <div className="p-3 bg-secondary/15 border-t border-border/60 flex items-center justify-between text-xs font-semibold">
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        {filteredLecturerStudents.length > visibleStudentsLimit ? (
-                          <>
-                            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
-                            <span>
-                              Loaded{' '}
-                              <strong className="text-foreground">{visibleStudentsLimit}</strong> of{' '}
-                              <strong className="text-foreground">
-                                {filteredLecturerStudents.length}
-                              </strong>{' '}
-                              student records (Auto-loading remaining...)
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-emerald-400 flex items-center gap-1 font-bold">
-                            ✓ All {filteredLecturerStudents.length} student records loaded
-                            automatically
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  <ProgressiveLoadFooter
+                    loadedCount={Math.min(visibleStudentsLimit, filteredLecturerStudents.length)}
+                    totalCount={filteredLecturerStudents.length}
+                    isLoadingMore={filteredLecturerStudents.length > visibleStudentsLimit}
+                    hasMore={filteredLecturerStudents.length > visibleStudentsLimit}
+                    entityLabel="student records"
+                  />
                 </div>
               </div>
             ) : (
@@ -2564,6 +2502,7 @@ export default function StudentDirectoryPage() {
         onClose={() => setAddMemberDialogOpen(false)}
         user={null}
         onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['staff-students-directory'] });
           queryClient.invalidateQueries({ queryKey: ['staff-students'] });
           queryClient.invalidateQueries({ queryKey: ['users'] });
         }}

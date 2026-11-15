@@ -82,7 +82,11 @@ export function ProgressiveLoadFooter({
             </span>
           </>
         ) : (
-          <span className="text-emerald-400 flex items-center gap-1 font-bold">
+          <span
+            className={`${
+              variant === 'dark' ? 'text-slate-100' : 'text-black dark:text-foreground'
+            } flex items-center gap-1 font-bold`}
+          >
             ✓ All {totalCount} {entityLabel} loaded automatically
           </span>
         )}
