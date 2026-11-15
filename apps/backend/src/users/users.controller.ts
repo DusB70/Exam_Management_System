@@ -9,6 +9,7 @@ import {
   Query,
   ParseIntPipe,
   ParseBoolPipe,
+  ForbiddenException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto } from './dtos/users.dto';
@@ -17,11 +18,11 @@ import { GetUser } from '../auth/decorators/get-user.decorator';
 import { UserRole } from '@ems/shared';
 
 @Controller('users')
-@Roles(UserRole.ADMINISTRATOR)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
   async getAll(
     @Query('page') page = '1',
     @Query('limit') limit = '10',
@@ -49,6 +50,7 @@ export class UsersController {
   }
 
   @Get(':id')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
   async getOne(@Param('id', ParseIntPipe) id: number) {
     const user = await this.usersService.findById(id);
     const safeUser = { ...(user as any) };
@@ -61,7 +63,18 @@ export class UsersController {
   }
 
   @Post()
-  async create(@Body() createUserDto: CreateUserDto, @GetUser('id') executorId: number) {
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async create(
+    @Body() createUserDto: CreateUserDto,
+    @GetUser('id') executorId: number,
+    @GetUser('role') executorRole: string,
+  ) {
+    // Exam division staff cannot create Administrators
+    if (executorRole === UserRole.EXAM_DIVISION_STAFF && createUserDto.roleId === 1) {
+      throw new ForbiddenException(
+        'Staff members are not permitted to create Administrator accounts.',
+      );
+    }
     const user = await this.usersService.create(createUserDto, executorId);
     const safeUser = { ...(user as any) };
     delete safeUser.password_hash;
@@ -73,11 +86,21 @@ export class UsersController {
   }
 
   @Put(':id')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateUserDto: UpdateUserDto,
     @GetUser('id') executorId: number,
+    @GetUser('role') executorRole: string,
   ) {
+    if (executorRole === UserRole.EXAM_DIVISION_STAFF) {
+      const existingUser = await this.usersService.findById(id);
+      if (existingUser.role_id === 1 || updateUserDto.roleId === 1) {
+        throw new ForbiddenException(
+          'Staff members are not permitted to modify Administrator accounts.',
+        );
+      }
+    }
     const user = await this.usersService.update(id, updateUserDto, executorId);
     const safeUser = { ...(user as any) };
     delete safeUser.password_hash;
@@ -89,11 +112,21 @@ export class UsersController {
   }
 
   @Patch(':id/status')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
   async toggleStatus(
     @Param('id', ParseIntPipe) id: number,
     @Body('isActive', ParseBoolPipe) isActive: boolean,
     @GetUser('id') executorId: number,
+    @GetUser('role') executorRole: string,
   ) {
+    if (executorRole === UserRole.EXAM_DIVISION_STAFF) {
+      const existingUser = await this.usersService.findById(id);
+      if (existingUser.role_id === 1) {
+        throw new ForbiddenException(
+          'Staff members are not permitted to change Administrator account status.',
+        );
+      }
+    }
     const user = await this.usersService.updateStatus(id, isActive, executorId);
     const safeUser = { ...(user as any) };
     delete safeUser.password_hash;

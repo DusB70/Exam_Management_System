@@ -7,6 +7,8 @@ import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
 import UserDialog from '../../../components/users/user-dialog';
 import StudentImportDialog from '../../../components/users/student-import-dialog';
+import { useAuthStore } from '../../../store/authStore';
+import { UserRole } from '@ems/shared';
 import { Search, UserPlus, ChevronLeft, ChevronRight, Upload, X, Users } from 'lucide-react';
 
 const fetchUsers = async (page: number, search: string, roleId: string, status: string) => {
@@ -23,6 +25,7 @@ const fetchUsers = async (page: number, search: string, roleId: string, status: 
 
 export default function UsersManagementPage() {
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuthStore();
   const toast = useToast();
   const confirm = useConfirm();
   const [page, setPage] = useState(1);
@@ -282,22 +285,28 @@ export default function UsersManagementPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4.5 text-right space-x-2">
-                      <button
-                        onClick={() => handleEdit(user)}
-                        className="px-3 py-1.5 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/90 transition text-xs font-semibold"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleToggleStatus(user)}
-                        className={`px-3 py-1.5 rounded-lg transition text-xs font-semibold ${
-                          user.is_active
-                            ? 'bg-destructive/10 text-destructive hover:bg-destructive/20'
-                            : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-                        }`}
-                      >
-                        {user.is_active ? 'Disable' : 'Enable'}
-                      </button>
+                      {!(
+                        currentUser?.role === UserRole.EXAM_DIVISION_STAFF && user.role_id === 1
+                      ) && (
+                        <>
+                          <button
+                            onClick={() => handleEdit(user)}
+                            className="px-3 py-1.5 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/90 transition text-xs font-semibold"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleToggleStatus(user)}
+                            className={`px-3 py-1.5 rounded-lg transition text-xs font-semibold ${
+                              user.is_active
+                                ? 'bg-destructive/10 text-destructive hover:bg-destructive/20'
+                                : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                            }`}
+                          >
+                            {user.is_active ? 'Disable' : 'Enable'}
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))

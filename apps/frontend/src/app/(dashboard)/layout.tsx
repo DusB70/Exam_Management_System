@@ -77,7 +77,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       case UserRole.EXAM_DIVISION_STAFF:
         return [
           ...common,
-          { name: 'Student Directory', href: '/students', icon: Users },
+          { name: 'User Management', href: '/users', icon: Users },
+          { name: 'Student Directory', href: '/students', icon: GraduationCap },
           { name: 'Academic Structure', href: '/academic-structure', icon: GraduationCap },
           { name: 'Courses & Batches', href: '/courses', icon: BookOpen },
           { name: 'Exam Console', href: '/exams', icon: ClipboardList },

@@ -1251,18 +1251,14 @@ export default function ExamsManagementPage() {
           : fullTimetable.filter((t: any) => t.batch === studentBatchFilter);
 
     return (
-      <div className="space-y-6 max-w-7xl mx-auto pb-12">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-card border border-border/80 p-6 rounded-3xl shadow-sm">
+      <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fadeIn">
+        {/* Title Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-primary font-semibold text-xs tracking-wider uppercase mb-1">
-              <Calendar className="h-4 w-4" />
-              Student Portal
-            </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
+            <h1 className="text-3xl font-bold tracking-tight">
               {studentTab === 'my-schedules' ? 'My Enrolled Exam Timetable' : 'Full Exam Timetable'}
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-muted-foreground mt-1.5 text-sm">
               {studentTab === 'my-schedules'
                 ? 'View official examination schedules for your registered subjects.'
                 : 'Browse published examination timetables for all batches and semesters.'}

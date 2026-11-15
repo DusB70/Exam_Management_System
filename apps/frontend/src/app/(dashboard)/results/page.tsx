@@ -8,11 +8,11 @@ import { useToast } from '../../../hooks/use-toast';
 import {
   AlertTriangle,
   Loader2,
-  Award,
   FileSpreadsheet,
   Download,
   Activity,
   X,
+  Search,
 } from 'lucide-react';
 import { UserRole } from '@ems/shared';
 
@@ -32,6 +32,7 @@ export default function ResultsAndImportsPage() {
   const [semesterFilter, setSemesterFilter] = useState('active');
   const [yearFilter, setYearFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Exam Violation Modal State (Staff/Admin)
   const [violationModalOpen, setViolationModalOpen] = useState(false);
@@ -119,6 +120,12 @@ export default function ResultsAndImportsPage() {
   const activeSemester = semesters.length > 0 ? semesters[semesters.length - 1] : '';
 
   const filteredGrades = grades.filter((g: any) => {
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const code = (g.course?.course_code || '').toLowerCase();
+      const name = (g.course?.course_name || '').toLowerCase();
+      if (!code.includes(q) && !name.includes(q)) return false;
+    }
     if (semesterFilter === 'active') {
       if (activeSemester && g.course?.semester !== activeSemester) return false;
     } else if (semesterFilter !== 'all') {
@@ -136,28 +143,22 @@ export default function ResultsAndImportsPage() {
   });
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-card border border-border/80 p-6 rounded-3xl shadow-sm">
-        <div>
-          <div className="flex items-center gap-2 text-primary font-semibold text-xs tracking-wider uppercase mb-1">
-            <Award className="h-4 w-4" />
-            Student Portal
-          </div>
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
-            My Academic Results Sheet
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fadeIn">
+      {/* Title Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex-1">
+          <h1 className="text-3xl font-bold tracking-tight">My Academic Results Sheet</h1>
+          <p className="text-muted-foreground mt-1.5 text-sm">
             View continuous assessment marks, allocated total CA weight, released letter grades, and
             inspect result publishing progress.
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-row flex-nowrap items-center gap-3 shrink-0">
           {!isStudent && (
             <button
               onClick={() => setViolationModalOpen(true)}
-              className="px-4 py-2.5 bg-rose-600 text-white font-semibold rounded-xl hover:bg-rose-500 transition text-xs flex items-center gap-2 shadow-lg shadow-rose-600/20 cursor-pointer"
+              className="px-4 py-2.5 bg-rose-600 text-white font-semibold rounded-xl hover:bg-rose-500 transition text-xs flex items-center gap-2 shadow-lg shadow-rose-600/20 cursor-pointer whitespace-nowrap"
             >
               <AlertTriangle className="h-4 w-4" />
               Mark Exam Violation
@@ -168,7 +169,7 @@ export default function ResultsAndImportsPage() {
               <button
                 onClick={handleDownloadMyPdf}
                 disabled={isDownloadingPdf}
-                className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer disabled:opacity-50"
+                className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer disabled:opacity-50 whitespace-nowrap"
               >
                 {isDownloadingPdf ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -180,7 +181,7 @@ export default function ResultsAndImportsPage() {
               <button
                 onClick={handleDownloadMyExcel}
                 disabled={isDownloadingExcel}
-                className="px-4 py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-500 transition text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
+                className="px-4 py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-500 transition text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer disabled:opacity-50 whitespace-nowrap"
               >
                 {isDownloadingExcel ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -196,6 +197,26 @@ export default function ResultsAndImportsPage() {
 
       {/* Filter & Search Bar */}
       <div className="bg-card border border-border/80 p-5 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Search Input */}
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search course code or module name..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-8 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
         {/* Filter Dropdowns Row */}
         <div className="flex flex-wrap items-center gap-3">
           {/* Year Filter */}
@@ -246,12 +267,16 @@ export default function ResultsAndImportsPage() {
             </select>
           </div>
 
-          {(yearFilter !== 'all' || semesterFilter !== 'active' || typeFilter !== 'all') && (
+          {(yearFilter !== 'all' ||
+            semesterFilter !== 'active' ||
+            typeFilter !== 'all' ||
+            searchQuery) && (
             <button
               onClick={() => {
                 setYearFilter('all');
                 setSemesterFilter('active');
                 setTypeFilter('all');
+                setSearchQuery('');
               }}
               className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
             >

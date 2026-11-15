@@ -6,6 +6,7 @@ import { useAuthStore } from '../../../store/authStore';
 import { apiClient } from '../../../lib/api-client';
 import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
+import UserDialog from '../../../components/users/user-dialog';
 import { UserRole } from '@ems/shared';
 import {
   Users,
@@ -28,6 +29,12 @@ import {
   FileCheck,
   Stethoscope,
   Save,
+  User,
+  UserPlus,
+  Mail,
+  Phone,
+  MapPin,
+  Calendar,
 } from 'lucide-react';
 
 const STABLE_EMPTY_ARRAY: any[] = [];
@@ -109,12 +116,13 @@ export default function StudentDirectoryPage() {
   const [staffDegreeId, setStaffDegreeId] = useState<string>('');
   const [staffBatch, setStaffBatch] = useState<string>('');
   const [staffPage, setStaffPage] = useState<number>(1);
+  const [addMemberDialogOpen, setAddMemberDialogOpen] = useState<boolean>(false);
 
   // Selected Student Record Modal State
   const [selectedStudentRecordId, setSelectedStudentRecordId] = useState<number | null>(null);
   const [recordModalTab, setRecordModalTab] = useState<
-    'history' | 'grace' | 'recorrections' | 'medicals'
-  >('history');
+    'personal' | 'history' | 'grace' | 'recorrections' | 'medicals'
+  >('personal');
 
   // Status Edit State inside modal
   const [editingStatus, setEditingStatus] = useState<string>('ACTIVE');
@@ -371,6 +379,15 @@ export default function StudentDirectoryPage() {
               registrations, marks, Proper/Repeat attempts, grace chance requests, recorrections,
               and result withheld flags.
             </p>
+          </div>
+          <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
+            <button
+              onClick={() => setAddMemberDialogOpen(true)}
+              className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
+            >
+              <UserPlus className="h-4 w-4" />
+              Add Member
+            </button>
           </div>
         </div>
 
@@ -637,7 +654,7 @@ export default function StudentDirectoryPage() {
                           <button
                             onClick={() => {
                               setSelectedStudentRecordId(st.student_id);
-                              setRecordModalTab('history');
+                              setRecordModalTab('personal');
                             }}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground border border-primary/20 rounded-xl transition-all text-xs font-bold cursor-pointer shadow-sm"
                           >
@@ -830,21 +847,30 @@ export default function StudentDirectoryPage() {
                   </div>
 
                   {/* Tabs Bar */}
-                  <div className="flex border-b border-border/60 gap-8 text-sm font-semibold">
+                  <div className="flex border-b border-border/60 gap-8 text-sm font-semibold overflow-x-auto">
+                    <button
+                      onClick={() => setRecordModalTab('personal')}
+                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer whitespace-nowrap ${
+                        recordModalTab === 'personal'
+                          ? 'text-primary border-b-2 border-primary font-semibold'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <User className="h-4 w-4" /> Personal Details
+                    </button>
                     <button
                       onClick={() => setRecordModalTab('history')}
-                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
+                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer whitespace-nowrap ${
                         recordModalTab === 'history'
                           ? 'text-primary border-b-2 border-primary font-semibold'
                           : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      <BookOpen className="h-4 w-4" /> Registered Courses & Marks (
-                      {courseGradesList.length})
+                      <BookOpen className="h-4 w-4" /> Academic Details ({courseGradesList.length})
                     </button>
                     <button
                       onClick={() => setRecordModalTab('grace')}
-                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
+                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer whitespace-nowrap ${
                         recordModalTab === 'grace'
                           ? 'text-primary border-b-2 border-primary font-semibold'
                           : 'text-muted-foreground hover:text-foreground'
@@ -855,7 +881,7 @@ export default function StudentDirectoryPage() {
                     </button>
                     <button
                       onClick={() => setRecordModalTab('recorrections')}
-                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
+                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer whitespace-nowrap ${
                         recordModalTab === 'recorrections'
                           ? 'text-primary border-b-2 border-primary font-semibold'
                           : 'text-muted-foreground hover:text-foreground'
@@ -865,7 +891,7 @@ export default function StudentDirectoryPage() {
                     </button>
                     <button
                       onClick={() => setRecordModalTab('medicals')}
-                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
+                      className={`pb-3 transition flex items-center gap-2 relative cursor-pointer whitespace-nowrap ${
                         recordModalTab === 'medicals'
                           ? 'text-primary border-b-2 border-primary font-semibold'
                           : 'text-muted-foreground hover:text-foreground'
@@ -875,9 +901,270 @@ export default function StudentDirectoryPage() {
                     </button>
                   </div>
 
+                  {/* TAB 0: PERSONAL DETAILS */}
+                  {recordModalTab === 'personal' && (
+                    <div className="space-y-6 animate-fadeIn">
+                      <div className="space-y-3">
+                        <h4 className="font-bold text-primary uppercase tracking-wider text-xs flex items-center gap-2">
+                          <User className="h-4 w-4" /> Personal Information
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 bg-secondary/10 p-5 rounded-2xl border border-border/40 text-xs font-medium">
+                          <div className="sm:col-span-2 md:col-span-1">
+                            <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-1">
+                              Full Name
+                            </span>
+                            <span className="text-foreground font-semibold text-sm">
+                              {studentRecord?.user?.full_name || 'N/A'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-1">
+                              Name with Initials
+                            </span>
+                            <span className="text-foreground font-semibold text-sm">
+                              {studentRecord?.user?.name_with_initials || 'N/A'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-1">
+                              NIC / Passport Number
+                            </span>
+                            <span className="font-mono text-foreground font-semibold">
+                              {studentRecord?.user?.nic_no || 'N/A'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-1">
+                              Date of Birth
+                            </span>
+                            <span className="text-foreground font-semibold flex items-center gap-1.5">
+                              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                              {studentRecord?.user?.date_of_birth
+                                ? new Date(studentRecord.user.date_of_birth).toLocaleDateString(
+                                    undefined,
+                                    {
+                                      year: 'numeric',
+                                      month: 'long',
+                                      day: 'numeric',
+                                    },
+                                  )
+                                : 'N/A'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-1">
+                              Account Creation Date
+                            </span>
+                            <span className="text-foreground font-semibold flex items-center gap-1.5 font-mono">
+                              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                              {studentRecord?.user?.created_at
+                                ? new Date(studentRecord.user.created_at).toLocaleDateString()
+                                : 'N/A'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <h4 className="font-bold text-primary uppercase tracking-wider text-xs flex items-center gap-2">
+                          <Mail className="h-4 w-4" /> Contact & Residence Information
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-secondary/10 p-5 rounded-2xl border border-border/40 text-xs font-medium">
+                          <div>
+                            <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-1">
+                              Email Address
+                            </span>
+                            <span className="text-foreground font-semibold flex items-center gap-1.5">
+                              <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                              {studentRecord?.user?.email || 'N/A'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-1">
+                              Phone Number
+                            </span>
+                            <span className="text-foreground font-semibold flex items-center gap-1.5 font-mono">
+                              <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                              {studentRecord?.user?.phone_number || 'N/A'}
+                            </span>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-1">
+                              Permanent Address
+                            </span>
+                            <span className="text-foreground font-semibold flex items-start gap-1.5 leading-relaxed">
+                              <MapPin className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                              {studentRecord?.user?.address || 'N/A'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* TAB 1: ACADEMIC HISTORY & MARKS */}
                   {recordModalTab === 'history' && (
                     <div className="space-y-6">
+                      {/* Academic Overview Summary Banner */}
+                      {(() => {
+                        const latestGpaObj =
+                          semesterGpasList.length > 0
+                            ? semesterGpasList[semesterGpasList.length - 1]
+                            : null;
+                        const finalCgpaVal = latestGpaObj ? latestGpaObj.cumulative_gpa : null;
+                        const classHonor =
+                          finalCgpaVal !== null
+                            ? finalCgpaVal >= 3.7
+                              ? 'First Class Honours'
+                              : finalCgpaVal >= 3.3
+                                ? 'Second Class (Upper Division)'
+                                : finalCgpaVal >= 3.0
+                                  ? 'Second Class (Lower Division)'
+                                  : finalCgpaVal >= 2.0
+                                    ? 'General Pass'
+                                    : 'Below Pass Requirement'
+                            : 'Pending Evaluation';
+
+                        return (
+                          <div className="bg-card/40 border border-border/70 rounded-2xl p-5 shadow-sm space-y-4">
+                            <div className="flex items-center justify-between border-b border-border/40 pb-3">
+                              <h4 className="text-xs font-bold text-primary flex items-center gap-2 uppercase tracking-wider">
+                                <GraduationCap className="h-4 w-4" /> Academic Profile & Degree
+                                Standing
+                              </h4>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                                  Standing / Class:
+                                </span>
+                                <span className="px-2.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-lg text-xs font-bold font-mono">
+                                  {classHonor}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs">
+                              <div className="bg-secondary/15 p-3 rounded-xl border border-border/40">
+                                <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-0.5">
+                                  Index Number
+                                </span>
+                                <span className="font-bold font-mono text-foreground">
+                                  {studentRecord?.index_number || 'N/A'}
+                                </span>
+                              </div>
+
+                              <div className="bg-secondary/15 p-3 rounded-xl border border-border/40">
+                                <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-0.5">
+                                  Registration No
+                                </span>
+                                <span className="font-bold font-mono text-foreground truncate block">
+                                  {studentRecord?.registration_number || 'N/A'}
+                                </span>
+                              </div>
+
+                              <div className="bg-secondary/15 p-3 rounded-xl border border-border/40">
+                                <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-0.5">
+                                  Batch
+                                </span>
+                                <span className="font-bold font-mono text-foreground">
+                                  {formatBatchDisplay(studentRecord)}
+                                </span>
+                              </div>
+
+                              <div className="bg-secondary/15 p-3 rounded-xl border border-border/40">
+                                <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-0.5">
+                                  Degree Program
+                                </span>
+                                <span
+                                  className="font-bold text-foreground truncate block"
+                                  title={studentRecord?.degree?.degree_name}
+                                >
+                                  {studentRecord?.degree?.degree_code || 'N/A'}
+                                </span>
+                                <span className="text-[9px] text-muted-foreground truncate block">
+                                  {studentRecord?.degree?.degree_name || ''}
+                                </span>
+                              </div>
+
+                              <div className="bg-secondary/15 p-3 rounded-xl border border-border/40">
+                                <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-0.5">
+                                  Specialization
+                                </span>
+                                <span
+                                  className="font-bold text-foreground truncate block"
+                                  title={studentRecord?.specialization?.specialization_name}
+                                >
+                                  {studentRecord?.specialization
+                                    ? studentRecord.specialization.specialization_name
+                                    : 'General'}
+                                </span>
+                              </div>
+
+                              <div className="bg-secondary/15 p-3 rounded-xl border border-border/40">
+                                <span className="block text-[10px] text-muted-foreground uppercase font-bold mb-0.5">
+                                  Department
+                                </span>
+                                <span
+                                  className="font-bold text-foreground truncate block"
+                                  title={
+                                    studentRecord?.degree?.department?.department_name ||
+                                    'Academic Department'
+                                  }
+                                >
+                                  {studentRecord?.degree?.department?.department_code ||
+                                    studentRecord?.degree?.department?.department_name ||
+                                    'Faculty'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Semester CGPA & Final GPA Progression Strip */}
+                            <div className="pt-2 border-t border-border/40">
+                              <span className="block text-[10px] font-bold text-muted-foreground uppercase mb-2">
+                                Semester CGPA History & Final Cumulative Performance:
+                              </span>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
+                                {sortedSemesters.map((sem: string) => {
+                                  const semGpaRecord = semesterGpasList.find(
+                                    (g: any) => g.semester === sem,
+                                  );
+                                  return (
+                                    <div
+                                      key={sem}
+                                      className="p-2.5 rounded-xl border border-border/40 bg-secondary/10 flex flex-col items-center justify-center text-center"
+                                    >
+                                      <span className="text-[10px] font-bold text-muted-foreground">
+                                        Sem {sem}
+                                      </span>
+                                      <div className="text-xs font-mono font-bold text-foreground mt-0.5">
+                                        SGPA:{' '}
+                                        {semGpaRecord ? semGpaRecord.semester_gpa.toFixed(2) : '-'}
+                                      </div>
+                                      <div className="text-[11px] font-mono font-bold text-primary">
+                                        CGPA:{' '}
+                                        {semGpaRecord
+                                          ? semGpaRecord.cumulative_gpa.toFixed(2)
+                                          : '-'}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+
+                                <div className="p-2.5 rounded-xl border border-primary/30 bg-primary/10 flex flex-col items-center justify-center text-center col-span-2 sm:col-span-2">
+                                  <span className="text-[10px] font-extrabold text-primary uppercase tracking-wider">
+                                    Overall Final CGPA
+                                  </span>
+                                  <div className="text-base font-extrabold font-mono text-primary mt-0.5">
+                                    {finalCgpaVal !== null ? finalCgpaVal.toFixed(2) : 'N/A'}
+                                  </div>
+                                  <span className="text-[9px] text-muted-foreground font-semibold">
+                                    {classHonor}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {sortedSemesters.length === 0 ? (
                         <div className="p-12 text-center bg-secondary/10 border border-border/60 rounded-2xl text-muted-foreground text-xs">
                           No registered courses or published grades found for this student.
@@ -2187,6 +2474,17 @@ export default function StudentDirectoryPage() {
           </div>
         </div>
       )}
+
+      {/* Add Member Dialog (Students, Staff, Lecturers) */}
+      <UserDialog
+        open={addMemberDialogOpen}
+        onClose={() => setAddMemberDialogOpen(false)}
+        user={null}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['staff-students'] });
+          queryClient.invalidateQueries({ queryKey: ['users'] });
+        }}
+      />
     </div>
   );
 }

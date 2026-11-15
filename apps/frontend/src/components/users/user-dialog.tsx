@@ -8,7 +8,8 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../lib/api-client';
 import { useToast } from '../../hooks/use-toast';
 import { AxiosError } from 'axios';
-import { ApiResponse } from '@ems/shared';
+import { ApiResponse, UserRole } from '@ems/shared';
+import { useAuthStore } from '../../store/authStore';
 import { GraduationCap, Shield, Users, BookOpen } from 'lucide-react';
 
 const BaseUserFormSchema = z.object({
@@ -134,6 +135,7 @@ const fetchDegrees = async () => {
 
 export default function UserDialog({ open, onClose, user, onSuccess }: UserDialogProps) {
   const toast = useToast();
+  const { user: currentUser } = useAuthStore();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [roleSelected, setRoleSelected] = useState(false);
@@ -371,24 +373,26 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
                 </div>
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setValue('roleId', 1);
-                  setRoleSelected(true);
-                }}
-                className="flex items-center gap-4 p-4 border border-border/80 rounded-2xl hover:border-primary hover:bg-primary/5 transition text-left"
-              >
-                <div className="p-3 bg-red-500/10 text-red-400 rounded-xl">
-                  <Shield className="h-6 w-6" />
-                </div>
-                <div>
-                  <div className="font-bold text-sm">Administrator</div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Full root control and backups
-                  </p>
-                </div>
-              </button>
+              {currentUser?.role !== UserRole.EXAM_DIVISION_STAFF && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setValue('roleId', 1);
+                    setRoleSelected(true);
+                  }}
+                  className="flex items-center gap-4 p-4 border border-border/80 rounded-2xl hover:border-primary hover:bg-primary/5 transition text-left"
+                >
+                  <div className="p-3 bg-red-500/10 text-red-400 rounded-xl">
+                    <Shield className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm">Administrator</div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Full root control and backups
+                    </p>
+                  </div>
+                </button>
+              )}
             </div>
           </div>
         ) : (

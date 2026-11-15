@@ -6,7 +6,18 @@ import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
 import { useToast } from '../../../hooks/use-toast';
 import { UserRole } from '@ems/shared';
-import { Upload, Plus, Trash2, Download, CheckCircle, XCircle, Clock, Eye } from 'lucide-react';
+import {
+  Upload,
+  Plus,
+  Trash2,
+  Download,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Eye,
+  FileText,
+  Send,
+} from 'lucide-react';
 
 export default function RequestsPortalPage() {
   const queryClient = useQueryClient();
@@ -428,6 +439,7 @@ export default function RequestsPortalPage() {
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
+            <FileText className="h-4 w-4" />
             My Submissions
           </button>
           <button
@@ -438,6 +450,7 @@ export default function RequestsPortalPage() {
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
+            <Send className="h-4 w-4" />
             Submit New Request
           </button>
         </div>
