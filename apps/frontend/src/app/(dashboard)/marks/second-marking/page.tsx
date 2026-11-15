@@ -5,6 +5,8 @@ import { useSearchParams } from 'next/navigation';
 import { apiClient } from '../../../../lib/api-client';
 import { useToast } from '../../../../hooks/use-toast';
 import { useConfirm } from '../../../../hooks/use-confirm';
+import { useProgressiveList } from '../../../../hooks/use-progressive-load';
+import { ProgressiveLoadFooter } from '../../../../components/ui/progressive-load-footer';
 import { ShieldCheck, AlertTriangle, Loader2, Download, Upload, Send } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -35,6 +37,13 @@ function SecondMarkingContent() {
   }>({});
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const {
+    visibleItems: visibleStudents,
+    visibleCount: visibleStudentsCount,
+    totalCount: totalStudentsCount,
+    hasMore: hasMoreStudents,
+  } = useProgressiveList<any>(students);
 
   useEffect(() => {
     if (!token) {
@@ -331,7 +340,7 @@ function SecondMarkingContent() {
                   </td>
                 </tr>
               ) : (
-                students.map((student: any, idx: number) => {
+                visibleStudents.map((student: any, idx: number) => {
                   const firstMarkObj = gridData?.marks?.find(
                     (m: any) =>
                       m.student_id === student.student_id && m.exam_id === mainExam?.exam_id,
@@ -393,6 +402,13 @@ function SecondMarkingContent() {
               )}
             </tbody>
           </table>
+          <ProgressiveLoadFooter
+            loadedCount={visibleStudentsCount}
+            totalCount={totalStudentsCount}
+            isLoadingMore={hasMoreStudents}
+            hasMore={hasMoreStudents}
+            entityLabel="student records"
+          />
         </div>
 
         {/* Footer Actions */}

@@ -72,4 +72,14 @@ export class AuditService {
       totalPages: Math.ceil(total / limit),
     };
   }
+
+  async deleteMany(ids: number[]) {
+    if (!ids || ids.length === 0) {
+      return { deletedCount: 0 };
+    }
+    const result = await this.prisma.auditLog.deleteMany({
+      where: { log_id: { in: ids } },
+    });
+    return { deletedCount: result.count };
+  }
 }

@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Patch,
+  Delete,
   Param,
   Body,
   UseInterceptors,
@@ -163,6 +164,23 @@ export class RequestsController {
     return {
       success: true,
       message: `Request status updated to ${status} successfully.`,
+      data: result,
+    };
+  }
+
+  // 6b. Delete request (Staff/Admin can delete any; Students can delete own pending requests)
+  @Delete(':type/:id')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF, UserRole.STUDENT)
+  async deleteSubmission(
+    @Param('type') type: 'medical' | 'grace' | 'recorrection',
+    @Param('id', ParseIntPipe) id: number,
+    @GetUser('id') userId: number,
+    @GetUser('role') userRole: string,
+  ) {
+    const result = await this.requestsService.deleteSubmission(type, id, userId, userRole);
+    return {
+      success: true,
+      message: 'Request deleted successfully.',
       data: result,
     };
   }

@@ -6,6 +6,10 @@ import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
 import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
+import { useProgressiveList } from '../../../hooks/use-progressive-load';
+import { ProgressiveLoadFooter } from '../../../components/ui/progressive-load-footer';
+import { useBulkSelection, runBulkDelete } from '../../../hooks/use-bulk-selection';
+import { BulkDeleteButton, SelectAllCheckbox } from '../../../components/ui/bulk-delete-button';
 import { AxiosError } from 'axios';
 import { ApiResponse } from '@ems/shared';
 import {
@@ -26,6 +30,8 @@ export default function CourseRegistrationPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const [selectedCourseIds, setSelectedCourseIds] = useState<number[]>([]);
+  const regSelection = useBulkSelection<number>();
+  const [isBulkDropping, setIsBulkDropping] = useState(false);
 
   // Fetch active registration period status
   const { data: activePeriod, isLoading: isActivePeriodLoading } = useQuery({
@@ -138,6 +144,61 @@ export default function CourseRegistrationPage() {
       dropMutation.mutate(registrationId);
     }
   };
+
+  const selectableRegistrationIds: number[] = myRegistrations.map(
+    (reg: any) => reg.registration_id,
+  );
+
+  const handleBulkDrop = async () => {
+    const ids = Array.from(regSelection.selectedIds);
+    if (ids.length === 0) return;
+
+    const confirmed = await confirm({
+      title: `Drop ${ids.length} Course${ids.length === 1 ? '' : 's'}?`,
+      message: `Are you sure you want to drop ${ids.length} selected course${ids.length === 1 ? '' : 's'}? You can re-register while the registration window is open.`,
+      confirmText: `Drop ${ids.length}`,
+      variant: 'destructive',
+    });
+    if (!confirmed) return;
+
+    setIsBulkDropping(true);
+    try {
+      const result = await runBulkDelete(ids, async (regId) => {
+        await apiClient.delete(`/registrations/${regId}`);
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['eligible-courses'] });
+      queryClient.invalidateQueries({ queryKey: ['my-registrations'] });
+
+      if (result.deletedCount > 0) {
+        regSelection.clear();
+      }
+
+      if (result.failedCount > 0) {
+        toast.warning(
+          `Dropped ${result.deletedCount} course(s), but ${result.failedCount} failed${result.firstErrorMessage ? `: ${result.firstErrorMessage}` : '.'}`,
+        );
+      } else {
+        toast.success(`Dropped ${result.deletedCount} course(s) successfully.`);
+      }
+    } finally {
+      setIsBulkDropping(false);
+    }
+  };
+
+  const {
+    visibleItems: visibleEligibleCourses,
+    visibleCount: visibleEligibleCount,
+    totalCount: totalEligibleCount,
+    hasMore: hasMoreEligible,
+  } = useProgressiveList<any>(eligibleCourses);
+
+  const {
+    visibleItems: visibleMyRegistrations,
+    visibleCount: visibleMyRegsCount,
+    totalCount: totalMyRegsCount,
+    hasMore: hasMoreMyRegs,
+  } = useProgressiveList<any>(myRegistrations);
 
   // Loading Screen
   const isGlobalLoading = isActivePeriodLoading || isEligibleLoading || isMyRegsLoading;
@@ -266,7 +327,7 @@ export default function CourseRegistrationPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {eligibleCourses.map((course: any) => {
+              {visibleEligibleCourses.map((course: any) => {
                 const isSelected = selectedCourseIds.includes(course.course_id);
                 return (
                   <div
@@ -329,6 +390,14 @@ export default function CourseRegistrationPage() {
                   </div>
                 );
               })}
+              <ProgressiveLoadFooter
+                loadedCount={visibleEligibleCount}
+                totalCount={totalEligibleCount}
+                isLoadingMore={hasMoreEligible}
+                hasMore={hasMoreEligible}
+                entityLabel="courses"
+                className="col-span-full rounded-2xl border border-border/60"
+              />
             </div>
           )}
         </div>
@@ -379,7 +448,28 @@ export default function CourseRegistrationPage() {
 
           {/* Registered Courses list */}
           <div className="space-y-4">
-            <h3 className="text-lg font-bold text-foreground">My Registered Courses</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                {isRegistrationWindowOpen && myRegistrations.length > 0 && (
+                  <SelectAllCheckbox
+                    checked={regSelection.isAllSelected(selectableRegistrationIds)}
+                    indeterminate={regSelection.isIndeterminate(selectableRegistrationIds)}
+                    disabled={isBulkDropping}
+                    onChange={() => regSelection.toggleAll(selectableRegistrationIds)}
+                    ariaLabel="Select all registered courses"
+                  />
+                )}
+                <h3 className="text-lg font-bold text-foreground">My Registered Courses</h3>
+              </div>
+              {isRegistrationWindowOpen && (
+                <BulkDeleteButton
+                  count={regSelection.selectedCount}
+                  isDeleting={isBulkDropping}
+                  onClick={handleBulkDrop}
+                  label="Drop Selected"
+                />
+              )}
+            </div>
             {myRegistrations.length === 0 ? (
               <div className="p-6 text-center bg-card/10 rounded-3xl border border-border/60 flex flex-col items-center justify-center">
                 <BookOpen className="h-8 w-8 text-muted-foreground/45 mb-2" />
@@ -392,31 +482,43 @@ export default function CourseRegistrationPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {myRegistrations.map((reg: any) => (
+                {visibleMyRegistrations.map((reg: any) => (
                   <div
                     key={reg.registration_id}
                     className="p-4 bg-card/30 border border-border/60 rounded-2xl hover:border-border transition flex items-start justify-between gap-3"
                   >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/15 text-primary rounded-md uppercase">
-                          {reg.course.course_code}
-                        </span>
-                        <span className="text-xs font-mono text-muted-foreground font-medium">
-                          {parseFloat(reg.course.credit_value)} Credits
-                        </span>
+                    <div className="flex items-start gap-3 min-w-0">
+                      {isRegistrationWindowOpen && (
+                        <input
+                          type="checkbox"
+                          checked={regSelection.isSelected(reg.registration_id)}
+                          disabled={isBulkDropping}
+                          onChange={() => regSelection.toggle(reg.registration_id)}
+                          aria-label={`Select ${reg.course.course_code}`}
+                          className="mt-0.5 h-4 w-4 shrink-0 rounded border-border/80 bg-secondary/40 text-primary focus:ring-primary/40 cursor-pointer accent-primary"
+                        />
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/15 text-primary rounded-md uppercase">
+                            {reg.course.course_code}
+                          </span>
+                          <span className="text-xs font-mono text-muted-foreground font-medium">
+                            {parseFloat(reg.course.credit_value)} Credits
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-bold text-foreground truncate">
+                          {reg.course.course_name}
+                        </h4>
+                        <p className="text-[10px] text-muted-foreground mt-2 truncate">
+                          Prof:{' '}
+                          {reg.course.lecturers?.length > 0
+                            ? reg.course.lecturers
+                                .map((l: any) => l.lecturer?.user?.full_name)
+                                .join(', ')
+                            : 'TBD'}
+                        </p>
                       </div>
-                      <h4 className="text-xs font-bold text-foreground truncate">
-                        {reg.course.course_name}
-                      </h4>
-                      <p className="text-[10px] text-muted-foreground mt-2 truncate">
-                        Prof:{' '}
-                        {reg.course.lecturers?.length > 0
-                          ? reg.course.lecturers
-                              .map((l: any) => l.lecturer?.user?.full_name)
-                              .join(', ')
-                          : 'TBD'}
-                      </p>
                     </div>
 
                     {isRegistrationWindowOpen && (
@@ -431,6 +533,14 @@ export default function CourseRegistrationPage() {
                     )}
                   </div>
                 ))}
+                <ProgressiveLoadFooter
+                  loadedCount={visibleMyRegsCount}
+                  totalCount={totalMyRegsCount}
+                  isLoadingMore={hasMoreMyRegs}
+                  hasMore={hasMoreMyRegs}
+                  entityLabel="registered courses"
+                  className="rounded-2xl border border-border/60"
+                />
               </div>
             )}
           </div>

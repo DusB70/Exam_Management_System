@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiClient } from '../../lib/api-client';
 import { useToast } from '../../hooks/use-toast';
 import { useConfirm } from '../../hooks/use-confirm';
+import { useProgressiveList } from '../../hooks/use-progressive-load';
+import { ProgressiveLoadFooter } from '../../components/ui/progressive-load-footer';
 import { Loader2, CheckCircle, AlertTriangle, Upload, Download, Search, Check } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -276,15 +278,26 @@ export default function SecondMarkingPortalPage() {
     }
   };
 
-  const filteredStudents = students.filter((s) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      s.registration_number?.toLowerCase().includes(q) ||
-      s.index_number?.toLowerCase().includes(q) ||
-      s.user?.full_name?.toLowerCase().includes(q)
-    );
-  });
+  const filteredStudents = useMemo(
+    () =>
+      students.filter((s) => {
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+          s.registration_number?.toLowerCase().includes(q) ||
+          s.index_number?.toLowerCase().includes(q) ||
+          s.user?.full_name?.toLowerCase().includes(q)
+        );
+      }),
+    [students, searchQuery],
+  );
+
+  const {
+    visibleItems: visibleStudents,
+    visibleCount: visibleStudentsCount,
+    totalCount: totalFilteredStudents,
+    hasMore: hasMoreStudents,
+  } = useProgressiveList<any>(filteredStudents, { resetKey: searchQuery });
 
   if (isLoading) {
     return (
@@ -385,7 +398,7 @@ export default function SecondMarkingPortalPage() {
           </div>
 
           <div className="text-xs text-slate-400 font-mono font-semibold">
-            Showing {filteredStudents.length} of {students.length} Records
+            Showing {visibleStudentsCount} of {totalFilteredStudents} Records
           </div>
         </div>
 
@@ -431,7 +444,7 @@ export default function SecondMarkingPortalPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredStudents.map((st, idx) => {
+                  visibleStudents.map((st, idx) => {
                     const rowMarks = secondMarks[st.student_id] || {};
                     const total = calculateRowTotal(st.student_id);
                     const final100 = calculateRowFinal(st.student_id);
@@ -492,6 +505,14 @@ export default function SecondMarkingPortalPage() {
               </tbody>
             </table>
           </div>
+          <ProgressiveLoadFooter
+            loadedCount={visibleStudentsCount}
+            totalCount={totalFilteredStudents}
+            isLoadingMore={hasMoreStudents}
+            hasMore={hasMoreStudents}
+            entityLabel="student records"
+            variant="dark"
+          />
         </div>
       </div>
     </div>

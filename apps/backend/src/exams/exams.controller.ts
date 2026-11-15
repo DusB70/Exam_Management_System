@@ -218,6 +218,19 @@ export class ExamsController {
     };
   }
 
+  @Delete('timetable/entries/:id')
+  async deleteTimetableEntry(
+    @Param('id', ParseIntPipe) id: number,
+    @GetUser('id') executorId: number,
+  ) {
+    const data = await this.examsService.deleteTimetableEntry(id, executorId);
+    return {
+      success: true,
+      message: 'Timetable entry deleted successfully',
+      data,
+    };
+  }
+
   @Delete(['timetable/batch/:batch(*)', 'timetable/batch/*'])
   async deleteBatchTimetable(
     @Param() params: any,

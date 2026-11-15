@@ -1,10 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
+import { useProgressiveList } from '../../../hooks/use-progressive-load';
+import { ProgressiveLoadFooter } from '../../../components/ui/progressive-load-footer';
+import { useBulkSelection, runBulkDelete } from '../../../hooks/use-bulk-selection';
+import { BulkDeleteButton, SelectAllCheckbox } from '../../../components/ui/bulk-delete-button';
 import {
   Plus,
   Edit2,
@@ -71,6 +75,12 @@ export default function AcademicStructurePage() {
   // Limit Form Fields
   const [limitYear, setLimitYear] = useState<number>(2026);
   const [limitSemester, setLimitSemester] = useState<string>('Semester 1');
+
+  // Bulk selection state for structure cards and semester limits
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isBulkDeletingLimits, setIsBulkDeletingLimits] = useState(false);
+  const structureSelection = useBulkSelection<number>();
+  const limitsSelection = useBulkSelection<number>();
   const [limitCredits, setLimitCredits] = useState<number>(22);
 
   // Queries
@@ -268,6 +278,90 @@ export default function AcademicStructurePage() {
     }
   };
 
+  const handleBulkDeleteStructure = async () => {
+    if (activeTab === 'bulk-specialization' || structureSelection.selectedCount === 0) {
+      return;
+    }
+    const target =
+      activeTab === 'departments'
+        ? 'department'
+        : activeTab === 'degrees'
+          ? 'degree'
+          : 'specialization';
+    const endpoint =
+      target === 'department'
+        ? '/departments'
+        : target === 'degree'
+          ? '/degrees'
+          : '/specializations';
+
+    const confirmed = await confirm({
+      title: `Delete Selected ${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}?`,
+      message: `Are you sure you want to delete ${structureSelection.selectedCount} selected ${target}(s)? Items referenced by existing records cannot be deleted.`,
+      confirmText: `Delete (${structureSelection.selectedCount})`,
+      variant: 'destructive',
+    });
+    if (!confirmed) return;
+
+    setIsBulkDeleting(true);
+    try {
+      const deletedIds: number[] = [];
+      const { deletedCount, failedCount, firstErrorMessage } = await runBulkDelete(
+        structureSelection.selectedIds,
+        async (id) => {
+          await apiClient.delete(`${endpoint}/${id}`);
+          deletedIds.push(id);
+        },
+      );
+      if (deletedCount > 0) {
+        toast.success(`${deletedCount} ${target}(s) deleted successfully.`);
+        structureSelection.removeFromSelection(deletedIds);
+        queryClient.invalidateQueries({ queryKey: [activeTab] });
+      }
+      if (failedCount > 0) {
+        toast.error(
+          `${failedCount} ${target}(s) could not be deleted${firstErrorMessage ? `: ${firstErrorMessage}` : '.'}`,
+        );
+      }
+      if (failedCount === 0) structureSelection.clear();
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const handleBulkDeleteLimits = async () => {
+    if (!limitDegree || limitsSelection.selectedCount === 0) return;
+    const confirmed = await confirm({
+      title: 'Delete Selected Credit Limits?',
+      message: `Are you sure you want to delete ${limitsSelection.selectedCount} selected semester credit limit(s)?`,
+      confirmText: `Delete (${limitsSelection.selectedCount})`,
+      variant: 'destructive',
+    });
+    if (!confirmed) return;
+
+    setIsBulkDeletingLimits(true);
+    setLimitError(null);
+    try {
+      const { deletedCount, failedCount, firstErrorMessage } = await runBulkDelete(
+        limitsSelection.selectedIds,
+        (limitId) => apiClient.delete(`/degrees/${limitDegree.degree_id}/limits/${limitId}`),
+      );
+      if (deletedCount > 0) {
+        toast.success(`${deletedCount} semester credit limit(s) deleted.`);
+        const updatedListRes = await apiClient.get(`/degrees/${limitDegree.degree_id}/limits`);
+        setLimitsList(updatedListRes.data?.data || []);
+      }
+      if (failedCount > 0) {
+        const msg = `${failedCount} limit(s) failed to delete${firstErrorMessage ? `: ${firstErrorMessage}` : '.'}`;
+        setLimitError(msg);
+        toast.error(msg);
+      }
+      limitsSelection.clear();
+    } finally {
+      setIsBulkDeletingLimits(false);
+    }
+  };
+
   const handleAddLimit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLimitError(null);
@@ -356,23 +450,75 @@ export default function AcademicStructurePage() {
   };
 
   // Filtering lists
-  const filteredDepartments = departments.filter(
-    (dept: any) =>
-      dept.department_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      dept.department_code.toLowerCase().includes(searchQuery.toLowerCase()),
+  const filteredDepartments = useMemo(
+    () =>
+      departments.filter(
+        (dept: any) =>
+          dept.department_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          dept.department_code.toLowerCase().includes(searchQuery.toLowerCase()),
+      ),
+    [departments, searchQuery],
   );
 
-  const filteredDegrees = degrees.filter(
-    (deg: any) =>
-      deg.degree_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deg.degree_code.toLowerCase().includes(searchQuery.toLowerCase()),
+  const filteredDegrees = useMemo(
+    () =>
+      degrees.filter(
+        (deg: any) =>
+          deg.degree_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          deg.degree_code.toLowerCase().includes(searchQuery.toLowerCase()),
+      ),
+    [degrees, searchQuery],
   );
 
-  const filteredSpecializations = specializations.filter(
-    (spec: any) =>
-      spec.specialization_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      spec.specialization_code.toLowerCase().includes(searchQuery.toLowerCase()),
+  const filteredSpecializations = useMemo(
+    () =>
+      specializations.filter(
+        (spec: any) =>
+          spec.specialization_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          spec.specialization_code.toLowerCase().includes(searchQuery.toLowerCase()),
+      ),
+    [specializations, searchQuery],
   );
+
+  const filteredBulkStudents = useMemo(
+    () =>
+      bulkStudents.filter(
+        (s: any) =>
+          (s.registration_number || '').toLowerCase().includes(bulkStudentSearch.toLowerCase()) ||
+          (s.user?.full_name || '').toLowerCase().includes(bulkStudentSearch.toLowerCase()),
+      ),
+    [bulkStudents, bulkStudentSearch],
+  );
+
+  const {
+    visibleItems: visibleDepartments,
+    visibleCount: visibleDepartmentsCount,
+    totalCount: totalDepartmentsCount,
+    hasMore: hasMoreDepartments,
+  } = useProgressiveList<any>(filteredDepartments, { resetKey: searchQuery });
+
+  const {
+    visibleItems: visibleDegrees,
+    visibleCount: visibleDegreesCount,
+    totalCount: totalDegreesCount,
+    hasMore: hasMoreDegrees,
+  } = useProgressiveList<any>(filteredDegrees, { resetKey: searchQuery });
+
+  const {
+    visibleItems: visibleSpecializations,
+    visibleCount: visibleSpecializationsCount,
+    totalCount: totalSpecializationsCount,
+    hasMore: hasMoreSpecializations,
+  } = useProgressiveList<any>(filteredSpecializations, { resetKey: searchQuery });
+
+  const {
+    visibleItems: visibleBulkStudents,
+    visibleCount: visibleBulkStudentsCount,
+    totalCount: totalBulkStudentsCount,
+    hasMore: hasMoreBulkStudents,
+  } = useProgressiveList<any>(filteredBulkStudents, {
+    resetKey: `${bulkDegreeId}|${bulkSpecId}|${bulkBatch}|${bulkStudentSearch}`,
+  });
 
   const isLoading = loadingDepts || loadingDegrees || loadingSpecs;
 
@@ -414,6 +560,7 @@ export default function AcademicStructurePage() {
           onClick={() => {
             setActiveTab('departments');
             setSearchQuery('');
+            structureSelection.clear();
           }}
           className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'departments'
@@ -428,6 +575,7 @@ export default function AcademicStructurePage() {
           onClick={() => {
             setActiveTab('degrees');
             setSearchQuery('');
+            structureSelection.clear();
           }}
           className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'degrees'
@@ -442,6 +590,7 @@ export default function AcademicStructurePage() {
           onClick={() => {
             setActiveTab('specializations');
             setSearchQuery('');
+            structureSelection.clear();
           }}
           className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'specializations'
@@ -456,6 +605,7 @@ export default function AcademicStructurePage() {
           onClick={() => {
             setActiveTab('bulk-specialization');
             setSearchQuery('');
+            structureSelection.clear();
           }}
           className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'bulk-specialization'
@@ -488,6 +638,34 @@ export default function AcademicStructurePage() {
             </button>
           )}
         </div>
+        {activeTab !== 'bulk-specialization' &&
+          (() => {
+            const visibleIds =
+              activeTab === 'departments'
+                ? visibleDepartments.map((d: any) => d.department_id)
+                : activeTab === 'degrees'
+                  ? visibleDegrees.map((d: any) => d.degree_id)
+                  : visibleSpecializations.map((s: any) => s.specialization_id);
+            return (
+              <div className="flex items-center gap-3">
+                <label className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground cursor-pointer select-none">
+                  <SelectAllCheckbox
+                    checked={structureSelection.isAllSelected(visibleIds)}
+                    indeterminate={structureSelection.isIndeterminate(visibleIds)}
+                    disabled={visibleIds.length === 0}
+                    onChange={() => structureSelection.toggleAll(visibleIds)}
+                    ariaLabel={`Select all visible ${activeTab}`}
+                  />
+                  <span>Select All</span>
+                </label>
+                <BulkDeleteButton
+                  count={structureSelection.selectedCount}
+                  isDeleting={isBulkDeleting}
+                  onClick={handleBulkDeleteStructure}
+                />
+              </div>
+            );
+          })()}
       </div>
 
       {/* Lists & Grids */}
@@ -506,16 +684,29 @@ export default function AcademicStructurePage() {
               No departments found.
             </div>
           ) : (
-            filteredDepartments.map((dept: any) => (
+            visibleDepartments.map((dept: any) => (
               <div
                 key={dept.department_id}
-                className="bg-card/30 border border-border/80 rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between hover:shadow-xl transition-all space-y-4"
+                className={`bg-card/30 border rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between hover:shadow-xl transition-all space-y-4 ${
+                  structureSelection.isSelected(dept.department_id)
+                    ? 'border-primary/70 ring-1 ring-primary/30 bg-primary/5'
+                    : 'border-border/80'
+                }`}
               >
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono font-bold px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg uppercase">
-                      {dept.department_code}
-                    </span>
+                    <div className="flex items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={structureSelection.isSelected(dept.department_id)}
+                        onChange={() => structureSelection.toggle(dept.department_id)}
+                        aria-label={`Select ${dept.department_name}`}
+                        className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
+                      />
+                      <span className="text-xs font-mono font-bold px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg uppercase">
+                        {dept.department_code}
+                      </span>
+                    </div>
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => handleOpenEdit('department', dept)}
@@ -549,6 +740,14 @@ export default function AcademicStructurePage() {
               </div>
             ))
           )}
+          <ProgressiveLoadFooter
+            loadedCount={visibleDepartmentsCount}
+            totalCount={totalDepartmentsCount}
+            isLoadingMore={hasMoreDepartments}
+            hasMore={hasMoreDepartments}
+            entityLabel="departments"
+            className="col-span-full rounded-2xl border border-border/60"
+          />
         </div>
       ) : activeTab === 'degrees' ? (
         /* Degrees List */
@@ -558,15 +757,26 @@ export default function AcademicStructurePage() {
               No degrees found.
             </div>
           ) : (
-            filteredDegrees.map((deg: any) => (
+            visibleDegrees.map((deg: any) => (
               <div
                 key={deg.degree_id}
-                className="bg-card/30 border border-border/80 rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between hover:shadow-xl transition-all space-y-4"
+                className={`bg-card/30 border rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between hover:shadow-xl transition-all space-y-4 ${
+                  structureSelection.isSelected(deg.degree_id)
+                    ? 'border-primary/70 ring-1 ring-primary/30 bg-primary/5'
+                    : 'border-border/80'
+                }`}
               >
                 <div className="space-y-3">
                   {/* Top Badges & Actions */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={structureSelection.isSelected(deg.degree_id)}
+                        onChange={() => structureSelection.toggle(deg.degree_id)}
+                        aria-label={`Select ${deg.degree_name}`}
+                        className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
+                      />
                       <span className="text-xs font-mono font-bold px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg uppercase">
                         {deg.degree_code}
                       </span>
@@ -657,6 +867,14 @@ export default function AcademicStructurePage() {
               </div>
             ))
           )}
+          <ProgressiveLoadFooter
+            loadedCount={visibleDegreesCount}
+            totalCount={totalDegreesCount}
+            isLoadingMore={hasMoreDegrees}
+            hasMore={hasMoreDegrees}
+            entityLabel="degrees"
+            className="col-span-full rounded-2xl border border-border/60"
+          />
         </div>
       ) : activeTab === 'specializations' ? (
         /* Specializations List */
@@ -666,15 +884,26 @@ export default function AcademicStructurePage() {
               No specializations found.
             </div>
           ) : (
-            filteredSpecializations.map((spec: any) => (
+            visibleSpecializations.map((spec: any) => (
               <div
                 key={spec.specialization_id}
-                className="bg-card/30 border border-border/80 rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between hover:shadow-xl transition-all space-y-4"
+                className={`bg-card/30 border rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between hover:shadow-xl transition-all space-y-4 ${
+                  structureSelection.isSelected(spec.specialization_id)
+                    ? 'border-primary/70 ring-1 ring-primary/30 bg-primary/5'
+                    : 'border-border/80'
+                }`}
               >
                 <div className="space-y-3">
                   {/* Top Badges & Actions */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={structureSelection.isSelected(spec.specialization_id)}
+                        onChange={() => structureSelection.toggle(spec.specialization_id)}
+                        aria-label={`Select ${spec.specialization_name}`}
+                        className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
+                      />
                       <span className="text-xs font-mono font-bold px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-lg uppercase">
                         {spec.specialization_code}
                       </span>
@@ -732,6 +961,14 @@ export default function AcademicStructurePage() {
               </div>
             ))
           )}
+          <ProgressiveLoadFooter
+            loadedCount={visibleSpecializationsCount}
+            totalCount={totalSpecializationsCount}
+            isLoadingMore={hasMoreSpecializations}
+            hasMore={hasMoreSpecializations}
+            entityLabel="specializations"
+            className="col-span-full rounded-2xl border border-border/60"
+          />
         </div>
       ) : (
         /* Bulk Specialization Assignment View */
@@ -915,6 +1152,7 @@ export default function AcademicStructurePage() {
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-border/80 text-muted-foreground uppercase font-bold bg-secondary/20">
+                      <th className="px-4 py-3 w-12 text-center">#</th>
                       <th className="px-6 py-3 w-12 text-center">Select</th>
                       <th className="px-6 py-3">Reg Number</th>
                       <th className="px-6 py-3">Full Name</th>
@@ -923,80 +1161,80 @@ export default function AcademicStructurePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
-                    {bulkStudents
-                      .filter(
-                        (s: any) =>
-                          (s.registration_number || '')
-                            .toLowerCase()
-                            .includes(bulkStudentSearch.toLowerCase()) ||
-                          (s.user?.full_name || '')
-                            .toLowerCase()
-                            .includes(bulkStudentSearch.toLowerCase()),
-                      )
-                      .map((student: any) => {
-                        const isSelected = selectedStudentIds.includes(student.student_id);
-                        return (
-                          <tr
-                            key={student.student_id}
-                            onClick={() => {
-                              if (isSelected) {
-                                setSelectedStudentIds(
-                                  selectedStudentIds.filter((id) => id !== student.student_id),
-                                );
-                              } else {
-                                setSelectedStudentIds([...selectedStudentIds, student.student_id]);
-                              }
-                            }}
-                            className={`hover:bg-secondary/15 transition cursor-pointer ${
-                              isSelected ? 'bg-primary/5' : ''
-                            }`}
+                    {visibleBulkStudents.map((student: any, idx: number) => {
+                      const isSelected = selectedStudentIds.includes(student.student_id);
+                      return (
+                        <tr
+                          key={student.student_id}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedStudentIds(
+                                selectedStudentIds.filter((id) => id !== student.student_id),
+                              );
+                            } else {
+                              setSelectedStudentIds([...selectedStudentIds, student.student_id]);
+                            }
+                          }}
+                          className={`hover:bg-secondary/15 transition cursor-pointer ${
+                            isSelected ? 'bg-primary/5' : ''
+                          }`}
+                        >
+                          <td className="px-4 py-3 text-center font-mono text-muted-foreground font-bold">
+                            {idx + 1}
+                          </td>
+                          <td
+                            className="px-6 py-3 text-center"
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            <td
-                              className="px-6 py-3 text-center"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedStudentIds([
-                                      ...selectedStudentIds,
-                                      student.student_id,
-                                    ]);
-                                  } else {
-                                    setSelectedStudentIds(
-                                      selectedStudentIds.filter((id) => id !== student.student_id),
-                                    );
-                                  }
-                                }}
-                                className="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
-                              />
-                            </td>
-                            <td className="px-6 py-3 font-mono font-bold text-primary">
-                              {student.registration_number}
-                            </td>
-                            <td className="px-6 py-3 font-semibold text-foreground">
-                              {student.user?.full_name}
-                            </td>
-                            <td className="px-6 py-3 font-mono text-muted-foreground">
-                              {student.academic_year || 'N/A'}
-                            </td>
-                            <td className="px-6 py-3 font-medium">
-                              {student.specialization ? (
-                                <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-lg">
-                                  {student.specialization.specialization_name} (
-                                  {student.specialization.specialization_code})
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground italic">None (General)</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedStudentIds([
+                                    ...selectedStudentIds,
+                                    student.student_id,
+                                  ]);
+                                } else {
+                                  setSelectedStudentIds(
+                                    selectedStudentIds.filter((id) => id !== student.student_id),
+                                  );
+                                }
+                              }}
+                              className="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+                            />
+                          </td>
+                          <td className="px-6 py-3 font-mono font-bold text-primary">
+                            {student.registration_number}
+                          </td>
+                          <td className="px-6 py-3 font-semibold text-foreground">
+                            {student.user?.full_name}
+                          </td>
+                          <td className="px-6 py-3 font-mono text-muted-foreground">
+                            {student.academic_year || 'N/A'}
+                          </td>
+                          <td className="px-6 py-3 font-medium">
+                            {student.specialization ? (
+                              <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-lg">
+                                {student.specialization.specialization_name} (
+                                {student.specialization.specialization_code})
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground italic">None (General)</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
+                <ProgressiveLoadFooter
+                  loadedCount={visibleBulkStudentsCount}
+                  totalCount={totalBulkStudentsCount}
+                  isLoadingMore={hasMoreBulkStudents}
+                  hasMore={hasMoreBulkStudents}
+                  entityLabel="students"
+                />
               </div>
             </div>
           )}
@@ -1306,7 +1544,14 @@ export default function AcademicStructurePage() {
 
               {/* Current Limits List */}
               <div className="space-y-3">
-                <h4 className="text-xs font-bold text-foreground">Current Configured Limits</h4>
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-xs font-bold text-foreground">Current Configured Limits</h4>
+                  <BulkDeleteButton
+                    count={limitsSelection.selectedCount}
+                    isDeleting={isBulkDeletingLimits}
+                    onClick={handleBulkDeleteLimits}
+                  />
+                </div>
                 {limitsLoading ? (
                   <div className="text-center py-4 text-xs text-muted-foreground">
                     Loading limits...
@@ -1320,6 +1565,22 @@ export default function AcademicStructurePage() {
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="border-b border-border/60 bg-secondary/15 text-muted-foreground font-bold">
+                          <th className="px-3 py-2 w-10 text-center">
+                            <SelectAllCheckbox
+                              checked={limitsSelection.isAllSelected(
+                                limitsList.map((l: any) => l.limit_id),
+                              )}
+                              indeterminate={limitsSelection.isIndeterminate(
+                                limitsList.map((l: any) => l.limit_id),
+                              )}
+                              disabled={limitsList.length === 0}
+                              onChange={() =>
+                                limitsSelection.toggleAll(limitsList.map((l: any) => l.limit_id))
+                              }
+                              ariaLabel="Select all credit limits"
+                            />
+                          </th>
+                          <th className="px-4 py-2 w-12 text-center">#</th>
                           <th className="px-4 py-2">Year</th>
                           <th className="px-4 py-2">Semester</th>
                           <th className="px-4 py-2">Max Credits</th>
@@ -1327,11 +1588,25 @@ export default function AcademicStructurePage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/40 font-medium">
-                        {limitsList.map((limit) => (
+                        {limitsList.map((limit, idx) => (
                           <tr
                             key={limit.limit_id}
-                            className="hover:bg-secondary/10 transition-colors"
+                            className={`hover:bg-secondary/10 transition-colors ${
+                              limitsSelection.isSelected(limit.limit_id) ? 'bg-primary/5' : ''
+                            }`}
                           >
+                            <td className="px-3 py-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={limitsSelection.isSelected(limit.limit_id)}
+                                onChange={() => limitsSelection.toggle(limit.limit_id)}
+                                aria-label={`Select credit limit ${limit.academic_year} ${limit.semester}`}
+                                className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
+                              />
+                            </td>
+                            <td className="px-4 py-2 text-center font-mono text-muted-foreground font-bold">
+                              {idx + 1}
+                            </td>
                             <td className="px-4 py-2 text-foreground font-bold">
                               {limit.academic_year}
                             </td>

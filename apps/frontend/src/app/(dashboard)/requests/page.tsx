@@ -1,10 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
 import { useToast } from '../../../hooks/use-toast';
+import { useConfirm } from '../../../hooks/use-confirm';
+import { useProgressiveList } from '../../../hooks/use-progressive-load';
+import { ProgressiveLoadFooter } from '../../../components/ui/progressive-load-footer';
+import { useBulkSelection, runBulkDelete } from '../../../hooks/use-bulk-selection';
+import { BulkDeleteButton, SelectAllCheckbox } from '../../../components/ui/bulk-delete-button';
 import { UserRole } from '@ems/shared';
 import {
   Upload,
@@ -23,6 +28,7 @@ export default function RequestsPortalPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const toast = useToast();
+  const confirm = useConfirm();
   const isStudent = user?.role === UserRole.STUDENT;
 
   // Active Tab: student history/submissions, staff dashboard
@@ -123,6 +129,122 @@ export default function RequestsPortalPage() {
     },
     enabled: !isStudent,
   });
+
+  const combinedStudentRequests = useMemo(() => {
+    if (!studentRequests) return [];
+    return [
+      ...(studentRequests.medicals || []).map((req: any) => ({
+        _reqType: 'medical' as const,
+        req,
+      })),
+      ...(studentRequests.graces || []).map((req: any) => ({
+        _reqType: 'grace' as const,
+        req,
+      })),
+      ...(studentRequests.recorrections || []).map((req: any) => ({
+        _reqType: 'recorrection' as const,
+        req,
+      })),
+    ];
+  }, [studentRequests]);
+
+  const combinedStaffSubmissions = useMemo(() => {
+    if (!staffSubmissions) return [];
+    return [
+      ...(staffSubmissions.medicals || []).map((req: any) => ({
+        _reqType: 'medical' as const,
+        req,
+      })),
+      ...(staffSubmissions.graces || []).map((req: any) => ({
+        _reqType: 'grace' as const,
+        req,
+      })),
+      ...(staffSubmissions.recorrections || []).map((req: any) => ({
+        _reqType: 'recorrection' as const,
+        req,
+      })),
+    ];
+  }, [staffSubmissions]);
+
+  const {
+    visibleItems: visibleStudentRequests,
+    visibleCount: visibleStudentReqCount,
+    totalCount: totalStudentReqCount,
+    hasMore: hasMoreStudentReqs,
+  } = useProgressiveList(combinedStudentRequests);
+
+  const {
+    visibleItems: visibleStaffSubmissions,
+    visibleCount: visibleStaffSubCount,
+    totalCount: totalStaffSubCount,
+    hasMore: hasMoreStaffSubs,
+  } = useProgressiveList(combinedStaffSubmissions);
+
+  const getRequestSelectionKey = (item: {
+    _reqType: 'medical' | 'grace' | 'recorrection';
+    req: any;
+  }) => {
+    if (item._reqType === 'medical') return `medical:${item.req.medical_id}`;
+    if (item._reqType === 'grace') return `grace:${item.req.grace_id}`;
+    return `recorrection:${item.req.recorrection_id}`;
+  };
+
+  const studentSelection = useBulkSelection<string>();
+  const staffSelection = useBulkSelection<string>();
+  const [isBulkDeletingSubmissions, setIsBulkDeletingSubmissions] = useState(false);
+
+  const selectableStudentRequestKeys = useMemo(
+    () =>
+      combinedStudentRequests
+        .filter(({ req }) => req.status === 'PENDING')
+        .map(getRequestSelectionKey),
+    [combinedStudentRequests],
+  );
+
+  const staffSubmissionKeys = useMemo(
+    () => combinedStaffSubmissions.map(getRequestSelectionKey),
+    [combinedStaffSubmissions],
+  );
+
+  const handleBulkDeleteSubmissions = async (mode: 'student' | 'staff') => {
+    const selection = mode === 'student' ? studentSelection : staffSelection;
+    const ids = Array.from(selection.selectedIds);
+    if (ids.length === 0) return;
+
+    const confirmed = await confirm({
+      title: `Delete ${ids.length} Submission${ids.length === 1 ? '' : 's'}?`,
+      message: `Are you sure you want to permanently delete ${ids.length} selected submission${ids.length === 1 ? '' : 's'}? This action cannot be undone.`,
+      confirmText: `Delete ${ids.length}`,
+      variant: 'destructive',
+    });
+    if (!confirmed) return;
+
+    setIsBulkDeletingSubmissions(true);
+    try {
+      const result = await runBulkDelete(ids, async (compositeKey) => {
+        const [reqType, idStr] = compositeKey.split(':');
+        await apiClient.delete(`/requests/${reqType}/${idStr}`);
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: [mode === 'student' ? 'student-requests' : 'staff-submissions'],
+      });
+
+      if (result.deletedCount > 0) {
+        selection.clear();
+      }
+
+      if (result.failedCount > 0) {
+        toast.warning(
+          `Deleted ${result.deletedCount} submission(s), but ${result.failedCount} failed${result.firstErrorMessage ? `: ${result.firstErrorMessage}` : '.'}`,
+        );
+      } else {
+        toast.success(`Deleted ${result.deletedCount} submission(s) successfully.`);
+      }
+    } finally {
+      setIsBulkDeletingSubmissions(false);
+    }
+  };
 
   // -------------------------------------------------------------
   // MUTATIONS (SUBMISSIONS & STATUS UPDATES)
@@ -478,116 +600,205 @@ export default function RequestsPortalPage() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Medical Cards */}
-              {studentRequests.medicals.map((req: any) => (
-                <div
-                  key={req.medical_id}
-                  className="bg-card border border-border rounded-2xl p-5 space-y-4 hover:shadow-lg transition-shadow"
-                >
-                  <div className="flex justify-between items-start">
-                    <span className="px-2.5 py-1 bg-sky-500/10 text-sky-400 border border-sky-500/20 text-xs font-bold rounded-lg uppercase">
-                      Medical Form 8.2
+            <div className="space-y-4">
+              {selectableStudentRequestKeys.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-card/40 border border-border/70 rounded-2xl px-4 py-3">
+                  <label className="inline-flex items-center gap-2.5 text-xs font-semibold text-muted-foreground cursor-pointer select-none">
+                    <SelectAllCheckbox
+                      checked={studentSelection.isAllSelected(selectableStudentRequestKeys)}
+                      indeterminate={studentSelection.isIndeterminate(selectableStudentRequestKeys)}
+                      disabled={isBulkDeletingSubmissions}
+                      onChange={() => studentSelection.toggleAll(selectableStudentRequestKeys)}
+                      ariaLabel="Select all pending submissions"
+                    />
+                    <span>
+                      Select all pending submissions ({selectableStudentRequestKeys.length})
                     </span>
-                    {getStatusBadge(req.status)}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-foreground line-clamp-1">{req.exam_name}</h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Submitted: {new Date(req.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    <strong>Missed courses:</strong> {req.subjects?.length || 0} subjects
-                  </div>
-                  <div className="flex gap-2 pt-2">
-                    <button
-                      onClick={() => handleDownloadPdf('medical', req.medical_id)}
-                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground text-xs font-semibold rounded-xl hover:bg-secondary/80 transition"
-                    >
-                      <Download className="h-3.5 w-3.5" /> PDF
-                    </button>
-                    <button
-                      onClick={() => handleViewAttachment(req.medical_certificate_url)}
-                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground text-xs font-semibold rounded-xl hover:bg-secondary/80 transition"
-                    >
-                      <Eye className="h-3.5 w-3.5" /> Medical cert
-                    </button>
-                  </div>
+                  </label>
+                  <BulkDeleteButton
+                    count={studentSelection.selectedCount}
+                    isDeleting={isBulkDeletingSubmissions}
+                    onClick={() => handleBulkDeleteSubmissions('student')}
+                  />
                 </div>
-              ))}
+              )}
 
-              {/* Grace Cards */}
-              {studentRequests.graces.map((req: any) => (
-                <div
-                  key={req.grace_id}
-                  className="bg-card border border-border rounded-2xl p-5 space-y-4 hover:shadow-lg transition-shadow"
-                >
-                  <div className="flex justify-between items-start">
-                    <span className="px-2.5 py-1 bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-bold rounded-lg uppercase">
-                      Grace Chance 8.3
-                    </span>
-                    {getStatusBadge(req.status)}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-foreground">Grace Chance Application</h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Submitted: {new Date(req.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    <strong>Incomplete Credits:</strong> {req.total_incomplete_credits} (
-                    {req.credit_percentage}%)
-                  </div>
-                  <div className="flex pt-2">
-                    <button
-                      onClick={() => handleDownloadPdf('grace', req.grace_id)}
-                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground text-xs font-semibold rounded-xl hover:bg-secondary/80 transition"
-                    >
-                      <Download className="h-3.5 w-3.5" /> Download Pre-filled PDF
-                    </button>
-                  </div>
-                </div>
-              ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {visibleStudentRequests.map(({ _reqType, req }) => {
+                  const selKey = getRequestSelectionKey({ _reqType, req });
+                  const canDelete = req.status === 'PENDING';
 
-              {/* Recorrection Cards */}
-              {studentRequests.recorrections.map((req: any) => (
-                <div
-                  key={req.recorrection_id}
-                  className="bg-card border border-border rounded-2xl p-5 space-y-4 hover:shadow-lg transition-shadow"
-                >
-                  <div className="flex justify-between items-start">
-                    <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-bold rounded-lg uppercase">
-                      Recorrection 8.6
-                    </span>
-                    {getStatusBadge(req.status)}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-foreground line-clamp-1">{req.exam_name}</h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Submitted: {new Date(req.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    <strong>Subjects:</strong> {req.subjects?.length || 0} | Paid: Rs.{' '}
-                    {req.total_amount_paid}
-                  </div>
-                  <div className="flex gap-2 pt-2">
-                    <button
-                      onClick={() => handleDownloadPdf('recorrection', req.recorrection_id)}
-                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground text-xs font-semibold rounded-xl hover:bg-secondary/80 transition"
+                  if (_reqType === 'medical') {
+                    return (
+                      <div
+                        key={`med-${req.medical_id}`}
+                        className="bg-card border border-border rounded-2xl p-5 space-y-4 hover:shadow-lg transition-shadow"
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={studentSelection.isSelected(selKey)}
+                              disabled={!canDelete || isBulkDeletingSubmissions}
+                              onChange={() => studentSelection.toggle(selKey)}
+                              aria-label={`Select medical submission ${req.medical_id}`}
+                              title={
+                                canDelete
+                                  ? 'Select submission'
+                                  : 'Only pending requests can be deleted'
+                              }
+                              className={`h-4 w-4 rounded border-border/80 bg-secondary/40 text-primary focus:ring-primary/40 accent-primary ${
+                                canDelete ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'
+                              }`}
+                            />
+                            <span className="px-2.5 py-1 bg-sky-500/10 text-sky-400 border border-sky-500/20 text-xs font-bold rounded-lg uppercase">
+                              Medical Form 8.2
+                            </span>
+                          </div>
+                          {getStatusBadge(req.status)}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-foreground line-clamp-1">
+                            {req.exam_name}
+                          </h3>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Submitted: {new Date(req.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          <strong>Missed courses:</strong> {req.subjects?.length || 0} subjects
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                          <button
+                            onClick={() => handleDownloadPdf('medical', req.medical_id)}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground text-xs font-semibold rounded-xl hover:bg-secondary/80 transition"
+                          >
+                            <Download className="h-3.5 w-3.5" /> PDF
+                          </button>
+                          <button
+                            onClick={() => handleViewAttachment(req.medical_certificate_url)}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground text-xs font-semibold rounded-xl hover:bg-secondary/80 transition"
+                          >
+                            <Eye className="h-3.5 w-3.5" /> Medical cert
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (_reqType === 'grace') {
+                    return (
+                      <div
+                        key={`grace-${req.grace_id}`}
+                        className="bg-card border border-border rounded-2xl p-5 space-y-4 hover:shadow-lg transition-shadow"
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={studentSelection.isSelected(selKey)}
+                              disabled={!canDelete || isBulkDeletingSubmissions}
+                              onChange={() => studentSelection.toggle(selKey)}
+                              aria-label={`Select grace submission ${req.grace_id}`}
+                              title={
+                                canDelete
+                                  ? 'Select submission'
+                                  : 'Only pending requests can be deleted'
+                              }
+                              className={`h-4 w-4 rounded border-border/80 bg-secondary/40 text-primary focus:ring-primary/40 accent-primary ${
+                                canDelete ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'
+                              }`}
+                            />
+                            <span className="px-2.5 py-1 bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-bold rounded-lg uppercase">
+                              Grace Chance 8.3
+                            </span>
+                          </div>
+                          {getStatusBadge(req.status)}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-foreground">Grace Chance Application</h3>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Submitted: {new Date(req.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          <strong>Incomplete Credits:</strong> {req.total_incomplete_credits} (
+                          {req.credit_percentage}%)
+                        </div>
+                        <div className="flex pt-2">
+                          <button
+                            onClick={() => handleDownloadPdf('grace', req.grace_id)}
+                            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground text-xs font-semibold rounded-xl hover:bg-secondary/80 transition"
+                          >
+                            <Download className="h-3.5 w-3.5" /> Download Pre-filled PDF
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div
+                      key={`rec-${req.recorrection_id}`}
+                      className="bg-card border border-border rounded-2xl p-5 space-y-4 hover:shadow-lg transition-shadow"
                     >
-                      <Download className="h-3.5 w-3.5" /> PDF
-                    </button>
-                    <button
-                      onClick={() => handleViewAttachment(req.receipt_url)}
-                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground text-xs font-semibold rounded-xl hover:bg-secondary/80 transition"
-                    >
-                      <Eye className="h-3.5 w-3.5" /> Receipt
-                    </button>
-                  </div>
-                </div>
-              ))}
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={studentSelection.isSelected(selKey)}
+                            disabled={!canDelete || isBulkDeletingSubmissions}
+                            onChange={() => studentSelection.toggle(selKey)}
+                            aria-label={`Select recorrection submission ${req.recorrection_id}`}
+                            title={
+                              canDelete
+                                ? 'Select submission'
+                                : 'Only pending requests can be deleted'
+                            }
+                            className={`h-4 w-4 rounded border-border/80 bg-secondary/40 text-primary focus:ring-primary/40 accent-primary ${
+                              canDelete ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'
+                            }`}
+                          />
+                          <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-bold rounded-lg uppercase">
+                            Recorrection 8.6
+                          </span>
+                        </div>
+                        {getStatusBadge(req.status)}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-foreground line-clamp-1">{req.exam_name}</h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Submitted: {new Date(req.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        <strong>Subjects:</strong> {req.subjects?.length || 0} | Paid: Rs.{' '}
+                        {req.total_amount_paid}
+                      </div>
+                      <div className="flex gap-2 pt-2">
+                        <button
+                          onClick={() => handleDownloadPdf('recorrection', req.recorrection_id)}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground text-xs font-semibold rounded-xl hover:bg-secondary/80 transition"
+                        >
+                          <Download className="h-3.5 w-3.5" /> PDF
+                        </button>
+                        <button
+                          onClick={() => handleViewAttachment(req.receipt_url)}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground text-xs font-semibold rounded-xl hover:bg-secondary/80 transition"
+                        >
+                          <Eye className="h-3.5 w-3.5" /> Receipt
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                <ProgressiveLoadFooter
+                  loadedCount={visibleStudentReqCount}
+                  totalCount={totalStudentReqCount}
+                  isLoadingMore={hasMoreStudentReqs}
+                  hasMore={hasMoreStudentReqs}
+                  entityLabel="requests"
+                  className="col-span-full rounded-2xl border border-border/60"
+                />
+              </div>
             </div>
           )}
         </div>
@@ -1223,10 +1434,32 @@ export default function RequestsPortalPage() {
             </div>
           ) : (
             <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl">
+              {staffSelection.selectedCount > 0 && (
+                <div className="flex items-center justify-between gap-3 px-4 py-3 bg-secondary/20 border-b border-border">
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {staffSelection.selectedCount} submission(s) selected
+                  </span>
+                  <BulkDeleteButton
+                    count={staffSelection.selectedCount}
+                    isDeleting={isBulkDeletingSubmissions}
+                    onClick={() => handleBulkDeleteSubmissions('staff')}
+                  />
+                </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-border text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
+                      <th className="px-4 py-4 w-10 text-center">
+                        <SelectAllCheckbox
+                          checked={staffSelection.isAllSelected(staffSubmissionKeys)}
+                          indeterminate={staffSelection.isIndeterminate(staffSubmissionKeys)}
+                          disabled={staffSubmissionKeys.length === 0 || isBulkDeletingSubmissions}
+                          onChange={() => staffSelection.toggleAll(staffSubmissionKeys)}
+                          ariaLabel="Select all student submissions"
+                        />
+                      </th>
+                      <th className="px-4 py-4 w-12 text-center">#</th>
                       <th className="px-6 py-4">Student</th>
                       <th className="px-6 py-4">Form Type</th>
                       <th className="px-6 py-4">Details</th>
@@ -1236,129 +1469,177 @@ export default function RequestsPortalPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60 text-sm font-medium">
-                    {/* Medical submissions */}
-                    {staffSubmissions.medicals.map((req: any) => (
-                      <tr
-                        key={`med-${req.medical_id}`}
-                        className="hover:bg-secondary/10 transition-colors"
-                      >
-                        <td className="px-6 py-4.5">
-                          <div className="font-bold text-foreground">
-                            {req.student?.user?.full_name}
-                          </div>
-                          <div className="text-xs text-muted-foreground font-mono">
-                            {req.student?.registration_number}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4.5">
-                          <span className="px-2 py-0.5 bg-sky-500/10 text-sky-400 border border-sky-500/20 text-xs font-bold rounded">
-                            Medical Form 8.2
-                          </span>
-                        </td>
-                        <td className="px-6 py-4.5 text-xs text-muted-foreground max-w-xs truncate">
-                          {req.exam_name}
-                        </td>
-                        <td className="px-6 py-4.5 text-xs text-muted-foreground">
-                          {new Date(req.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4.5">{getStatusBadge(req.status)}</td>
-                        <td className="px-6 py-4.5 text-right space-x-2">
-                          <button
-                            onClick={() => {
-                              setSelectedRequest(req);
-                              setSelectedRequestType('medical');
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg text-xs font-bold transition"
+                    {visibleStaffSubmissions.map(({ _reqType, req }, idx: number) => {
+                      const selKey = getRequestSelectionKey({ _reqType, req });
+                      if (_reqType === 'medical') {
+                        return (
+                          <tr
+                            key={`med-${req.medical_id}`}
+                            className="hover:bg-secondary/10 transition-colors"
                           >
-                            <Eye className="h-3.5 w-3.5" /> Review
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-
-                    {/* Grace submissions */}
-                    {staffSubmissions.graces.map((req: any) => (
-                      <tr
-                        key={`grace-${req.grace_id}`}
-                        className="hover:bg-secondary/10 transition-colors"
-                      >
-                        <td className="px-6 py-4.5">
-                          <div className="font-bold text-foreground">
-                            {req.student?.user?.full_name}
-                          </div>
-                          <div className="text-xs text-muted-foreground font-mono">
-                            {req.student?.registration_number}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4.5">
-                          <span className="px-2 py-0.5 bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-bold rounded">
-                            Grace Chance 8.3
-                          </span>
-                        </td>
-                        <td className="px-6 py-4.5 text-xs text-muted-foreground max-w-xs truncate">
-                          Faculty: {req.faculty} | Credits: {req.total_incomplete_credits}{' '}
-                          incomplete
-                        </td>
-                        <td className="px-6 py-4.5 text-xs text-muted-foreground">
-                          {new Date(req.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4.5">{getStatusBadge(req.status)}</td>
-                        <td className="px-6 py-4.5 text-right space-x-2">
-                          <button
-                            onClick={() => {
-                              setSelectedRequest(req);
-                              setSelectedRequestType('grace');
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg text-xs font-bold transition"
+                            <td className="px-4 py-4.5 text-center">
+                              <input
+                                type="checkbox"
+                                checked={staffSelection.isSelected(selKey)}
+                                disabled={isBulkDeletingSubmissions}
+                                onChange={() => staffSelection.toggle(selKey)}
+                                aria-label={`Select medical submission ${req.medical_id}`}
+                                className="h-4 w-4 rounded border-border/80 bg-secondary/40 text-primary focus:ring-primary/40 cursor-pointer accent-primary"
+                              />
+                            </td>
+                            <td className="px-4 py-4.5 text-center font-mono text-muted-foreground font-bold text-xs">
+                              {idx + 1}
+                            </td>
+                            <td className="px-6 py-4.5">
+                              <div className="font-bold text-foreground">
+                                {req.student?.user?.full_name}
+                              </div>
+                              <div className="text-xs text-muted-foreground font-mono">
+                                {req.student?.registration_number}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4.5">
+                              <span className="px-2 py-0.5 bg-sky-500/10 text-sky-400 border border-sky-500/20 text-xs font-bold rounded">
+                                Medical Form 8.2
+                              </span>
+                            </td>
+                            <td className="px-6 py-4.5 text-xs text-muted-foreground max-w-xs truncate">
+                              {req.exam_name}
+                            </td>
+                            <td className="px-6 py-4.5 text-xs text-muted-foreground">
+                              {new Date(req.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="px-6 py-4.5">{getStatusBadge(req.status)}</td>
+                            <td className="px-6 py-4.5 text-right space-x-2">
+                              <button
+                                onClick={() => {
+                                  setSelectedRequest(req);
+                                  setSelectedRequestType('medical');
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg text-xs font-bold transition"
+                              >
+                                <Eye className="h-3.5 w-3.5" /> Review
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+                      if (_reqType === 'grace') {
+                        return (
+                          <tr
+                            key={`grace-${req.grace_id}`}
+                            className="hover:bg-secondary/10 transition-colors"
                           >
-                            <Eye className="h-3.5 w-3.5" /> Review
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-
-                    {/* Recorrection submissions */}
-                    {staffSubmissions.recorrections.map((req: any) => (
-                      <tr
-                        key={`rec-${req.recorrection_id}`}
-                        className="hover:bg-secondary/10 transition-colors"
-                      >
-                        <td className="px-6 py-4.5">
-                          <div className="font-bold text-foreground">
-                            {req.student?.user?.full_name}
-                          </div>
-                          <div className="text-xs text-muted-foreground font-mono">
-                            {req.student?.registration_number}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4.5">
-                          <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-bold rounded">
-                            Recorrection 8.6
-                          </span>
-                        </td>
-                        <td className="px-6 py-4.5 text-xs text-muted-foreground max-w-xs truncate">
-                          {req.exam_name} | Fee: Rs. {req.total_amount_paid}
-                        </td>
-                        <td className="px-6 py-4.5 text-xs text-muted-foreground">
-                          {new Date(req.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4.5">{getStatusBadge(req.status)}</td>
-                        <td className="px-6 py-4.5 text-right space-x-2">
-                          <button
-                            onClick={() => {
-                              setSelectedRequest(req);
-                              setSelectedRequestType('recorrection');
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg text-xs font-bold transition"
-                          >
-                            <Eye className="h-3.5 w-3.5" /> Review
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                            <td className="px-4 py-4.5 text-center">
+                              <input
+                                type="checkbox"
+                                checked={staffSelection.isSelected(selKey)}
+                                disabled={isBulkDeletingSubmissions}
+                                onChange={() => staffSelection.toggle(selKey)}
+                                aria-label={`Select grace submission ${req.grace_id}`}
+                                className="h-4 w-4 rounded border-border/80 bg-secondary/40 text-primary focus:ring-primary/40 cursor-pointer accent-primary"
+                              />
+                            </td>
+                            <td className="px-4 py-4.5 text-center font-mono text-muted-foreground font-bold text-xs">
+                              {idx + 1}
+                            </td>
+                            <td className="px-6 py-4.5">
+                              <div className="font-bold text-foreground">
+                                {req.student?.user?.full_name}
+                              </div>
+                              <div className="text-xs text-muted-foreground font-mono">
+                                {req.student?.registration_number}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4.5">
+                              <span className="px-2 py-0.5 bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-bold rounded">
+                                Grace Chance 8.3
+                              </span>
+                            </td>
+                            <td className="px-6 py-4.5 text-xs text-muted-foreground max-w-xs truncate">
+                              Faculty: {req.faculty} | Credits: {req.total_incomplete_credits}{' '}
+                              incomplete
+                            </td>
+                            <td className="px-6 py-4.5 text-xs text-muted-foreground">
+                              {new Date(req.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="px-6 py-4.5">{getStatusBadge(req.status)}</td>
+                            <td className="px-6 py-4.5 text-right space-x-2">
+                              <button
+                                onClick={() => {
+                                  setSelectedRequest(req);
+                                  setSelectedRequestType('grace');
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg text-xs font-bold transition"
+                              >
+                                <Eye className="h-3.5 w-3.5" /> Review
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+                      return (
+                        <tr
+                          key={`rec-${req.recorrection_id}`}
+                          className="hover:bg-secondary/10 transition-colors"
+                        >
+                          <td className="px-4 py-4.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={staffSelection.isSelected(selKey)}
+                              disabled={isBulkDeletingSubmissions}
+                              onChange={() => staffSelection.toggle(selKey)}
+                              aria-label={`Select recorrection submission ${req.recorrection_id}`}
+                              className="h-4 w-4 rounded border-border/80 bg-secondary/40 text-primary focus:ring-primary/40 cursor-pointer accent-primary"
+                            />
+                          </td>
+                          <td className="px-4 py-4.5 text-center font-mono text-muted-foreground font-bold text-xs">
+                            {idx + 1}
+                          </td>
+                          <td className="px-6 py-4.5">
+                            <div className="font-bold text-foreground">
+                              {req.student?.user?.full_name}
+                            </div>
+                            <div className="text-xs text-muted-foreground font-mono">
+                              {req.student?.registration_number}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4.5">
+                            <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-bold rounded">
+                              Recorrection 8.6
+                            </span>
+                          </td>
+                          <td className="px-6 py-4.5 text-xs text-muted-foreground max-w-xs truncate">
+                            {req.exam_name} | Fee: Rs. {req.total_amount_paid}
+                          </td>
+                          <td className="px-6 py-4.5 text-xs text-muted-foreground">
+                            {new Date(req.created_at).toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-4.5">{getStatusBadge(req.status)}</td>
+                          <td className="px-6 py-4.5 text-right space-x-2">
+                            <button
+                              onClick={() => {
+                                setSelectedRequest(req);
+                                setSelectedRequestType('recorrection');
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg text-xs font-bold transition"
+                            >
+                              <Eye className="h-3.5 w-3.5" /> Review
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+              <ProgressiveLoadFooter
+                loadedCount={visibleStaffSubCount}
+                totalCount={totalStaffSubCount}
+                isLoadingMore={hasMoreStaffSubs}
+                hasMore={hasMoreStaffSubs}
+                entityLabel="submissions"
+              />
             </div>
           )}
         </div>
@@ -1432,6 +1713,7 @@ export default function RequestsPortalPage() {
                   <table className="w-full border-collapse border border-border text-xs text-left">
                     <thead>
                       <tr className="bg-secondary/20">
+                        <th className="p-2 border border-border w-10 text-center">#</th>
                         <th className="p-2 border border-border">Date of Exam</th>
                         <th className="p-2 border border-border">Course Code</th>
                         <th className="p-2 border border-border">Title</th>
@@ -1440,6 +1722,9 @@ export default function RequestsPortalPage() {
                     <tbody>
                       {selectedRequest.subjects?.map((sub: any, idx: number) => (
                         <tr key={idx}>
+                          <td className="p-2 border border-border text-center font-mono text-muted-foreground font-bold">
+                            {idx + 1}
+                          </td>
                           <td className="p-2 border border-border">{sub.date}</td>
                           <td className="p-2 border border-border font-mono">{sub.course_code}</td>
                           <td className="p-2 border border-border">{sub.title}</td>
@@ -1528,6 +1813,7 @@ export default function RequestsPortalPage() {
                   <table className="w-full border border-border text-left">
                     <thead>
                       <tr className="bg-secondary/20">
+                        <th className="p-2 border border-border w-10 text-center">#</th>
                         <th className="p-2 border border-border">Subject Code & Title</th>
                         <th className="p-2 border border-border text-center">1st Attempt</th>
                         <th className="p-2 border border-border text-center">2nd Attempt</th>
@@ -1538,6 +1824,9 @@ export default function RequestsPortalPage() {
                     <tbody>
                       {selectedRequest.incomplete_subjects?.map((sub: any, idx: number) => (
                         <tr key={idx}>
+                          <td className="p-2 border border-border text-center font-mono text-muted-foreground font-bold">
+                            {idx + 1}
+                          </td>
                           <td className="p-2 border border-border font-bold">
                             {sub.code} - {sub.title}
                           </td>
@@ -1601,6 +1890,7 @@ export default function RequestsPortalPage() {
                   <table className="w-full border border-border text-xs text-left">
                     <thead>
                       <tr className="bg-secondary/20">
+                        <th className="p-2 border border-border w-10 text-center">#</th>
                         <th className="p-2 border border-border">Exam Type</th>
                         <th className="p-2 border border-border">Course Code & Name</th>
                         <th className="p-2 border border-border text-center">Marks Received</th>
@@ -1610,6 +1900,9 @@ export default function RequestsPortalPage() {
                     <tbody>
                       {selectedRequest.subjects?.map((sub: any, idx: number) => (
                         <tr key={idx}>
+                          <td className="p-2 border border-border text-center font-mono text-muted-foreground font-bold">
+                            {idx + 1}
+                          </td>
                           <td className="p-2 border border-border">{sub.exam_type}</td>
                           <td className="p-2 border border-border font-semibold">
                             {sub.course_code} - {sub.course_name}

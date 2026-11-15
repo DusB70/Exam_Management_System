@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { UserRole } from '@ems/shared';
+import { ProgressiveSlice } from '../../components/ui/progressive-load-footer';
 
 const STABLE_EMPTY_ARRAY: any[] = [];
 
@@ -567,45 +568,60 @@ export default function DashboardOverview() {
                     </div>
                   </div>
 
-                  <div className="border border-border/60 rounded-xl overflow-hidden shadow-md">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="border-b border-border/60 bg-secondary/15 text-muted-foreground font-bold">
-                          <th className="px-4 py-3">Registration No</th>
-                          <th className="px-4 py-3">Full Name</th>
-                          <th className="px-4 py-3">Email Address</th>
-                          <th className="px-4 py-3">Phone Number</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/40 font-medium">
-                        {filteredNonFilled.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="text-center py-8 text-muted-foreground">
-                              No students matching criteria are pending registration.
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredNonFilled.map((student: any) => (
-                            <tr
-                              key={student.studentId}
-                              className="hover:bg-secondary/10 transition-colors"
-                            >
-                              <td className="px-4 py-2.5 font-bold text-foreground">
-                                {student.registrationNumber}
-                              </td>
-                              <td className="px-4 py-2.5 text-muted-foreground">
-                                {student.fullName}
-                              </td>
-                              <td className="px-4 py-2.5 text-muted-foreground">{student.email}</td>
-                              <td className="px-4 py-2.5 text-muted-foreground">
-                                {student.phoneNumber}
-                              </td>
+                  <ProgressiveSlice
+                    items={filteredNonFilled}
+                    entityLabel="students"
+                    resetKey={`${selectedBatch}|${nonFilledSearch}`}
+                  >
+                    {(visibleStudents, footer) => (
+                      <div className="border border-border/60 rounded-xl overflow-hidden shadow-md">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-border/60 bg-secondary/15 text-muted-foreground font-bold">
+                              <th className="px-4 py-3 w-12 text-center">#</th>
+                              <th className="px-4 py-3">Registration No</th>
+                              <th className="px-4 py-3">Full Name</th>
+                              <th className="px-4 py-3">Email Address</th>
+                              <th className="px-4 py-3">Phone Number</th>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                          </thead>
+                          <tbody className="divide-y divide-border/40 font-medium">
+                            {filteredNonFilled.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="text-center py-8 text-muted-foreground">
+                                  No students matching criteria are pending registration.
+                                </td>
+                              </tr>
+                            ) : (
+                              visibleStudents.map((student: any, idx: number) => (
+                                <tr
+                                  key={student.studentId}
+                                  className="hover:bg-secondary/10 transition-colors"
+                                >
+                                  <td className="px-4 py-2.5 text-center font-mono text-muted-foreground font-bold">
+                                    {idx + 1}
+                                  </td>
+                                  <td className="px-4 py-2.5 font-bold text-foreground">
+                                    {student.registrationNumber}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-muted-foreground">
+                                    {student.fullName}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-muted-foreground">
+                                    {student.email}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-muted-foreground">
+                                    {student.phoneNumber}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                        {footer}
+                      </div>
+                    )}
+                  </ProgressiveSlice>
                 </div>
               </div>
             )}
@@ -637,43 +653,52 @@ export default function DashboardOverview() {
                 No submitted marksheets are pending approval.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {pendingApprovals.map((exam: any) => (
-                  <div
-                    key={exam.exam_id}
-                    className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-start">
-                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md uppercase">
-                          {exam.course?.course_code}
-                        </span>
-                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-md uppercase">
-                          {exam.exam_type}
-                        </span>
-                      </div>
-                      <h4 className="font-bold text-sm text-foreground pt-1 truncate">
-                        {exam.exam_title}
-                      </h4>
-                      <p className="text-xs text-muted-foreground">
-                        Course: {exam.course?.course_name}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        Date: {new Date(exam.exam_date).toLocaleDateString()} | Max Marks:{' '}
-                        {exam.total_marks}
-                      </p>
-                    </div>
-                    <div className="border-t border-border/60 pt-4 mt-6 flex items-center justify-between">
-                      <Link
-                        href="/marks"
-                        className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+              <ProgressiveSlice
+                items={pendingApprovals}
+                entityLabel="marksheets"
+                footerClassName="col-span-full rounded-2xl border border-border/60"
+              >
+                {(visibleApprovals, footer) => (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {visibleApprovals.map((exam: any) => (
+                      <div
+                        key={exam.exam_id}
+                        className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md"
                       >
-                        Go to Review Queue &rarr;
-                      </Link>
-                    </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-start">
+                            <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md uppercase">
+                              {exam.course?.course_code}
+                            </span>
+                            <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-md uppercase">
+                              {exam.exam_type}
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-sm text-foreground pt-1 truncate">
+                            {exam.exam_title}
+                          </h4>
+                          <p className="text-xs text-muted-foreground">
+                            Course: {exam.course?.course_name}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Date: {new Date(exam.exam_date).toLocaleDateString()} | Max Marks:{' '}
+                            {exam.total_marks}
+                          </p>
+                        </div>
+                        <div className="border-t border-border/60 pt-4 mt-6 flex items-center justify-between">
+                          <Link
+                            href="/marks"
+                            className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                          >
+                            Go to Review Queue &rarr;
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                    {footer}
                   </div>
-                ))}
-              </div>
+                )}
+              </ProgressiveSlice>
             )}
           </div>
         </div>
@@ -770,52 +795,61 @@ export default function DashboardOverview() {
                   No submitted marksheets are pending your approval.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 animate-fadeIn">
-                  {headPendingApprovalsData.map((course: any) => (
-                    <div
-                      key={course.course_id}
-                      className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/20 transition-all duration-305 group"
-                    >
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-start">
-                          <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
-                            {course.course_code}
-                          </span>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 border rounded uppercase ${
-                              course.result_submission_status === 'SUBMITTED_PROVISIONAL'
-                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-                            }`}
-                          >
-                            {course.result_submission_status === 'SUBMITTED_PROVISIONAL'
-                              ? 'Provisional'
-                              : 'Final'}
-                          </span>
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-sm text-foreground pt-1 truncate leading-snug group-hover:text-primary transition-colors duration-300">
-                            {course.course_name}
-                          </h4>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Semester: {course.semester} | Batch: {course.academic_year}
-                          </p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">
-                            Department: {course.department?.department_name}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="border-t border-border/60 pt-4 mt-6 flex items-center justify-between">
-                        <button
-                          onClick={() => handleReviewCourse(course)}
-                          className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                <ProgressiveSlice
+                  items={headPendingApprovalsData}
+                  entityLabel="marksheets"
+                  footerClassName="col-span-full rounded-2xl border border-border/60"
+                >
+                  {(visibleHeadCourses, footer) => (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 animate-fadeIn">
+                      {visibleHeadCourses.map((course: any) => (
+                        <div
+                          key={course.course_id}
+                          className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/20 transition-all duration-305 group"
                         >
-                          Review Marksheet &rarr;
-                        </button>
-                      </div>
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-start">
+                              <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
+                                {course.course_code}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 border rounded uppercase ${
+                                  course.result_submission_status === 'SUBMITTED_PROVISIONAL'
+                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                    : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                                }`}
+                              >
+                                {course.result_submission_status === 'SUBMITTED_PROVISIONAL'
+                                  ? 'Provisional'
+                                  : 'Final'}
+                              </span>
+                            </div>
+                            <div>
+                              <h4 className="font-bold text-sm text-foreground pt-1 truncate leading-snug group-hover:text-primary transition-colors duration-300">
+                                {course.course_name}
+                              </h4>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Semester: {course.semester} | Batch: {course.academic_year}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">
+                                Department: {course.department?.department_name}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="border-t border-border/60 pt-4 mt-6 flex items-center justify-between">
+                            <button
+                              onClick={() => handleReviewCourse(course)}
+                              className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                            >
+                              Review Marksheet &rarr;
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {footer}
                     </div>
-                  ))}
-                </div>
+                  )}
+                </ProgressiveSlice>
               )}
             </div>
           )}
@@ -861,61 +895,75 @@ export default function DashboardOverview() {
                     );
                   }
 
-                  return heldCourses.map((course: any) => {
-                    const regCount =
-                      course._count?.registrations ??
-                      course.student_count ??
-                      course.studentCount ??
-                      0;
-                    const matrixItem = progressMatrix.find(
-                      (m: any) => Number(m.course_id) === Number(course.course_id),
-                    );
-                    const isCollected = matrixItem?.first_marking?.collected ?? false;
+                  return (
+                    <ProgressiveSlice
+                      items={heldCourses}
+                      entityLabel="courses"
+                      footerClassName="col-span-full rounded-2xl border border-border/60"
+                    >
+                      {(visibleHeldCourses, footer) => (
+                        <>
+                          {visibleHeldCourses.map((course: any) => {
+                            const regCount =
+                              course._count?.registrations ??
+                              course.student_count ??
+                              course.studentCount ??
+                              0;
+                            const matrixItem = progressMatrix.find(
+                              (m: any) => Number(m.course_id) === Number(course.course_id),
+                            );
+                            const isCollected = matrixItem?.first_marking?.collected ?? false;
 
-                    return (
-                      <Link
-                        key={`pending-${course.course_id}`}
-                        href={`/marks?courseId=${course.course_id}`}
-                        className="bg-card/30 border border-primary/30 hover:border-primary p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/40 hover:bg-card/40 transition-all duration-300 group cursor-pointer"
-                      >
-                        <div className="space-y-3">
-                          <div className="flex flex-wrap items-center justify-between gap-1.5">
-                            <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
-                              {course.course_code}
-                            </span>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {!isCollected && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded uppercase flex items-center gap-1 animate-pulse">
-                                  <AlertTriangle className="h-3 w-3" />
-                                  Collect Papers
-                                </span>
-                              )}
-                              <span className="text-[10px] font-bold px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded uppercase flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
-                                Exam Held
-                              </span>
-                            </div>
-                          </div>
-                          <div>
-                            <h4 className="font-bold text-sm text-foreground leading-snug group-hover:text-primary transition-colors">
-                              {course.course_name}
-                            </h4>
-                            <p className="text-[10px] font-medium text-muted-foreground mt-1 uppercase">
-                              Semester {course.semester} | Batch {course.academic_year || '21/22'}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="border-t border-border/60 pt-4 mt-4 flex items-center justify-between">
-                          <span className="text-[10px] text-muted-foreground font-bold uppercase">
-                            Enrolled students: <strong>{regCount} </strong>
-                          </span>
-                          <span className="text-xs text-primary font-bold group-hover:underline flex items-center gap-1">
-                            Open Marks Registry &rarr;
-                          </span>
-                        </div>
-                      </Link>
-                    );
-                  });
+                            return (
+                              <Link
+                                key={`pending-${course.course_id}`}
+                                href={`/marks?courseId=${course.course_id}`}
+                                className="bg-card/30 border border-primary/30 hover:border-primary p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/40 hover:bg-card/40 transition-all duration-300 group cursor-pointer"
+                              >
+                                <div className="space-y-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
+                                      {course.course_code}
+                                    </span>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {!isCollected && (
+                                        <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded uppercase flex items-center gap-1 animate-pulse">
+                                          <AlertTriangle className="h-3 w-3" />
+                                          Collect Papers
+                                        </span>
+                                      )}
+                                      <span className="text-[10px] font-bold px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded uppercase flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+                                        Exam Held
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <h4 className="font-bold text-sm text-foreground leading-snug group-hover:text-primary transition-colors">
+                                      {course.course_name}
+                                    </h4>
+                                    <p className="text-[10px] font-medium text-muted-foreground mt-1 uppercase">
+                                      Semester {course.semester} | Batch{' '}
+                                      {course.academic_year || '21/22'}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="border-t border-border/60 pt-4 mt-4 flex items-center justify-between">
+                                  <span className="text-[10px] text-muted-foreground font-bold uppercase">
+                                    Enrolled students: <strong>{regCount} </strong>
+                                  </span>
+                                  <span className="text-xs text-primary font-bold group-hover:underline flex items-center gap-1">
+                                    Open Marks Registry &rarr;
+                                  </span>
+                                </div>
+                              </Link>
+                            );
+                          })}
+                          {footer}
+                        </>
+                      )}
+                    </ProgressiveSlice>
+                  );
                 })()}
               </div>
             )}
@@ -960,48 +1008,58 @@ export default function DashboardOverview() {
                             <span className="text-xs font-bold text-muted-foreground">
                               {semester}
                             </span>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                              {groupedCourses[batch][semester].map((course: any) => {
-                                const regCount =
-                                  course._count?.registrations ??
-                                  course.student_count ??
-                                  course.studentCount ??
-                                  0;
+                            <ProgressiveSlice
+                              items={groupedCourses[batch][semester]}
+                              entityLabel="courses"
+                              resetKey={`${batch}|${semester}`}
+                              footerClassName="col-span-full rounded-2xl border border-border/60"
+                            >
+                              {(visibleCourses, footer) => (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                                  {visibleCourses.map((course: any) => {
+                                    const regCount =
+                                      course._count?.registrations ??
+                                      course.student_count ??
+                                      course.studentCount ??
+                                      0;
 
-                                return (
-                                  <Link
-                                    key={course.course_id}
-                                    href={`/students?courseId=${course.course_id}`}
-                                    className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/40 hover:bg-card/40 transition-all duration-300 group cursor-pointer"
-                                  >
-                                    <div>
-                                      <div className="flex justify-between items-start">
-                                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
-                                          {course.course_code}
-                                        </span>
-                                        <span className="text-[10px] text-muted-foreground font-bold uppercase">
-                                          Credits: {Number(course.credit_value).toFixed(1)}
-                                        </span>
-                                      </div>
-                                      <h4 className="font-bold text-sm text-foreground mt-3 leading-snug group-hover:text-primary transition-colors duration-300">
-                                        {course.course_name}
-                                      </h4>
-                                      <p className="text-[10px] text-muted-foreground mt-1 font-medium uppercase">
-                                        Batch {course.academic_year || '21/22'}
-                                      </p>
-                                    </div>
-                                    <div className="border-t border-border/60 pt-4 mt-5 flex items-center justify-between">
-                                      <span className="text-[10px] text-muted-foreground font-bold uppercase">
-                                        Enrolled students: <strong>{regCount}</strong>
-                                      </span>
-                                      <span className="text-xs text-primary group-hover:underline font-semibold flex items-center gap-1">
-                                        View Enrolled Students &rarr;
-                                      </span>
-                                    </div>
-                                  </Link>
-                                );
-                              })}
-                            </div>
+                                    return (
+                                      <Link
+                                        key={course.course_id}
+                                        href={`/students?courseId=${course.course_id}`}
+                                        className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/40 hover:bg-card/40 transition-all duration-300 group cursor-pointer"
+                                      >
+                                        <div>
+                                          <div className="flex justify-between items-start">
+                                            <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
+                                              {course.course_code}
+                                            </span>
+                                            <span className="text-[10px] text-muted-foreground font-bold uppercase">
+                                              Credits: {Number(course.credit_value).toFixed(1)}
+                                            </span>
+                                          </div>
+                                          <h4 className="font-bold text-sm text-foreground mt-3 leading-snug group-hover:text-primary transition-colors duration-300">
+                                            {course.course_name}
+                                          </h4>
+                                          <p className="text-[10px] text-muted-foreground mt-1 font-medium uppercase">
+                                            Batch {course.academic_year || '21/22'}
+                                          </p>
+                                        </div>
+                                        <div className="border-t border-border/60 pt-4 mt-5 flex items-center justify-between">
+                                          <span className="text-[10px] text-muted-foreground font-bold uppercase">
+                                            Enrolled students: <strong>{regCount}</strong>
+                                          </span>
+                                          <span className="text-xs text-primary group-hover:underline font-semibold flex items-center gap-1">
+                                            View Enrolled Students &rarr;
+                                          </span>
+                                        </div>
+                                      </Link>
+                                    );
+                                  })}
+                                  {footer}
+                                </div>
+                              )}
+                            </ProgressiveSlice>
                           </div>
                         ))}
                     </div>
@@ -1065,6 +1123,9 @@ export default function DashboardOverview() {
                       <table className="w-full text-left border-collapse">
                         <thead>
                           <tr className="bg-secondary/40 border-b border-border/80">
+                            <th className="p-3 w-12 text-xs font-bold text-muted-foreground uppercase text-center">
+                              #
+                            </th>
                             <th className="p-3 text-xs font-bold text-muted-foreground uppercase">
                               Reg. Number
                             </th>
@@ -1086,33 +1147,51 @@ export default function DashboardOverview() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border/60">
-                          {gridData.grades.map((grade: any) => (
-                            <tr
-                              key={grade.grade_id}
-                              className="hover:bg-secondary/20 transition-colors"
-                            >
-                              <td className="p-3 text-sm font-semibold font-mono text-foreground">
-                                {grade.student?.registration_number}
-                              </td>
-                              <td className="p-3 text-sm text-muted-foreground">
-                                {grade.student?.user?.full_name}
-                              </td>
-                              <td className="p-3 text-sm text-center font-medium">
-                                {Number(grade.continuous_assessment_marks).toFixed(1)}
-                              </td>
-                              <td className="p-3 text-sm text-center font-medium">
-                                {Number(grade.final_exam_marks).toFixed(1)}
-                              </td>
-                              <td className="p-3 text-sm text-center font-bold text-foreground">
-                                {Number(grade.total_marks).toFixed(1)}
-                              </td>
-                              <td className="p-3 text-sm text-center">
-                                <span className="px-2.5 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded-md font-bold text-xs">
-                                  {grade.grade}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
+                          <ProgressiveSlice
+                            items={gridData.grades}
+                            entityLabel="student grades"
+                            resetKey={reviewCourse?.course_id || ''}
+                          >
+                            {(visibleGrades, footer) => (
+                              <>
+                                {visibleGrades.map((grade: any, idx: number) => (
+                                  <tr
+                                    key={grade.grade_id}
+                                    className="hover:bg-secondary/20 transition-colors"
+                                  >
+                                    <td className="p-3 text-xs text-center font-mono text-muted-foreground font-bold">
+                                      {idx + 1}
+                                    </td>
+                                    <td className="p-3 text-sm font-semibold font-mono text-foreground">
+                                      {grade.student?.registration_number}
+                                    </td>
+                                    <td className="p-3 text-sm text-muted-foreground">
+                                      {grade.student?.user?.full_name}
+                                    </td>
+                                    <td className="p-3 text-sm text-center font-medium">
+                                      {Number(grade.continuous_assessment_marks).toFixed(1)}
+                                    </td>
+                                    <td className="p-3 text-sm text-center font-medium">
+                                      {Number(grade.final_exam_marks).toFixed(1)}
+                                    </td>
+                                    <td className="p-3 text-sm text-center font-bold text-foreground">
+                                      {Number(grade.total_marks).toFixed(1)}
+                                    </td>
+                                    <td className="p-3 text-sm text-center">
+                                      <span className="px-2.5 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded-md font-bold text-xs">
+                                        {grade.grade}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                                <tr>
+                                  <td colSpan={7} className="p-0">
+                                    {footer}
+                                  </td>
+                                </tr>
+                              </>
+                            )}
+                          </ProgressiveSlice>
                         </tbody>
                       </table>
                     </div>
@@ -1362,44 +1441,53 @@ export default function DashboardOverview() {
                 assigned for this semester.
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                {eligibleCourses.map((course: any) => (
-                  <div
-                    key={course.course_id}
-                    className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/20 transition-all duration-300 group"
-                  >
-                    <div>
-                      <div className="flex justify-between items-start">
-                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
-                          {course.course_code}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground font-semibold">
-                          Credits: {Number(course.credit_value).toFixed(1)}
-                        </span>
-                      </div>
-                      <h4 className="font-bold text-sm text-foreground mt-3 leading-snug group-hover:text-primary transition-colors duration-300">
-                        {course.course_name}
-                      </h4>
-                      {course.department && (
-                        <p className="text-[11px] text-muted-foreground mt-1.5 font-medium uppercase tracking-wider">
-                          {course.department.department_name}
-                        </p>
-                      )}
-                    </div>
-                    <div className="border-t border-border/60 pt-4 mt-5 flex items-center justify-between">
-                      <span className="text-[10px] text-muted-foreground">
-                        Semester: <strong>{course.semester}</strong>
-                      </span>
-                      <Link
-                        href="/registration"
-                        className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+              <ProgressiveSlice
+                items={eligibleCourses}
+                entityLabel="courses"
+                footerClassName="col-span-full rounded-2xl border border-border/60"
+              >
+                {(visibleCourses, footer) => (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                    {visibleCourses.map((course: any) => (
+                      <div
+                        key={course.course_id}
+                        className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/20 transition-all duration-300 group"
                       >
-                        Register Modules &rarr;
-                      </Link>
-                    </div>
+                        <div>
+                          <div className="flex justify-between items-start">
+                            <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
+                              {course.course_code}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground font-semibold">
+                              Credits: {Number(course.credit_value).toFixed(1)}
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-sm text-foreground mt-3 leading-snug group-hover:text-primary transition-colors duration-300">
+                            {course.course_name}
+                          </h4>
+                          {course.department && (
+                            <p className="text-[11px] text-muted-foreground mt-1.5 font-medium uppercase tracking-wider">
+                              {course.department.department_name}
+                            </p>
+                          )}
+                        </div>
+                        <div className="border-t border-border/60 pt-4 mt-5 flex items-center justify-between">
+                          <span className="text-[10px] text-muted-foreground">
+                            Semester: <strong>{course.semester}</strong>
+                          </span>
+                          <Link
+                            href="/registration"
+                            className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                          >
+                            Register Modules &rarr;
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                    {footer}
                   </div>
-                ))}
-              </div>
+                )}
+              </ProgressiveSlice>
             )}
           </div>
         </div>

@@ -1,11 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
 import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
+import { useBulkSelection, runBulkDelete } from '../../../hooks/use-bulk-selection';
+import { BulkDeleteButton, SelectAllCheckbox } from '../../../components/ui/bulk-delete-button';
+import { useProgressiveList } from '../../../hooks/use-progressive-load';
+import {
+  ProgressiveLoadFooter,
+  ProgressiveSlice,
+} from '../../../components/ui/progressive-load-footer';
 import { UserRole, ApiResponse } from '@ems/shared';
 import { AxiosError } from 'axios';
 import {
@@ -500,10 +507,50 @@ const BATCHES = ['20/21', '21/22', '22/23', '23/24', '24/25'];
 const SEMESTERS = ['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2'];
 
 export default function ExamsManagementPage() {
+  const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const isStudent = user?.role === UserRole.STUDENT;
   const toast = useToast();
   const confirm = useConfirm();
+  const [isBulkDeletingTimetable, setIsBulkDeletingTimetable] = useState(false);
+  const timetableSelection = useBulkSelection<number>();
+
+  const handleBulkDeleteTimetableEntries = async () => {
+    if (timetableSelection.selectedCount === 0) return;
+    const confirmed = await confirm({
+      title: 'Delete Selected Timetable Entries?',
+      message: `Are you sure you want to delete ${timetableSelection.selectedCount} selected exam timetable entry(ies)?`,
+      confirmText: `Delete (${timetableSelection.selectedCount})`,
+      variant: 'destructive',
+    });
+    if (!confirmed) return;
+
+    setIsBulkDeletingTimetable(true);
+    try {
+      const deletedIds: number[] = [];
+      const { deletedCount, failedCount, firstErrorMessage } = await runBulkDelete(
+        timetableSelection.selectedIds,
+        async (id) => {
+          await apiClient.delete(`/exams/timetable/entries/${id}`);
+          deletedIds.push(id);
+        },
+      );
+      if (deletedCount > 0) {
+        toast.success(`${deletedCount} timetable entry(ies) deleted successfully.`);
+        timetableSelection.removeFromSelection(deletedIds);
+        queryClient.invalidateQueries({ queryKey: ['all-exam-timetables'] });
+        queryClient.invalidateQueries({ queryKey: ['publishing-progress-matrix'] });
+      }
+      if (failedCount > 0) {
+        toast.error(
+          `${failedCount} entry(ies) failed to delete${firstErrorMessage ? `: ${firstErrorMessage}` : '.'}`,
+        );
+      }
+      if (failedCount === 0) timetableSelection.clear();
+    } finally {
+      setIsBulkDeletingTimetable(false);
+    }
+  };
 
   // Main Section Tab: Timetable vs Results Tracker
   const [activeTab, setActiveTab] = useState<'timetable' | 'tracker'>('timetable');
@@ -1217,7 +1264,10 @@ export default function ExamsManagementPage() {
   ];
 
   // Helper for manual course list population when wizard semester changes
-  const wizardCourses = availableCourses.filter((c: any) => c.semester === wizardSemester);
+  const wizardCourses = React.useMemo(
+    () => availableCourses.filter((c: any) => c.semester === wizardSemester),
+    [availableCourses, wizardSemester],
+  );
 
   // Initialize manualInputs when wizard open or semester/batch changes, pre-filling existing entries
   React.useEffect(() => {
@@ -1275,6 +1325,50 @@ export default function ExamsManagementPage() {
     });
     return Array.from(map.values());
   }, [fullTimetable, studentBatchFilter]);
+
+  const validationRows = React.useMemo(
+    () => (Array.isArray(validationResult?.rows) ? validationResult.rows : []),
+    [validationResult],
+  );
+
+  const {
+    visibleItems: visibleStudentFullGrouped,
+    visibleCount: visibleStudentFullGroupedCount,
+    totalCount: totalStudentFullGroupedCount,
+    hasMore: hasMoreStudentFullGrouped,
+  } = useProgressiveList<any>(studentFullGrouped, { resetKey: studentBatchFilter });
+
+  const {
+    visibleItems: visibleGroupedTimetables,
+    visibleCount: visibleGroupedTimetablesCount,
+    totalCount: totalGroupedTimetablesCount,
+    hasMore: hasMoreGroupedTimetables,
+  } = useProgressiveList<any>(groupedTimetables);
+
+  const {
+    visibleItems: visibleGroupedProgress,
+    visibleCount: visibleGroupedProgressCount,
+    totalCount: totalGroupedProgressCount,
+    hasMore: hasMoreGroupedProgress,
+  } = useProgressiveList<any>(groupedProgressMatrix);
+
+  const {
+    visibleItems: visibleWizardCourses,
+    visibleCount: visibleWizardCoursesCount,
+    totalCount: totalWizardCoursesCount,
+    hasMore: hasMoreWizardCourses,
+  } = useProgressiveList<any>(wizardCourses, {
+    resetKey: `${wizardSemester}|${showAddModal}`,
+  });
+
+  const {
+    visibleItems: visibleValidationRows,
+    visibleCount: visibleValidationRowsCount,
+    totalCount: totalValidationRowsCount,
+    hasMore: hasMoreValidationRows,
+  } = useProgressiveList<any>(validationRows, {
+    resetKey: `${validationResult?.totalRows || 0}|${validationResult?.validRowsCount || 0}`,
+  });
 
   // =========================================================================
   // STUDENT VIEW: EXAM TIMETABLE CALENDAR & FULL TIMETABLE
@@ -1466,7 +1560,7 @@ export default function ExamsManagementPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {studentFullGrouped.map((group) => (
+                {visibleStudentFullGrouped.map((group) => (
                   <div
                     key={group.groupKey}
                     className="bg-card border border-border/80 rounded-3xl overflow-hidden shadow-sm p-5 space-y-3"
@@ -1488,42 +1582,69 @@ export default function ExamsManagementPage() {
                       </span>
                     </div>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="border-b border-border/60 bg-secondary/30 font-bold uppercase text-muted-foreground">
-                            <th className="py-2.5 px-3 border-r border-border/40">Course Code</th>
-                            <th className="py-2.5 px-3 border-r border-border/40">Subject Name</th>
-                            <th className="py-2.5 px-3 border-r border-border/40">Exam Date</th>
-                            <th className="py-2.5 px-3 border-r border-border/40">Time</th>
-                            <th className="py-2.5 px-3">Venue</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border/60 font-medium">
-                          {group.items.map((item: any) => (
-                            <tr key={item.timetable_id} className="hover:bg-secondary/10">
-                              <td className="py-2.5 px-3 border-r border-border/40 font-mono font-bold text-primary">
-                                {item.course?.course_code}
-                              </td>
-                              <td className="py-2.5 px-3 border-r border-border/40 text-foreground font-semibold">
-                                {item.course?.course_name}
-                              </td>
-                              <td className="py-2.5 px-3 border-r border-border/40 font-mono text-foreground font-bold">
-                                {formatToDDMMYYYY(item.exam_date)}
-                              </td>
-                              <td className="py-2.5 px-3 border-r border-border/40 font-mono text-muted-foreground">
-                                {item.start_time} - {item.end_time}
-                              </td>
-                              <td className="py-2.5 px-3 font-semibold text-foreground">
-                                {item.venue || 'Main Exam Hall A'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <ProgressiveSlice
+                      items={group.items}
+                      entityLabel="exam entries"
+                      resetKey={group.groupKey}
+                    >
+                      {(visibleGroupItems, groupFooter) => (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse text-xs">
+                            <thead>
+                              <tr className="border-b border-border/60 bg-secondary/30 font-bold uppercase text-muted-foreground">
+                                <th className="py-2.5 px-3 border-r border-border/40 w-10 text-center">
+                                  #
+                                </th>
+                                <th className="py-2.5 px-3 border-r border-border/40">
+                                  Course Code
+                                </th>
+                                <th className="py-2.5 px-3 border-r border-border/40">
+                                  Subject Name
+                                </th>
+                                <th className="py-2.5 px-3 border-r border-border/40">Exam Date</th>
+                                <th className="py-2.5 px-3 border-r border-border/40">Time</th>
+                                <th className="py-2.5 px-3">Venue</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border/60 font-medium">
+                              {visibleGroupItems.map((item: any, idx: number) => (
+                                <tr key={item.timetable_id} className="hover:bg-secondary/10">
+                                  <td className="py-2.5 px-3 border-r border-border/40 text-center font-mono text-muted-foreground font-bold">
+                                    {idx + 1}
+                                  </td>
+                                  <td className="py-2.5 px-3 border-r border-border/40 font-mono font-bold text-primary">
+                                    {item.course?.course_code}
+                                  </td>
+                                  <td className="py-2.5 px-3 border-r border-border/40 text-foreground font-semibold">
+                                    {item.course?.course_name}
+                                  </td>
+                                  <td className="py-2.5 px-3 border-r border-border/40 font-mono text-foreground font-bold">
+                                    {formatToDDMMYYYY(item.exam_date)}
+                                  </td>
+                                  <td className="py-2.5 px-3 border-r border-border/40 font-mono text-muted-foreground">
+                                    {item.start_time} - {item.end_time}
+                                  </td>
+                                  <td className="py-2.5 px-3 font-semibold text-foreground">
+                                    {item.venue || 'Main Exam Hall A'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {groupFooter}
+                        </div>
+                      )}
+                    </ProgressiveSlice>
                   </div>
                 ))}
+                <ProgressiveLoadFooter
+                  loadedCount={visibleStudentFullGroupedCount}
+                  totalCount={totalStudentFullGroupedCount}
+                  isLoadingMore={hasMoreStudentFullGrouped}
+                  hasMore={hasMoreStudentFullGrouped}
+                  entityLabel="timetable groups"
+                  className="rounded-2xl border border-border/60"
+                />
               </div>
             )}
           </div>
@@ -1765,9 +1886,16 @@ export default function ExamsManagementPage() {
                   Name. Click any timetable header to expand subject details.
                 </p>
               </div>
-              <span className="text-xs font-bold text-muted-foreground bg-secondary/60 px-3 py-1 rounded-xl">
-                {groupedTimetables.length} Timetable Groups
-              </span>
+              <div className="flex items-center gap-3">
+                <BulkDeleteButton
+                  count={timetableSelection.selectedCount}
+                  isDeleting={isBulkDeletingTimetable}
+                  onClick={handleBulkDeleteTimetableEntries}
+                />
+                <span className="text-xs font-bold text-muted-foreground bg-secondary/60 px-3 py-1 rounded-xl">
+                  {groupedTimetables.length} Timetable Groups
+                </span>
+              </div>
             </div>
 
             {isTimetablesLoading ? (
@@ -1782,7 +1910,7 @@ export default function ExamsManagementPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {groupedTimetables.map((group) => {
+                {visibleGroupedTimetables.map((group) => {
                   const isExpanded = expandedGroupKeys[group.groupKey] !== false; // expanded by default
 
                   return (
@@ -1897,72 +2025,131 @@ export default function ExamsManagementPage() {
 
                       {/* Expanded Subject List Table */}
                       {isExpanded && (
-                        <div className="overflow-x-auto">
-                          <table className="table-fixed w-full text-left border-collapse">
-                            <thead>
-                              <tr className="border-b border-border/60 bg-secondary/30 text-xs font-bold uppercase text-muted-foreground tracking-wider">
-                                <th className="py-3 px-4 border-r border-border/40 w-[35%]">
-                                  Course Code & Module
-                                </th>
-                                <th className="py-3 px-4 border-r border-border/40 w-[15%]">
-                                  Exam Date
-                                </th>
-                                <th className="py-3 px-4 border-r border-border/40 w-[20%]">
-                                  Time (Start - End)
-                                </th>
-                                <th className="py-3 px-4 border-r border-border/40 w-[20%]">
-                                  Venue / Hall
-                                </th>
-                                <th className="py-3 px-4 text-center w-[10%]">Status</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border/60 text-xs font-medium">
-                              {group.items.map((item: any) => (
-                                <tr
-                                  key={item.timetable_id}
-                                  className="hover:bg-secondary/10 transition"
-                                >
-                                  <td className="py-3 px-4 border-r border-border/40">
-                                    <div className="font-mono font-bold text-primary text-xs">
-                                      {item.course?.course_code}
-                                    </div>
-                                    <div className="text-muted-foreground text-[11px]">
-                                      {item.course?.course_name}
-                                    </div>
-                                  </td>
-                                  <td className="py-3 px-4 border-r border-border/40 font-mono text-foreground font-semibold">
-                                    {item.exam_date ? formatToDDMMYYYY(item.exam_date) : 'Not set'}
-                                  </td>
-                                  <td className="py-3 px-4 border-r border-border/40 font-mono text-muted-foreground font-semibold">
-                                    {item.start_time} - {item.end_time}
-                                  </td>
-                                  <td className="py-3 px-4 border-r border-border/40 font-semibold text-foreground">
-                                    {item.venue || 'Main Exam Hall A'}
-                                  </td>
-                                  <td className="py-3 px-4 text-center">
-                                    {item.course?.publishing_progress?.exam_held === 'HELD' ||
-                                    item.exam_held === 'HELD' ? (
-                                      <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-extrabold rounded-lg border border-emerald-500/20 text-[10px] inline-flex items-center gap-1">
-                                        <CheckCircle2 className="h-3 w-3" />
-                                        HELD (
-                                        {item.exam_date ? formatToDDMMYYYY(item.exam_date) : 'Done'}
-                                        )
-                                      </span>
-                                    ) : (
-                                      <span className="px-2.5 py-1 bg-amber-500/10 text-amber-500 font-extrabold rounded-lg border border-amber-500/20 text-[10px] uppercase">
-                                        TBH
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        <ProgressiveSlice
+                          items={group.items}
+                          entityLabel="exam entries"
+                          resetKey={group.groupKey}
+                        >
+                          {(visibleGroupItems, groupFooter) => (
+                            <div className="overflow-x-auto">
+                              <table className="table-fixed w-full text-left border-collapse">
+                                <thead>
+                                  <tr className="border-b border-border/60 bg-secondary/30 text-xs font-bold uppercase text-muted-foreground tracking-wider">
+                                    <th className="py-3 px-2 border-r border-border/40 text-center w-[4%]">
+                                      <SelectAllCheckbox
+                                        checked={timetableSelection.isAllSelected(
+                                          visibleGroupItems.map((i: any) => i.timetable_id),
+                                        )}
+                                        indeterminate={timetableSelection.isIndeterminate(
+                                          visibleGroupItems.map((i: any) => i.timetable_id),
+                                        )}
+                                        disabled={visibleGroupItems.length === 0}
+                                        onChange={() =>
+                                          timetableSelection.toggleAll(
+                                            visibleGroupItems.map((i: any) => i.timetable_id),
+                                          )
+                                        }
+                                        ariaLabel={`Select all entries in Batch ${group.batch} Semester ${group.semester}`}
+                                      />
+                                    </th>
+                                    <th className="py-3 px-3 border-r border-border/40 text-center w-[5%]">
+                                      #
+                                    </th>
+                                    <th className="py-3 px-4 border-r border-border/40 w-[26%]">
+                                      Course Code & Module
+                                    </th>
+                                    <th className="py-3 px-4 border-r border-border/40 w-[15%]">
+                                      Exam Date
+                                    </th>
+                                    <th className="py-3 px-4 border-r border-border/40 w-[20%]">
+                                      Time (Start - End)
+                                    </th>
+                                    <th className="py-3 px-4 border-r border-border/40 w-[20%]">
+                                      Venue / Hall
+                                    </th>
+                                    <th className="py-3 px-4 text-center w-[10%]">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border/60 text-xs font-medium">
+                                  {visibleGroupItems.map((item: any, idx: number) => (
+                                    <tr
+                                      key={item.timetable_id}
+                                      className={`hover:bg-secondary/10 transition ${
+                                        timetableSelection.isSelected(item.timetable_id)
+                                          ? 'bg-primary/5'
+                                          : ''
+                                      }`}
+                                    >
+                                      <td className="py-3 px-2 border-r border-border/40 text-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={timetableSelection.isSelected(item.timetable_id)}
+                                          onChange={() =>
+                                            timetableSelection.toggle(item.timetable_id)
+                                          }
+                                          aria-label={`Select ${item.course?.course_code || item.timetable_id}`}
+                                          className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
+                                        />
+                                      </td>
+                                      <td className="py-3 px-3 border-r border-border/40 text-center font-mono text-muted-foreground font-bold">
+                                        {idx + 1}
+                                      </td>
+                                      <td className="py-3 px-4 border-r border-border/40">
+                                        <div className="font-mono font-bold text-primary text-xs">
+                                          {item.course?.course_code}
+                                        </div>
+                                        <div className="text-muted-foreground text-[11px]">
+                                          {item.course?.course_name}
+                                        </div>
+                                      </td>
+                                      <td className="py-3 px-4 border-r border-border/40 font-mono text-foreground font-semibold">
+                                        {item.exam_date
+                                          ? formatToDDMMYYYY(item.exam_date)
+                                          : 'Not set'}
+                                      </td>
+                                      <td className="py-3 px-4 border-r border-border/40 font-mono text-muted-foreground font-semibold">
+                                        {item.start_time} - {item.end_time}
+                                      </td>
+                                      <td className="py-3 px-4 border-r border-border/40 font-semibold text-foreground">
+                                        {item.venue || 'Main Exam Hall A'}
+                                      </td>
+                                      <td className="py-3 px-4 text-center">
+                                        {item.course?.publishing_progress?.exam_held === 'HELD' ||
+                                        item.exam_held === 'HELD' ? (
+                                          <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-extrabold rounded-lg border border-emerald-500/20 text-[10px] inline-flex items-center gap-1">
+                                            <CheckCircle2 className="h-3 w-3" />
+                                            HELD (
+                                            {item.exam_date
+                                              ? formatToDDMMYYYY(item.exam_date)
+                                              : 'Done'}
+                                            )
+                                          </span>
+                                        ) : (
+                                          <span className="px-2.5 py-1 bg-amber-500/10 text-amber-500 font-extrabold rounded-lg border border-amber-500/20 text-[10px] uppercase">
+                                            TBH
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              {groupFooter}
+                            </div>
+                          )}
+                        </ProgressiveSlice>
                       )}
                     </div>
                   );
                 })}
+                <ProgressiveLoadFooter
+                  loadedCount={visibleGroupedTimetablesCount}
+                  totalCount={totalGroupedTimetablesCount}
+                  isLoadingMore={hasMoreGroupedTimetables}
+                  hasMore={hasMoreGroupedTimetables}
+                  entityLabel="timetable groups"
+                  className="rounded-2xl border border-border/60"
+                />
               </div>
             )}
           </div>
@@ -2102,7 +2289,7 @@ export default function ExamsManagementPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {groupedProgressMatrix.map((group) => {
+                {visibleGroupedProgress.map((group) => {
                   const isExpanded = expandedTrackerKeys[group.groupKey] !== false; // expanded by default
 
                   return (
@@ -2142,332 +2329,379 @@ export default function ExamsManagementPage() {
 
                       {/* Expanded Workflow Table */}
                       {isExpanded && (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse">
-                            <thead>
-                              <tr className="border-b border-border/60 bg-secondary/30 text-[11px] font-bold uppercase text-muted-foreground tracking-wider">
-                                <th className="py-3 px-4 border-r border-border/40" rowSpan={2}>
-                                  Subject
-                                </th>
-                                <th
-                                  className="py-3 px-3 border-r border-border/40 text-center"
-                                  rowSpan={2}
-                                >
-                                  Exam Status
-                                </th>
-                                <th
-                                  className="py-2 px-3 border-r border-border/40 text-center"
-                                  colSpan={3}
-                                >
-                                  1st Marking
-                                </th>
-                                <th
-                                  className="py-2 px-3 border-r border-border/40 text-center"
-                                  colSpan={3}
-                                >
-                                  2nd Marking
-                                </th>
-                                <th
-                                  className="py-2 px-3 border-r border-border/40 text-center"
-                                  colSpan={2}
-                                >
-                                  Final Submission
-                                </th>
-                                <th
-                                  className="py-3 px-3 border-r border-border/40 text-center"
-                                  rowSpan={2}
-                                >
-                                  Exam Board
-                                </th>
-                                <th className="py-3 px-3 text-center" rowSpan={2}>
-                                  Results Published
-                                </th>
-                              </tr>
-
-                              <tr className="border-b border-border/60 bg-secondary/20 text-[10px] font-extrabold uppercase text-muted-foreground tracking-wider text-center">
-                                <th className="py-2 px-2 border-r border-border/40">Collected</th>
-                                <th className="py-2 px-2 border-r border-border/40">Submitted</th>
-                                <th className="py-2 px-2 border-r border-border/40">Returned</th>
-
-                                <th className="py-2 px-2 border-r border-border/40">Collected</th>
-                                <th className="py-2 px-2 border-r border-border/40">Submitted</th>
-                                <th className="py-2 px-2 border-r border-border/40">Returned</th>
-
-                                <th className="py-2 px-2 border-r border-border/40">Submitted</th>
-                                <th className="py-2 px-2 border-r border-border/40">
-                                  Head Approved
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border/60 text-xs font-medium">
-                              {group.items.map((item: any) => {
-                                const isHeld = item.exam_held === 'HELD';
-                                const canFirstReturn =
-                                  item.first_marking.collected && item.first_marking.submitted;
-                                const canSecondCollect = item.first_marking.returned;
-                                const canSecondReturn =
-                                  item.second_marking.collected && item.second_marking.submitted;
-                                const canExamBoard = item.first_marking.returned;
-
-                                return (
-                                  <tr
-                                    key={item.course_id}
-                                    className="hover:bg-secondary/10 transition"
-                                  >
-                                    <td className="py-3 px-4 border-r border-border/40 font-semibold">
-                                      <div className="font-bold text-foreground font-mono text-xs">
-                                        {item.course_code}
-                                      </div>
-                                      <div className="text-[11px] text-muted-foreground truncate max-w-[180px]">
-                                        {item.course_name}
-                                      </div>
-                                      <div className="text-[10px] text-muted-foreground/80 mt-0.5">
-                                        1st Marker: {item.first_marker_name}
-                                      </div>
-                                      {item.is_first_marker_same_as_in_charge === false &&
-                                        item.in_charge_name && (
-                                          <div className="text-[10px] text-primary/90 font-semibold mt-0.5">
-                                            In-Charge: {item.in_charge_name}
-                                          </div>
-                                        )}
-                                    </td>
-
-                                    {/* EXAM HELD STATUS DROPDOWN */}
-                                    <td className="py-3 px-3 border-r border-border/40 text-center">
-                                      <select
-                                        value={item.exam_held || 'TBH'}
-                                        onChange={async (e) => {
-                                          const newVal = e.target.value;
-                                          const currentVal = item.exam_held || 'TBH';
-                                          if (newVal === currentVal) return;
-
-                                          const isSeparateInCharge =
-                                            item.is_first_marker_same_as_in_charge === false;
-                                          const notifyDetails = isSeparateInCharge
-                                            ? `Setting status to HELD will automatically send email notifications to both the 1st Marker (${item.first_marker_name || '1st Marker'}) and the Course In-Charge (${item.in_charge_name || 'Course In-Charge'}).`
-                                            : `Setting status to HELD will automatically trigger an email notification to the 1st Marker / In-Charge (${item.first_marker_name || '1st Marker'}) regarding the examination paper packet.`;
-
-                                          const confirmed = await confirm({
-                                            title: 'Change Exam Status?',
-                                            message: `Are you sure you want to change the Exam Held status for ${item.course_code} (${item.course_name}) to "${newVal}"? ${notifyDetails}`,
-                                            confirmText: 'Change Status',
-                                            variant: newVal === 'HELD' ? 'primary' : 'warning',
-                                          });
-
-                                          if (!confirmed) {
-                                            e.target.value = currentVal;
-                                            return;
-                                          }
-
-                                          updateProgressMutation.mutate({
-                                            courseId: item.course_id,
-                                            payload: { examHeld: newVal },
-                                          });
-                                        }}
-                                        className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border focus:outline-none cursor-pointer ${
-                                          item.exam_held === 'HELD'
-                                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                            : item.exam_held === 'POSTPONED'
-                                              ? 'bg-red-500/10 text-red-400 border-red-500/30'
-                                              : 'bg-secondary text-muted-foreground border-border'
-                                        }`}
-                                      >
-                                        <option value="PENDING" className="bg-card">
-                                          TBH
-                                        </option>
-                                        <option value="HELD" className="bg-card">
-                                          Held
-                                        </option>
-                                        <option value="POSTPONED" className="bg-card">
-                                          Postponed
-                                        </option>
-                                      </select>
-                                    </td>
-
-                                    {/* 1ST MARKING COLLECTED */}
-                                    <td className="py-3 px-2 border-r border-border/40 text-center">
-                                      <input
-                                        type="checkbox"
-                                        checked={item.first_marking.collected}
-                                        disabled={!isHeld}
-                                        title={
-                                          !isHeld
-                                            ? 'Exam must be Held before collecting 1st marking papers'
-                                            : 'Toggle 1st marking collection'
-                                        }
-                                        onChange={(e) =>
-                                          updateProgressMutation.mutate({
-                                            courseId: item.course_id,
-                                            payload: { firstMarkingCollected: e.target.checked },
-                                          })
-                                        }
-                                        className={`h-4 w-4 rounded border-border text-primary focus:ring-primary/60 ${!isHeld ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                                      />
-                                    </td>
-
-                                    {/* 1ST MARKING SUBMITTED */}
-                                    <td className="py-3 px-2 border-r border-border/40 text-center">
-                                      {item.first_marking.submitted ? (
-                                        <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
-                                          <CheckCircle2 className="h-4 w-4" />
-                                        </span>
-                                      ) : (
-                                        <span className="text-muted-foreground/40 font-mono">
-                                          —
-                                        </span>
-                                      )}
-                                    </td>
-
-                                    {/* 1ST MARKING RETURNED */}
-                                    <td className="py-3 px-2 border-r border-border/40 text-center">
-                                      <input
-                                        type="checkbox"
-                                        checked={item.first_marking.returned}
-                                        disabled={!canFirstReturn}
-                                        title={
-                                          !item.first_marking.collected
-                                            ? '1st marking papers not collected yet'
-                                            : !item.first_marking.submitted
-                                              ? '1st marking marks not submitted by marker yet'
-                                              : 'Toggle 1st marking returned'
-                                        }
-                                        onChange={(e) =>
-                                          updateProgressMutation.mutate({
-                                            courseId: item.course_id,
-                                            payload: { firstMarkingReturned: e.target.checked },
-                                          })
-                                        }
-                                        className={`h-4 w-4 rounded border-border text-primary focus:ring-primary/60 ${!canFirstReturn ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                                      />
-                                    </td>
-
-                                    {/* 2ND MARKING COLLECTED */}
-                                    <td className="py-3 px-2 border-r border-border/40 text-center">
-                                      <input
-                                        type="checkbox"
-                                        checked={item.second_marking.collected}
-                                        disabled={!canSecondCollect}
-                                        title={
-                                          !canSecondCollect
-                                            ? '1st marking papers must be returned before 2nd marking collection'
-                                            : 'Toggle 2nd marking collection'
-                                        }
-                                        onChange={(e) =>
-                                          updateProgressMutation.mutate({
-                                            courseId: item.course_id,
-                                            payload: { secondMarkingCollected: e.target.checked },
-                                          })
-                                        }
-                                        className={`h-4 w-4 rounded border-border text-primary focus:ring-primary/60 ${!canSecondCollect ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                                      />
-                                    </td>
-
-                                    {/* 2ND MARKING SUBMITTED */}
-                                    <td className="py-3 px-2 border-r border-border/40 text-center">
-                                      {item.second_marking.submitted ? (
-                                        <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
-                                          <CheckCircle2 className="h-4 w-4" />
-                                        </span>
-                                      ) : (
-                                        <span className="text-muted-foreground/40 font-mono">
-                                          —
-                                        </span>
-                                      )}
-                                    </td>
-
-                                    {/* 2ND MARKING RETURNED */}
-                                    <td className="py-3 px-2 border-r border-border/40 text-center">
-                                      <input
-                                        type="checkbox"
-                                        checked={item.second_marking.returned}
-                                        disabled={!canSecondReturn}
-                                        title={
-                                          !item.second_marking.collected
-                                            ? '2nd marking papers not collected yet'
-                                            : !item.second_marking.submitted
-                                              ? '2nd marking marks not submitted by 2nd marker yet'
-                                              : 'Toggle 2nd marking returned'
-                                        }
-                                        onChange={(e) =>
-                                          updateProgressMutation.mutate({
-                                            courseId: item.course_id,
-                                            payload: { secondMarkingReturned: e.target.checked },
-                                          })
-                                        }
-                                        className={`h-4 w-4 rounded border-border text-primary focus:ring-primary/60 ${!canSecondReturn ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                                      />
-                                    </td>
-
-                                    {/* FINAL SUBMISSION SUBMITTED */}
-                                    <td className="py-3 px-2 border-r border-border/40 text-center">
-                                      {item.final_submission.submitted ? (
-                                        <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
-                                          <CheckCircle2 className="h-4 w-4" />
-                                        </span>
-                                      ) : (
-                                        <span className="text-muted-foreground/40 font-mono">
-                                          —
-                                        </span>
-                                      )}
-                                    </td>
-
-                                    {/* HEAD APPROVED */}
-                                    <td className="py-3 px-2 border-r border-border/40 text-center">
-                                      {item.final_submission.head_approved ? (
-                                        <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
-                                          <CheckCircle2 className="h-4 w-4" />
-                                        </span>
-                                      ) : (
-                                        <span className="text-muted-foreground/40 font-mono">
-                                          —
-                                        </span>
-                                      )}
-                                    </td>
-
-                                    {/* EXAM BOARD */}
-                                    <td className="py-3 px-3 border-r border-border/40 text-center">
-                                      <input
-                                        type="checkbox"
-                                        checked={item.exam_board}
-                                        disabled={!canExamBoard}
-                                        title={
-                                          !canExamBoard
-                                            ? '1st marking papers must be returned before Exam Board approval'
-                                            : 'Toggle Exam Board approval'
-                                        }
-                                        onChange={(e) =>
-                                          updateProgressMutation.mutate({
-                                            courseId: item.course_id,
-                                            payload: { examBoard: e.target.checked },
-                                          })
-                                        }
-                                        className={`h-4 w-4 rounded border-border text-primary focus:ring-primary/60 ${!canExamBoard ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                                      />
-                                    </td>
-
-                                    {/* RESULTS PUBLISHED */}
-                                    <td className="py-3 px-3 text-center">
-                                      {item.results_published ? (
-                                        <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-bold rounded-lg border border-emerald-500/20 text-[10px] inline-flex items-center gap-1">
-                                          <CheckCircle2 className="h-3 w-3" />
-                                          Published
-                                        </span>
-                                      ) : (
-                                        <span className="px-2.5 py-1 bg-secondary text-muted-foreground font-bold rounded-lg text-[10px]">
-                                          In Progress
-                                        </span>
-                                      )}
-                                    </td>
+                        <ProgressiveSlice
+                          items={group.items}
+                          entityLabel="courses"
+                          resetKey={group.groupKey}
+                        >
+                          {(visibleGroupItems, groupFooter) => (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left border-collapse">
+                                <thead>
+                                  <tr className="border-b border-border/60 bg-secondary/30 text-[11px] font-bold uppercase text-muted-foreground tracking-wider">
+                                    <th
+                                      className="py-3 px-3 border-r border-border/40 text-center w-10"
+                                      rowSpan={2}
+                                    >
+                                      #
+                                    </th>
+                                    <th className="py-3 px-4 border-r border-border/40" rowSpan={2}>
+                                      Subject
+                                    </th>
+                                    <th
+                                      className="py-3 px-3 border-r border-border/40 text-center"
+                                      rowSpan={2}
+                                    >
+                                      Exam Status
+                                    </th>
+                                    <th
+                                      className="py-2 px-3 border-r border-border/40 text-center"
+                                      colSpan={3}
+                                    >
+                                      1st Marking
+                                    </th>
+                                    <th
+                                      className="py-2 px-3 border-r border-border/40 text-center"
+                                      colSpan={3}
+                                    >
+                                      2nd Marking
+                                    </th>
+                                    <th
+                                      className="py-2 px-3 border-r border-border/40 text-center"
+                                      colSpan={2}
+                                    >
+                                      Final Submission
+                                    </th>
+                                    <th
+                                      className="py-3 px-3 border-r border-border/40 text-center"
+                                      rowSpan={2}
+                                    >
+                                      Exam Board
+                                    </th>
+                                    <th className="py-3 px-3 text-center" rowSpan={2}>
+                                      Results Published
+                                    </th>
                                   </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
+
+                                  <tr className="border-b border-border/60 bg-secondary/20 text-[10px] font-extrabold uppercase text-muted-foreground tracking-wider text-center">
+                                    <th className="py-2 px-2 border-r border-border/40">
+                                      Collected
+                                    </th>
+                                    <th className="py-2 px-2 border-r border-border/40">
+                                      Submitted
+                                    </th>
+                                    <th className="py-2 px-2 border-r border-border/40">
+                                      Returned
+                                    </th>
+
+                                    <th className="py-2 px-2 border-r border-border/40">
+                                      Collected
+                                    </th>
+                                    <th className="py-2 px-2 border-r border-border/40">
+                                      Submitted
+                                    </th>
+                                    <th className="py-2 px-2 border-r border-border/40">
+                                      Returned
+                                    </th>
+
+                                    <th className="py-2 px-2 border-r border-border/40">
+                                      Submitted
+                                    </th>
+                                    <th className="py-2 px-2 border-r border-border/40">
+                                      Head Approved
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border/60 text-xs font-medium">
+                                  {visibleGroupItems.map((item: any, idx: number) => {
+                                    const isHeld = item.exam_held === 'HELD';
+                                    const canFirstReturn =
+                                      item.first_marking.collected && item.first_marking.submitted;
+                                    const canSecondCollect = item.first_marking.returned;
+                                    const canSecondReturn =
+                                      item.second_marking.collected &&
+                                      item.second_marking.submitted;
+                                    const canExamBoard = item.first_marking.returned;
+
+                                    return (
+                                      <tr
+                                        key={item.course_id}
+                                        className="hover:bg-secondary/10 transition"
+                                      >
+                                        <td className="py-3 px-3 border-r border-border/40 text-center font-mono text-muted-foreground font-bold">
+                                          {idx + 1}
+                                        </td>
+                                        <td className="py-3 px-4 border-r border-border/40 font-semibold">
+                                          <div className="font-bold text-foreground font-mono text-xs">
+                                            {item.course_code}
+                                          </div>
+                                          <div className="text-[11px] text-muted-foreground truncate max-w-[180px]">
+                                            {item.course_name}
+                                          </div>
+                                          <div className="text-[10px] text-muted-foreground/80 mt-0.5">
+                                            1st Marker: {item.first_marker_name}
+                                          </div>
+                                          {item.is_first_marker_same_as_in_charge === false &&
+                                            item.in_charge_name && (
+                                              <div className="text-[10px] text-primary/90 font-semibold mt-0.5">
+                                                In-Charge: {item.in_charge_name}
+                                              </div>
+                                            )}
+                                        </td>
+
+                                        {/* EXAM HELD STATUS DROPDOWN */}
+                                        <td className="py-3 px-3 border-r border-border/40 text-center">
+                                          <select
+                                            value={item.exam_held || 'TBH'}
+                                            onChange={async (e) => {
+                                              const newVal = e.target.value;
+                                              const currentVal = item.exam_held || 'TBH';
+                                              if (newVal === currentVal) return;
+
+                                              const isSeparateInCharge =
+                                                item.is_first_marker_same_as_in_charge === false;
+                                              const notifyDetails = isSeparateInCharge
+                                                ? `Setting status to HELD will automatically send email notifications to both the 1st Marker (${item.first_marker_name || '1st Marker'}) and the Course In-Charge (${item.in_charge_name || 'Course In-Charge'}).`
+                                                : `Setting status to HELD will automatically trigger an email notification to the 1st Marker / In-Charge (${item.first_marker_name || '1st Marker'}) regarding the examination paper packet.`;
+
+                                              const confirmed = await confirm({
+                                                title: 'Change Exam Status?',
+                                                message: `Are you sure you want to change the Exam Held status for ${item.course_code} (${item.course_name}) to "${newVal}"? ${notifyDetails}`,
+                                                confirmText: 'Change Status',
+                                                variant: newVal === 'HELD' ? 'primary' : 'warning',
+                                              });
+
+                                              if (!confirmed) {
+                                                e.target.value = currentVal;
+                                                return;
+                                              }
+
+                                              updateProgressMutation.mutate({
+                                                courseId: item.course_id,
+                                                payload: { examHeld: newVal },
+                                              });
+                                            }}
+                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border focus:outline-none cursor-pointer ${
+                                              item.exam_held === 'HELD'
+                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                                : item.exam_held === 'POSTPONED'
+                                                  ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                                                  : 'bg-secondary text-muted-foreground border-border'
+                                            }`}
+                                          >
+                                            <option value="PENDING" className="bg-card">
+                                              TBH
+                                            </option>
+                                            <option value="HELD" className="bg-card">
+                                              Held
+                                            </option>
+                                            <option value="POSTPONED" className="bg-card">
+                                              Postponed
+                                            </option>
+                                          </select>
+                                        </td>
+
+                                        {/* 1ST MARKING COLLECTED */}
+                                        <td className="py-3 px-2 border-r border-border/40 text-center">
+                                          <input
+                                            type="checkbox"
+                                            checked={item.first_marking.collected}
+                                            disabled={!isHeld}
+                                            title={
+                                              !isHeld
+                                                ? 'Exam must be Held before collecting 1st marking papers'
+                                                : 'Toggle 1st marking collection'
+                                            }
+                                            onChange={(e) =>
+                                              updateProgressMutation.mutate({
+                                                courseId: item.course_id,
+                                                payload: {
+                                                  firstMarkingCollected: e.target.checked,
+                                                },
+                                              })
+                                            }
+                                            className={`h-4 w-4 rounded border-border text-primary focus:ring-primary/60 ${!isHeld ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                                          />
+                                        </td>
+
+                                        {/* 1ST MARKING SUBMITTED */}
+                                        <td className="py-3 px-2 border-r border-border/40 text-center">
+                                          {item.first_marking.submitted ? (
+                                            <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
+                                              <CheckCircle2 className="h-4 w-4" />
+                                            </span>
+                                          ) : (
+                                            <span className="text-muted-foreground/40 font-mono">
+                                              —
+                                            </span>
+                                          )}
+                                        </td>
+
+                                        {/* 1ST MARKING RETURNED */}
+                                        <td className="py-3 px-2 border-r border-border/40 text-center">
+                                          <input
+                                            type="checkbox"
+                                            checked={item.first_marking.returned}
+                                            disabled={!canFirstReturn}
+                                            title={
+                                              !item.first_marking.collected
+                                                ? '1st marking papers not collected yet'
+                                                : !item.first_marking.submitted
+                                                  ? '1st marking marks not submitted by marker yet'
+                                                  : 'Toggle 1st marking returned'
+                                            }
+                                            onChange={(e) =>
+                                              updateProgressMutation.mutate({
+                                                courseId: item.course_id,
+                                                payload: { firstMarkingReturned: e.target.checked },
+                                              })
+                                            }
+                                            className={`h-4 w-4 rounded border-border text-primary focus:ring-primary/60 ${!canFirstReturn ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                                          />
+                                        </td>
+
+                                        {/* 2ND MARKING COLLECTED */}
+                                        <td className="py-3 px-2 border-r border-border/40 text-center">
+                                          <input
+                                            type="checkbox"
+                                            checked={item.second_marking.collected}
+                                            disabled={!canSecondCollect}
+                                            title={
+                                              !canSecondCollect
+                                                ? '1st marking papers must be returned before 2nd marking collection'
+                                                : 'Toggle 2nd marking collection'
+                                            }
+                                            onChange={(e) =>
+                                              updateProgressMutation.mutate({
+                                                courseId: item.course_id,
+                                                payload: {
+                                                  secondMarkingCollected: e.target.checked,
+                                                },
+                                              })
+                                            }
+                                            className={`h-4 w-4 rounded border-border text-primary focus:ring-primary/60 ${!canSecondCollect ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                                          />
+                                        </td>
+
+                                        {/* 2ND MARKING SUBMITTED */}
+                                        <td className="py-3 px-2 border-r border-border/40 text-center">
+                                          {item.second_marking.submitted ? (
+                                            <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
+                                              <CheckCircle2 className="h-4 w-4" />
+                                            </span>
+                                          ) : (
+                                            <span className="text-muted-foreground/40 font-mono">
+                                              —
+                                            </span>
+                                          )}
+                                        </td>
+
+                                        {/* 2ND MARKING RETURNED */}
+                                        <td className="py-3 px-2 border-r border-border/40 text-center">
+                                          <input
+                                            type="checkbox"
+                                            checked={item.second_marking.returned}
+                                            disabled={!canSecondReturn}
+                                            title={
+                                              !item.second_marking.collected
+                                                ? '2nd marking papers not collected yet'
+                                                : !item.second_marking.submitted
+                                                  ? '2nd marking marks not submitted by 2nd marker yet'
+                                                  : 'Toggle 2nd marking returned'
+                                            }
+                                            onChange={(e) =>
+                                              updateProgressMutation.mutate({
+                                                courseId: item.course_id,
+                                                payload: {
+                                                  secondMarkingReturned: e.target.checked,
+                                                },
+                                              })
+                                            }
+                                            className={`h-4 w-4 rounded border-border text-primary focus:ring-primary/60 ${!canSecondReturn ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                                          />
+                                        </td>
+
+                                        {/* FINAL SUBMISSION SUBMITTED */}
+                                        <td className="py-3 px-2 border-r border-border/40 text-center">
+                                          {item.final_submission.submitted ? (
+                                            <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
+                                              <CheckCircle2 className="h-4 w-4" />
+                                            </span>
+                                          ) : (
+                                            <span className="text-muted-foreground/40 font-mono">
+                                              —
+                                            </span>
+                                          )}
+                                        </td>
+
+                                        {/* HEAD APPROVED */}
+                                        <td className="py-3 px-2 border-r border-border/40 text-center">
+                                          {item.final_submission.head_approved ? (
+                                            <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
+                                              <CheckCircle2 className="h-4 w-4" />
+                                            </span>
+                                          ) : (
+                                            <span className="text-muted-foreground/40 font-mono">
+                                              —
+                                            </span>
+                                          )}
+                                        </td>
+
+                                        {/* EXAM BOARD */}
+                                        <td className="py-3 px-3 border-r border-border/40 text-center">
+                                          <input
+                                            type="checkbox"
+                                            checked={item.exam_board}
+                                            disabled={!canExamBoard}
+                                            title={
+                                              !canExamBoard
+                                                ? '1st marking papers must be returned before Exam Board approval'
+                                                : 'Toggle Exam Board approval'
+                                            }
+                                            onChange={(e) =>
+                                              updateProgressMutation.mutate({
+                                                courseId: item.course_id,
+                                                payload: { examBoard: e.target.checked },
+                                              })
+                                            }
+                                            className={`h-4 w-4 rounded border-border text-primary focus:ring-primary/60 ${!canExamBoard ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                                          />
+                                        </td>
+
+                                        {/* RESULTS PUBLISHED */}
+                                        <td className="py-3 px-3 text-center">
+                                          {item.results_published ? (
+                                            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-bold rounded-lg border border-emerald-500/20 text-[10px] inline-flex items-center gap-1">
+                                              <CheckCircle2 className="h-3 w-3" />
+                                              Published
+                                            </span>
+                                          ) : (
+                                            <span className="px-2.5 py-1 bg-secondary text-muted-foreground font-bold rounded-lg text-[10px]">
+                                              In Progress
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                              {groupFooter}
+                            </div>
+                          )}
+                        </ProgressiveSlice>
                       )}
                     </div>
                   );
                 })}
+                <ProgressiveLoadFooter
+                  loadedCount={visibleGroupedProgressCount}
+                  totalCount={totalGroupedProgressCount}
+                  isLoadingMore={hasMoreGroupedProgress}
+                  hasMore={hasMoreGroupedProgress}
+                  entityLabel="workflow groups"
+                  className="rounded-2xl border border-border/60"
+                />
               </div>
             )}
           </div>
@@ -2661,30 +2895,36 @@ export default function ExamsManagementPage() {
                     <table className="table-fixed min-w-[960px] w-full text-left border-collapse text-xs">
                       <thead className="sticky top-0 bg-card z-20 border-b border-border/60 font-semibold uppercase text-[10px] text-muted-foreground shadow-xs">
                         <tr>
-                          <th className="py-2.5 px-3 border-r border-border/40 w-[240px]">
+                          <th className="py-2.5 px-2 border-r border-border/40 text-center w-[45px]">
+                            #
+                          </th>
+                          <th className="py-2.5 px-3 border-r border-border/40 w-[220px]">
                             Course
                           </th>
                           <th className="py-2.5 px-3 border-r border-border/40 w-[150px]">
                             Exam Date
                           </th>
-                          <th className="py-2.5 px-3 border-r border-border/40 w-[160px]">
+                          <th className="py-2.5 px-3 border-r border-border/40 w-[155px]">
                             Start Time
                           </th>
-                          <th className="py-2.5 px-3 border-r border-border/40 w-[160px]">
+                          <th className="py-2.5 px-3 border-r border-border/40 w-[155px]">
                             End Time
                           </th>
-                          <th className="py-2.5 px-3 border-r border-border/40 w-[180px]">Venue</th>
+                          <th className="py-2.5 px-3 border-r border-border/40 w-[165px]">Venue</th>
                           <th className="py-2.5 px-3 text-center w-[70px]">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/60 font-medium">
-                        {wizardCourses.map((c: any) => {
+                        {visibleWizardCourses.map((c: any, idx: number) => {
                           const current = manualInputs[c.course_id];
                           const isIncluded = Boolean(current);
 
                           if (!isIncluded) {
                             return (
                               <tr key={c.course_id} className="bg-secondary/20 opacity-60">
+                                <td className="py-2 px-2 border-r border-border/40 text-center font-mono text-muted-foreground font-bold">
+                                  {idx + 1}
+                                </td>
                                 <td className="py-2 px-3 border-r border-border/40">
                                   <div className="font-mono font-bold text-muted-foreground line-through">
                                     {c.course_code}
@@ -2726,6 +2966,9 @@ export default function ExamsManagementPage() {
 
                           return (
                             <tr key={c.course_id} className="hover:bg-secondary/10">
+                              <td className="py-2 px-2 border-r border-border/40 text-center font-mono text-muted-foreground font-bold">
+                                {idx + 1}
+                              </td>
                               <td className="py-2 px-3 border-r border-border/40">
                                 <div className="font-mono font-bold text-primary">
                                   {c.course_code}
@@ -2810,6 +3053,13 @@ export default function ExamsManagementPage() {
                         })}
                       </tbody>
                     </table>
+                    <ProgressiveLoadFooter
+                      loadedCount={visibleWizardCoursesCount}
+                      totalCount={totalWizardCoursesCount}
+                      isLoadingMore={hasMoreWizardCourses}
+                      hasMore={hasMoreWizardCourses}
+                      entityLabel="courses"
+                    />
                   </div>
 
                   <div className="flex items-center gap-2 pt-2">
@@ -3000,7 +3250,7 @@ export default function ExamsManagementPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/60 font-medium">
-                        {validationResult.rows?.map((row: any) => (
+                        {visibleValidationRows.map((row: any) => (
                           <tr
                             key={row.rowIndex}
                             className={
@@ -3060,6 +3310,13 @@ export default function ExamsManagementPage() {
                         ))}
                       </tbody>
                     </table>
+                    <ProgressiveLoadFooter
+                      loadedCount={visibleValidationRowsCount}
+                      totalCount={totalValidationRowsCount}
+                      isLoadingMore={hasMoreValidationRows}
+                      hasMore={hasMoreValidationRows}
+                      entityLabel="rows"
+                    />
                   </div>
 
                   {/* Immediate Publish Checkbox */}

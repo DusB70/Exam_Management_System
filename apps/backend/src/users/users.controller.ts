@@ -4,6 +4,7 @@ import {
   Post,
   Put,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -200,6 +201,36 @@ export class UsersController {
     return {
       success: true,
       message: `Student academic status updated to ${status}`,
+      data,
+    };
+  }
+
+  @Delete('students/:studentId')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async deleteStudent(
+    @Param('studentId', ParseIntPipe) studentId: number,
+    @GetUser('id') executorId: number,
+    @GetUser('role') executorRole: string,
+  ) {
+    const data = await this.usersService.deleteStudent(studentId, executorId, executorRole);
+    return {
+      success: true,
+      message: 'Student deleted successfully',
+      data,
+    };
+  }
+
+  @Delete(':id')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async deleteUser(
+    @Param('id', ParseIntPipe) id: number,
+    @GetUser('id') executorId: number,
+    @GetUser('role') executorRole: string,
+  ) {
+    const data = await this.usersService.deleteUser(id, executorId, executorRole);
+    return {
+      success: true,
+      message: 'User deleted successfully',
       data,
     };
   }

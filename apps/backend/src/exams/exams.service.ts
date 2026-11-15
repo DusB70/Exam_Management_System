@@ -666,6 +666,42 @@ export class ExamsService {
     };
   }
 
+  async deleteTimetableEntry(timetableId: number, executorId?: number) {
+    const existing = await this.prisma.examTimetable.findUnique({
+      where: { timetable_id: timetableId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Timetable entry with ID ${timetableId} not found`);
+    }
+
+    await this.prisma.examTimetable.delete({
+      where: { timetable_id: timetableId },
+    });
+
+    const remainingCount = await this.prisma.examTimetable.count({
+      where: { course_id: existing.course_id },
+    });
+    if (remainingCount === 0) {
+      await this.prisma.coursePublishingProgress.deleteMany({
+        where: { course_id: existing.course_id },
+      });
+    }
+
+    if (executorId) {
+      await this.auditService.logAction(
+        executorId,
+        'EXAM_TIMETABLE_ENTRY_DELETE',
+        'exam_timetables',
+        timetableId.toString(),
+        existing,
+        null,
+      );
+    }
+
+    return existing;
+  }
+
   async saveBulkTimetable(items: any[], executorId: number) {
     if (!items || !Array.isArray(items) || items.length === 0) {
       throw new BadRequestException(

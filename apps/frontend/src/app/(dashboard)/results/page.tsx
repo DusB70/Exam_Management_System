@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
 import { useToast } from '../../../hooks/use-toast';
+import { useProgressiveList } from '../../../hooks/use-progressive-load';
+import { ProgressiveLoadFooter } from '../../../components/ui/progressive-load-footer';
 import {
   AlertTriangle,
   Loader2,
@@ -119,27 +121,40 @@ export default function ResultsAndImportsPage() {
     .sort() as string[];
   const activeSemester = semesters.length > 0 ? semesters[semesters.length - 1] : '';
 
-  const filteredGrades = grades.filter((g: any) => {
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const code = (g.course?.course_code || '').toLowerCase();
-      const name = (g.course?.course_name || '').toLowerCase();
-      if (!code.includes(q) && !name.includes(q)) return false;
-    }
-    if (semesterFilter === 'active') {
-      if (activeSemester && g.course?.semester !== activeSemester) return false;
-    } else if (semesterFilter !== 'all') {
-      if (g.course?.semester !== semesterFilter) return false;
-    }
-    if (yearFilter !== 'all') {
-      if (!g.course?.semester?.startsWith(yearFilter)) return false;
-    }
-    if (typeFilter === 'compulsory') {
-      if (g.type !== 'COMPULSORY') return false;
-    } else if (typeFilter === 'optional') {
-      if (g.type !== 'OPTIONAL') return false;
-    }
-    return true;
+  const filteredGrades = useMemo(
+    () =>
+      grades.filter((g: any) => {
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase().trim();
+          const code = (g.course?.course_code || '').toLowerCase();
+          const name = (g.course?.course_name || '').toLowerCase();
+          if (!code.includes(q) && !name.includes(q)) return false;
+        }
+        if (semesterFilter === 'active') {
+          if (activeSemester && g.course?.semester !== activeSemester) return false;
+        } else if (semesterFilter !== 'all') {
+          if (g.course?.semester !== semesterFilter) return false;
+        }
+        if (yearFilter !== 'all') {
+          if (!g.course?.semester?.startsWith(yearFilter)) return false;
+        }
+        if (typeFilter === 'compulsory') {
+          if (g.type !== 'COMPULSORY') return false;
+        } else if (typeFilter === 'optional') {
+          if (g.type !== 'OPTIONAL') return false;
+        }
+        return true;
+      }),
+    [grades, searchQuery, semesterFilter, activeSemester, yearFilter, typeFilter],
+  );
+
+  const {
+    visibleItems: visibleGrades,
+    visibleCount: visibleGradesCount,
+    totalCount: totalGradesCount,
+    hasMore: hasMoreGrades,
+  } = useProgressiveList<any>(filteredGrades, {
+    resetKey: `${searchQuery}|${semesterFilter}|${yearFilter}|${typeFilter}`,
   });
 
   return (
@@ -304,6 +319,7 @@ export default function ResultsAndImportsPage() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/20">
+                      <th className="px-4 py-4 w-12 text-center">#</th>
                       <th className="px-6 py-4">Semester</th>
                       <th className="px-6 py-4">Course Code</th>
                       <th className="px-6 py-4">Module Name</th>
@@ -331,14 +347,14 @@ export default function ResultsAndImportsPage() {
                     {filteredGrades.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={hasAnyMultipleAttempts ? 9 : 7}
+                          colSpan={hasAnyMultipleAttempts ? 10 : 8}
                           className="text-center py-12 text-muted-foreground text-xs"
                         >
                           No results match the current filters.
                         </td>
                       </tr>
                     ) : (
-                      filteredGrades.map((grade: any) => {
+                      visibleGrades.map((grade: any, idx: number) => {
                         const prog = myProgress.find(
                           (p: any) => p.course_id === grade.course?.course_id,
                         );
@@ -352,6 +368,9 @@ export default function ResultsAndImportsPage() {
                             key={grade.grade_id}
                             className="hover:bg-secondary/15 transition-colors"
                           >
+                            <td className="px-4 py-4 text-center font-mono text-muted-foreground font-bold text-xs">
+                              {idx + 1}
+                            </td>
                             <td className="px-6 py-4 text-muted-foreground font-semibold">
                               Sem {grade.course?.semester}
                             </td>
@@ -444,6 +463,13 @@ export default function ResultsAndImportsPage() {
                     )}
                   </tbody>
                 </table>
+                <ProgressiveLoadFooter
+                  loadedCount={visibleGradesCount}
+                  totalCount={totalGradesCount}
+                  isLoadingMore={hasMoreGrades}
+                  hasMore={hasMoreGrades}
+                  entityLabel="result records"
+                />
               </div>
             )}
           </div>

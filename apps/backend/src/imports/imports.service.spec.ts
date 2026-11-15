@@ -36,6 +36,13 @@ describe('ImportsService', () => {
       findUnique: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    courseDegree: {
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    courseSpecialization: {
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     degree: {
       findFirst: jest.fn(),
@@ -44,13 +51,19 @@ describe('ImportsService', () => {
     },
     specialization: {
       findFirst: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     lecturer: {
       findFirst: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     courseLecturer: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    auditLog: {
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     courseRegistration: {
       findUnique: jest.fn(),
@@ -199,34 +212,89 @@ describe('ImportsService', () => {
       await expect(service.importCourses(Buffer.from(''), 99)).rejects.toThrow(BadRequestException);
     });
 
-    it('should import courses successfully', async () => {
+    it('should import courses in bulk with createMany and extended transaction timeout', async () => {
       mockXlsxParserService.parseBuffer.mockReturnValue([
         {
-          courseCode: 'CS101',
-          courseName: 'Intro to CS',
+          courseCode: 'ITT2101',
+          courseName: 'Cloud Computing',
           creditValue: 3,
-          semester: '1.1',
-          department: 'ICT',
-          degree: 'BICT',
-          status: 'COMPULSORY',
+          semester: '2.1',
+          department: 'ITT',
+          degree: 'BICT(O)',
+          status: 'O',
+        },
+        {
+          courseCode: 'EET2101',
+          courseName: 'Power Electronics',
+          creditValue: 3,
+          semester: '2.1',
+          department: 'EET',
+          degree: 'BET',
+          specialization: 'EET(C)',
         },
       ]);
-      mockPrismaService.course.findUnique.mockResolvedValue(null);
-      mockPrismaService.degree.findFirst.mockResolvedValue({ degree_id: 1, department_id: 1 });
-      (mockPrismaService.department as any).findFirst = jest
-        .fn()
-        .mockResolvedValue({ department_id: 1 });
-      mockPrismaService.course.create.mockResolvedValue({
-        course_id: 101,
-        course_code: 'CS101',
-        course_name: 'Intro to CS',
-      });
+      mockPrismaService.course.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        { course_id: 101, course_code: 'ITT2101', course_name: 'Cloud Computing' },
+        { course_id: 102, course_code: 'EET2101', course_name: 'Power Electronics' },
+      ]);
+      mockPrismaService.degree.findMany.mockResolvedValue([
+        { degree_id: 3, degree_code: 'BICT', degree_name: 'BICT', department_id: 3 },
+        { degree_id: 2, degree_code: 'BET', degree_name: 'BET', department_id: 8 },
+      ]);
+      mockPrismaService.department.findMany.mockResolvedValue([
+        { department_id: 3, department_code: 'ITT', department_name: 'ICT' },
+        { department_id: 8, department_code: 'EET', department_name: 'EET' },
+      ]);
+      mockPrismaService.specialization.findMany.mockResolvedValue([
+        {
+          specialization_id: 14,
+          specialization_code: 'EET',
+          specialization_name: 'Electrical and Electronic Technology',
+          degree_id: 2,
+        },
+      ]);
 
       const result = await service.importCourses(Buffer.from(''), 99);
 
       expect(result.success).toBe(true);
-      expect(result.count).toBe(1);
-      expect(mockPrismaService.course.create).toHaveBeenCalled();
+      expect(result.count).toBe(2);
+      expect(mockPrismaService.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+        maxWait: 15000,
+        timeout: 120000,
+      });
+      expect(mockPrismaService.course.createMany).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.courseDegree.createMany).toHaveBeenCalledWith({
+        data: [
+          { course_id: 101, degree_id: 3, status: 'OPTIONAL' },
+          { course_id: 102, degree_id: 2, status: 'COMPULSORY' },
+        ],
+      });
+      expect(mockPrismaService.courseSpecialization.createMany).toHaveBeenCalledWith({
+        data: [{ course_id: 102, specialization_id: 14, status: 'COMPULSORY' }],
+      });
+      expect(mockPrismaService.auditLog.createMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reject course codes exceeding 20 characters', async () => {
+      mockXlsxParserService.parseBuffer.mockReturnValue([
+        {
+          courseCode: 'VERYLONGCOURSECODE12345',
+          courseName: 'Too Long Code',
+          creditValue: 3,
+          semester: '1.1',
+          department: 'ITT',
+          degree: 'BICT',
+        },
+      ]);
+      mockPrismaService.course.findMany.mockResolvedValueOnce([]);
+      mockPrismaService.degree.findMany.mockResolvedValue([
+        { degree_id: 3, degree_code: 'BICT', degree_name: 'BICT', department_id: 3 },
+      ]);
+      mockPrismaService.department.findMany.mockResolvedValue([
+        { department_id: 3, department_code: 'ITT', department_name: 'ICT' },
+      ]);
+
+      await expect(service.importCourses(Buffer.from(''), 99)).rejects.toThrow(BadRequestException);
     });
   });
 

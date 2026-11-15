@@ -352,4 +352,78 @@ export class RequestsService {
       throw new BadRequestException('Invalid request type.');
     }
   }
+
+  private async removeUploadedFile(filename?: string | null) {
+    if (!filename) return;
+    const filePath = path.join(this.uploadsDir, filename);
+    await fs.promises.unlink(filePath).catch(() => {});
+  }
+
+  async deleteSubmission(
+    type: 'medical' | 'grace' | 'recorrection',
+    id: number,
+    executorUserId: number,
+    executorRole: string,
+  ) {
+    const isStudent = executorRole === 'STUDENT';
+
+    if (type === 'medical') {
+      const record = await this.prisma.medicalSubmission.findUnique({
+        where: { medical_id: id },
+        include: { student: true },
+      });
+      if (!record) throw new NotFoundException('Medical submission not found.');
+      if (isStudent) {
+        if (record.student.user_id !== executorUserId) {
+          throw new ForbiddenException('You can only delete your own submissions.');
+        }
+        if (record.status !== 'PENDING') {
+          throw new BadRequestException('Only pending submissions can be deleted.');
+        }
+      }
+      await this.prisma.medicalSubmission.delete({ where: { medical_id: id } });
+      await this.removeUploadedFile(record.medical_certificate_url);
+      await this.removeUploadedFile(record.request_letter_url);
+      return { medical_id: id };
+    }
+
+    if (type === 'grace') {
+      const record = await this.prisma.graceChanceApplication.findUnique({
+        where: { grace_id: id },
+        include: { student: true },
+      });
+      if (!record) throw new NotFoundException('Grace chance application not found.');
+      if (isStudent) {
+        if (record.student.user_id !== executorUserId) {
+          throw new ForbiddenException('You can only delete your own applications.');
+        }
+        if (record.status !== 'PENDING') {
+          throw new BadRequestException('Only pending applications can be deleted.');
+        }
+      }
+      await this.prisma.graceChanceApplication.delete({ where: { grace_id: id } });
+      return { grace_id: id };
+    }
+
+    if (type === 'recorrection') {
+      const record = await this.prisma.recorrectionRequest.findUnique({
+        where: { recorrection_id: id },
+        include: { student: true },
+      });
+      if (!record) throw new NotFoundException('Recorrection request not found.');
+      if (isStudent) {
+        if (record.student.user_id !== executorUserId) {
+          throw new ForbiddenException('You can only delete your own requests.');
+        }
+        if (record.status !== 'PENDING') {
+          throw new BadRequestException('Only pending requests can be deleted.');
+        }
+      }
+      await this.prisma.recorrectionRequest.delete({ where: { recorrection_id: id } });
+      await this.removeUploadedFile(record.receipt_url);
+      return { recorrection_id: id };
+    }
+
+    throw new BadRequestException('Invalid request type.');
+  }
 }

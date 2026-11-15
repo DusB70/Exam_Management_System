@@ -6,6 +6,8 @@ import { useAuthStore } from '../../../store/authStore';
 import { apiClient } from '../../../lib/api-client';
 import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
+import { useBulkSelection, runBulkDelete } from '../../../hooks/use-bulk-selection';
+import { BulkDeleteButton, SelectAllCheckbox } from '../../../components/ui/bulk-delete-button';
 import UserDialog from '../../../components/users/user-dialog';
 import { UserRole } from '@ems/shared';
 import {
@@ -73,6 +75,10 @@ export default function StudentDirectoryPage() {
 
   const isStaffOrAdmin =
     user?.role === UserRole.EXAM_DIVISION_STAFF || user?.role === UserRole.ADMINISTRATOR;
+
+  // Bulk selection for Staff Student Directory
+  const [isBulkDeletingStudents, setIsBulkDeletingStudents] = useState(false);
+  const studentSelection = useBulkSelection<number>();
 
   // ==========================================
   // LECTURER SPECIFIC STATES
@@ -365,6 +371,45 @@ export default function StudentDirectoryPage() {
       if (g.course?.semester) semestersSet.add(g.course.semester);
     });
     const sortedSemesters = Array.from(semestersSet).sort();
+    const visibleStudentIds = studentsList.map((st: any) => st.student_id);
+
+    const handleBulkDeleteStudents = async () => {
+      if (studentSelection.selectedCount === 0) return;
+      const confirmed = await confirm({
+        title: 'Delete Selected Students?',
+        message: `Are you sure you want to permanently delete ${studentSelection.selectedCount} selected student record(s)? This will remove their user accounts and academic records.`,
+        confirmText: `Delete (${studentSelection.selectedCount})`,
+        variant: 'destructive',
+      });
+      if (!confirmed) return;
+
+      setIsBulkDeletingStudents(true);
+      try {
+        const deletedIds: number[] = [];
+        const { deletedCount, failedCount, firstErrorMessage } = await runBulkDelete(
+          studentSelection.selectedIds,
+          async (studentId) => {
+            await apiClient.delete(`/users/students/${studentId}`);
+            deletedIds.push(studentId);
+          },
+        );
+        if (deletedCount > 0) {
+          toast.success(`${deletedCount} student record(s) deleted successfully.`);
+          studentSelection.removeFromSelection(deletedIds);
+          queryClient.invalidateQueries({ queryKey: ['staff-students-directory'] });
+          queryClient.invalidateQueries({ queryKey: ['staff-students'] });
+          queryClient.invalidateQueries({ queryKey: ['users'] });
+        }
+        if (failedCount > 0) {
+          toast.error(
+            `${failedCount} student(s) could not be deleted${firstErrorMessage ? `: ${firstErrorMessage}` : '.'}`,
+          );
+        }
+        if (failedCount === 0) studentSelection.clear();
+      } finally {
+        setIsBulkDeletingStudents(false);
+      }
+    };
 
     return (
       <div className="space-y-6 animate-fadeIn">
@@ -479,9 +524,16 @@ export default function StudentDirectoryPage() {
                 </button>
               )}
             </div>
-            <div className="px-3 py-2 bg-background border border-border/80 rounded-xl text-xs font-mono font-bold text-foreground flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
-              <Users className="h-3.5 w-3.5 text-primary" />
-              Showing {studentsList.length} of {totalStudents} Records
+            <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+              <BulkDeleteButton
+                count={studentSelection.selectedCount}
+                isDeleting={isBulkDeletingStudents}
+                onClick={handleBulkDeleteStudents}
+              />
+              <div className="px-3 py-2 bg-background border border-border/80 rounded-xl text-xs font-mono font-bold text-foreground flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5 text-primary" />
+                Showing {studentsList.length} of {totalStudents} Records
+              </div>
             </div>
           </div>
 
@@ -570,6 +622,16 @@ export default function StudentDirectoryPage() {
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-border/60 bg-secondary/15 text-muted-foreground font-bold font-mono uppercase">
+                  <th className="px-4 py-4 w-10 text-center">
+                    <SelectAllCheckbox
+                      checked={studentSelection.isAllSelected(visibleStudentIds)}
+                      indeterminate={studentSelection.isIndeterminate(visibleStudentIds)}
+                      disabled={visibleStudentIds.length === 0}
+                      onChange={() => studentSelection.toggleAll(visibleStudentIds)}
+                      ariaLabel="Select all visible students"
+                    />
+                  </th>
+                  <th className="px-4 py-4 w-12 text-center">#</th>
                   <th className="px-6 py-4">Index No</th>
                   <th className="px-6 py-4">Registration No</th>
                   <th className="px-6 py-4">Student Name</th>
@@ -582,7 +644,7 @@ export default function StudentDirectoryPage() {
               <tbody className="divide-y divide-border/40 font-medium">
                 {isStaffStudentsLoading ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-20 text-muted-foreground">
+                    <td colSpan={9} className="text-center py-20 text-muted-foreground">
                       <span className="inline-flex items-center gap-2">
                         <Loader2 className="h-5 w-5 animate-spin text-primary" />
                         Loading student directory records...
@@ -591,16 +653,33 @@ export default function StudentDirectoryPage() {
                   </tr>
                 ) : studentsList.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-20 text-muted-foreground">
+                    <td colSpan={9} className="text-center py-20 text-muted-foreground">
                       No student records found matching your filters.
                     </td>
                   </tr>
                 ) : (
-                  studentsList.map((st: any) => {
+                  studentsList.map((st: any, idx: number) => {
                     const statusVal = st.status || 'ACTIVE';
 
                     return (
-                      <tr key={st.student_id} className="hover:bg-secondary/10 transition-colors">
+                      <tr
+                        key={st.student_id}
+                        className={`hover:bg-secondary/10 transition-colors ${
+                          studentSelection.isSelected(st.student_id) ? 'bg-primary/5' : ''
+                        }`}
+                      >
+                        <td className="px-4 py-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={studentSelection.isSelected(st.student_id)}
+                            onChange={() => studentSelection.toggle(st.student_id)}
+                            aria-label={`Select student ${st.user?.full_name || st.registration_number}`}
+                            className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
+                          />
+                        </td>
+                        <td className="px-4 py-4 text-center font-mono text-muted-foreground font-bold">
+                          {idx + 1}
+                        </td>
                         <td className="px-6 py-4 font-bold text-foreground font-mono">
                           {st.index_number}
                         </td>
@@ -1215,6 +1294,7 @@ export default function StudentDirectoryPage() {
                                 <table className="w-full text-left border-collapse text-xs">
                                   <thead>
                                     <tr className="border-b border-border/40 text-[10px] font-bold text-muted-foreground uppercase font-mono bg-secondary/10">
+                                      <th className="px-4 py-3 w-10 text-center">#</th>
                                       <th className="px-4 py-3">Course Code & Name</th>
                                       <th className="px-4 py-3 text-center">Attempt</th>
                                       <th className="px-4 py-3 text-center">CA Marks</th>
@@ -1226,7 +1306,7 @@ export default function StudentDirectoryPage() {
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-border/30 font-medium">
-                                    {semRegs.map((reg: any) => {
+                                    {semRegs.map((reg: any, idx: number) => {
                                       const gradeRecord = semGrades.find(
                                         (g: any) => g.course_id === reg.course_id,
                                       );
@@ -1238,6 +1318,9 @@ export default function StudentDirectoryPage() {
                                           key={reg.registration_id}
                                           className="hover:bg-secondary/10 transition-colors"
                                         >
+                                          <td className="px-4 py-3 text-center font-mono text-muted-foreground font-bold">
+                                            {idx + 1}
+                                          </td>
                                           <td className="px-4 py-3">
                                             <div className="font-bold text-foreground font-mono">
                                               {reg.course?.course_code}

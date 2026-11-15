@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   FileSpreadsheet,
   X,
@@ -11,6 +11,8 @@ import {
   Check,
   Save,
 } from 'lucide-react';
+import { useProgressiveList } from '../../hooks/use-progressive-load';
+import { ProgressiveLoadFooter } from '../ui/progressive-load-footer';
 
 export interface InspectorColumn {
   key: string;
@@ -66,6 +68,20 @@ export default function SpreadsheetInspectorModal({
   onClose,
   onConfirm,
 }: SpreadsheetInspectorModalProps) {
+  const rows = useMemo(
+    () => (Array.isArray(validationResult?.rows) ? validationResult.rows : []),
+    [validationResult],
+  );
+
+  const {
+    visibleItems: visibleRows,
+    visibleCount: visibleRowsCount,
+    totalCount: totalRowsCount,
+    hasMore: hasMoreRows,
+  } = useProgressiveList<any>(rows, {
+    resetKey: `${fileName || ''}|${validationResult?.totalRows || 0}|${open}`,
+  });
+
   if (!open) return null;
 
   return (
@@ -196,7 +212,7 @@ export default function SpreadsheetInspectorModal({
                         </td>
                       </tr>
                     ) : (
-                      validationResult.rows?.map((row) => (
+                      visibleRows.map((row: any) => (
                         <tr
                           key={row.rowIndex}
                           className={
@@ -240,6 +256,13 @@ export default function SpreadsheetInspectorModal({
                     )}
                   </tbody>
                 </table>
+                <ProgressiveLoadFooter
+                  loadedCount={visibleRowsCount}
+                  totalCount={totalRowsCount}
+                  isLoadingMore={hasMoreRows}
+                  hasMore={hasMoreRows}
+                  entityLabel="rows"
+                />
               </div>
             </div>
           )}

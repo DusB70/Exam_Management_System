@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { UsersRepository } from './users.repository';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -739,5 +744,70 @@ export class UsersService {
     }
 
     return updated;
+  }
+
+  async deleteUser(userId: number, executorId: number, executorRole: string) {
+    if (userId === executorId) {
+      throw new BadRequestException('You cannot delete your own active account.');
+    }
+
+    const existingUser = await this.findById(userId);
+    if (executorRole === 'EXAM_DIVISION_STAFF' && existingUser.role_id === 1) {
+      throw new ForbiddenException(
+        'Staff members are not permitted to delete Administrator accounts.',
+      );
+    }
+
+    const [recordedMarksCount, recordedViolationsCount] = await Promise.all([
+      this.prisma.examMark.count({ where: { recorded_by_id: userId } }),
+      this.prisma.examViolation.count({ where: { recorded_by_id: userId } }),
+    ]);
+
+    if (recordedMarksCount > 0 || recordedViolationsCount > 0) {
+      throw new BadRequestException(
+        'Cannot delete user because they have recorded exam marks or violations. Deactivate the account instead.',
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.auditLog.updateMany({
+        where: { user_id: userId },
+        data: { user_id: null },
+      });
+
+      await tx.user.delete({
+        where: { user_id: userId },
+      });
+    });
+
+    await this.auditService.logAction(
+      executorId,
+      'USER_DELETE',
+      'users',
+      userId.toString(),
+      {
+        user_id: existingUser.user_id,
+        email: existingUser.email,
+        full_name: existingUser.full_name,
+        role_id: existingUser.role_id,
+      },
+      null,
+    );
+
+    return { user_id: userId };
+  }
+
+  async deleteStudent(studentId: number, executorId: number, executorRole: string) {
+    const student = await this.prisma.student.findUnique({
+      where: { student_id: studentId },
+      select: { student_id: true, user_id: true, registration_number: true },
+    });
+
+    if (!student) {
+      throw new NotFoundException(`Student with ID ${studentId} not found`);
+    }
+
+    await this.deleteUser(student.user_id, executorId, executorRole);
+    return { student_id: studentId, user_id: student.user_id };
   }
 }

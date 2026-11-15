@@ -1,11 +1,20 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
 import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
+import {
+  useProgressiveList,
+  LAZY_LOAD_INITIAL_LIMIT,
+  LAZY_LOAD_BATCH_SIZE,
+  LAZY_LOAD_CLIENT_DELAY_MS,
+} from '../../../hooks/use-progressive-load';
+import { ProgressiveLoadFooter } from '../../../components/ui/progressive-load-footer';
+import { useBulkSelection, runBulkDelete } from '../../../hooks/use-bulk-selection';
+import { BulkDeleteButton, SelectAllCheckbox } from '../../../components/ui/bulk-delete-button';
 import { AxiosError } from 'axios';
 import { ApiResponse } from '@ems/shared';
 import {
@@ -90,11 +99,17 @@ export default function MarksRegistryPage() {
   const [gridMarksDraft, setGridMarksDraft] = useState<{
     [studentId: number]: { [examId: number]: string };
   }>({});
-  const [marksVisibleLimit, setMarksVisibleLimit] = useState<number>(100);
+  const [marksVisibleLimit, setMarksVisibleLimit] = useState<number>(LAZY_LOAD_INITIAL_LIMIT);
 
   React.useEffect(() => {
-    setMarksVisibleLimit(100);
-  }, [selectedCourseId, selectedBatchFilter, selectedSemesterFilter]);
+    setMarksVisibleLimit(LAZY_LOAD_INITIAL_LIMIT);
+  }, [
+    selectedCourseId,
+    selectedBatchFilter,
+    selectedSemesterFilter,
+    studentSearchQuery,
+    gridSubpart,
+  ]);
 
   const [customConfig, setCustomConfig] = useState<any>({
     weights: {},
@@ -199,16 +214,27 @@ export default function MarksRegistryPage() {
     enabled: isLecturer && !!selectedCourseId,
   });
 
-  // Auto progressive background loading effect (first 100 loaded, then automatically loads remaining)
+  const filteredGridStudents = useMemo(() => {
+    const students = gridData?.students || [];
+    if (!studentSearchQuery) return students;
+    const q = studentSearchQuery.toLowerCase();
+    return students.filter(
+      (s: any) =>
+        s.registration_number?.toLowerCase().includes(q) ||
+        s.index_number?.toLowerCase().includes(q),
+    );
+  }, [gridData?.students, studentSearchQuery]);
+
+  // Auto progressive background loading effect (first 50 loaded, then slowly loads remaining)
   useEffect(() => {
-    const totalCount = gridData?.students?.length || 0;
+    const totalCount = filteredGridStudents.length;
     if (totalCount > marksVisibleLimit) {
       const timer = setTimeout(() => {
-        setMarksVisibleLimit((prev) => Math.min(prev + 100, totalCount));
-      }, 150);
+        setMarksVisibleLimit((prev) => Math.min(prev + LAZY_LOAD_BATCH_SIZE, totalCount));
+      }, LAZY_LOAD_CLIENT_DELAY_MS);
       return () => clearTimeout(timer);
     }
-  }, [marksVisibleLimit, gridData?.students?.length]);
+  }, [marksVisibleLimit, filteredGridStudents.length]);
 
   // Populate local states when gridData is loaded
   useEffect(() => {
@@ -526,6 +552,63 @@ export default function MarksRegistryPage() {
     },
   });
 
+  const assessmentSelection = useBulkSelection<number>();
+  const { clear: clearAssessmentSelection } = assessmentSelection;
+  const [isBulkDeletingAssessments, setIsBulkDeletingAssessments] = useState(false);
+
+  useEffect(() => {
+    clearAssessmentSelection();
+  }, [selectedCourseId, clearAssessmentSelection]);
+
+  const isAssessmentDeleteLocked = [
+    'SUBMITTED_FINAL',
+    'SUBMITTED_PROVISIONAL',
+    'SUBMITTED',
+    'APPROVED',
+    'PUBLISHED_PROVISIONAL',
+    'SUBMITTED_TO_STAFF',
+    'RECEIVED_BY_STAFF',
+  ].includes(gridData?.course?.result_submission_status);
+
+  const allAssessmentIds: number[] = (gridData?.exams || []).map((e: any) => e.exam_id);
+
+  const handleBulkDeleteAssessments = async () => {
+    const ids = Array.from(assessmentSelection.selectedIds);
+    if (ids.length === 0 || !selectedCourseId) return;
+
+    const confirmed = await confirm({
+      title: `Delete ${ids.length} Assessment${ids.length === 1 ? '' : 's'}?`,
+      message: `Are you sure you want to delete ${ids.length} selected assessment${ids.length === 1 ? '' : 's'}? All marks recorded for these assessments will be removed.`,
+      confirmText: `Delete ${ids.length}`,
+      variant: 'destructive',
+    });
+    if (!confirmed) return;
+
+    setIsBulkDeletingAssessments(true);
+    try {
+      const result = await runBulkDelete(ids, async (examId) => {
+        await apiClient.delete(`/marks/courses/${selectedCourseId}/exams/${examId}`);
+      });
+
+      if (result.deletedCount > 0) {
+        assessmentSelection.clear();
+        refetchGrid();
+      }
+
+      if (result.failedCount > 0) {
+        setErrorMsg(
+          `Deleted ${result.deletedCount} assessment(s), but ${result.failedCount} failed${result.firstErrorMessage ? `: ${result.firstErrorMessage}` : '.'}`,
+        );
+        setSuccessMsg(null);
+      } else {
+        setSuccessMsg(`Deleted ${result.deletedCount} assessment(s) successfully.`);
+        setErrorMsg(null);
+      }
+    } finally {
+      setIsBulkDeletingAssessments(false);
+    }
+  };
+
   // ==========================================
   // STAFF DATA QUERIES
   // ==========================================
@@ -595,6 +678,53 @@ export default function MarksRegistryPage() {
     },
     enabled: isStaffOrAdmin && !!combinedCourseId,
   });
+
+  const {
+    visibleItems: visibleReviewQueue,
+    visibleCount: visibleReviewQueueCount,
+    totalCount: totalReviewQueueCount,
+    hasMore: hasMoreReviewQueue,
+  } = useProgressiveList<any>(
+    Array.isArray(reviewQueueData) ? reviewQueueData : STABLE_EMPTY_ARRAY,
+  );
+
+  const {
+    visibleItems: visibleReceivedQueue,
+    visibleCount: visibleReceivedQueueCount,
+    totalCount: totalReceivedQueueCount,
+    hasMore: hasMoreReceivedQueue,
+  } = useProgressiveList<any>(
+    Array.isArray(receivedQueueData) ? receivedQueueData : STABLE_EMPTY_ARRAY,
+  );
+
+  const {
+    visibleItems: visibleApprovedDirectory,
+    visibleCount: visibleApprovedDirectoryCount,
+    totalCount: totalApprovedDirectoryCount,
+    hasMore: hasMoreApprovedDirectory,
+  } = useProgressiveList<any>(
+    Array.isArray(approvedDirectoryData) ? approvedDirectoryData : STABLE_EMPTY_ARRAY,
+  );
+
+  const {
+    visibleItems: visibleStaffGridStudents,
+    visibleCount: visibleStaffGridCount,
+    totalCount: totalStaffGridCount,
+    hasMore: hasMoreStaffGrid,
+  } = useProgressiveList<any>(
+    Array.isArray(staffGridData?.students) ? staffGridData.students : STABLE_EMPTY_ARRAY,
+    { resetKey: selectedCourseReview?.course_id || '' },
+  );
+
+  const {
+    visibleItems: visibleCombinedStudents,
+    visibleCount: visibleCombinedCount,
+    totalCount: totalCombinedCount,
+    hasMore: hasMoreCombined,
+  } = useProgressiveList<any>(
+    Array.isArray(combinedResults?.students) ? combinedResults.students : STABLE_EMPTY_ARRAY,
+    { resetKey: combinedCourseId },
+  );
 
   const receiveCourseMutation = useMutation({
     mutationFn: async (courseId: number) => {
@@ -1364,21 +1494,8 @@ export default function MarksRegistryPage() {
                       {/* 2. Count Badge matching exact Lecturer Allocated Course Student Directory style */}
                       <div className="px-3 py-1.5 bg-background border border-border/80 rounded-xl text-xs font-mono font-bold text-foreground flex items-center gap-1.5 shrink-0">
                         <Users className="h-3.5 w-3.5 text-primary" />
-                        Showing{' '}
-                        {gridData?.students
-                          ? Math.min(
-                              marksVisibleLimit,
-                              gridData.students.filter((s: any) => {
-                                if (!studentSearchQuery) return true;
-                                const q = studentSearchQuery.toLowerCase();
-                                return (
-                                  s.registration_number?.toLowerCase().includes(q) ||
-                                  s.index_number?.toLowerCase().includes(q)
-                                );
-                              }).length,
-                            )
-                          : 0}{' '}
-                        of {gridData?.students?.length || 0} Records
+                        Showing {Math.min(marksVisibleLimit, filteredGridStudents.length)} of{' '}
+                        {filteredGridStudents.length} Records
                       </div>
                     </div>
 
@@ -1833,15 +1950,7 @@ export default function MarksRegistryPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-border/40 font-mono">
-                            {(gridData.students || [])
-                              .filter((s: any) => {
-                                if (!studentSearchQuery) return true;
-                                const q = studentSearchQuery.toLowerCase();
-                                return (
-                                  s.registration_number?.toLowerCase().includes(q) ||
-                                  s.index_number?.toLowerCase().includes(q)
-                                );
-                              })
+                            {filteredGridStudents
                               .slice(0, marksVisibleLimit)
                               .map((student: any, idx: number) => {
                                 const rowMarks = firstMarkerMarks[student.student_id] || {};
@@ -1929,6 +2038,13 @@ export default function MarksRegistryPage() {
                               })}
                           </tbody>
                         </table>
+                        <ProgressiveLoadFooter
+                          loadedCount={Math.min(marksVisibleLimit, filteredGridStudents.length)}
+                          totalCount={filteredGridStudents.length}
+                          isLoadingMore={filteredGridStudents.length > marksVisibleLimit}
+                          hasMore={filteredGridStudents.length > marksVisibleLimit}
+                          entityLabel="student records"
+                        />
                       </div>
                     </div>
                   )}
@@ -1981,15 +2097,7 @@ export default function MarksRegistryPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-border/40 font-mono">
-                            {(gridData.students || [])
-                              .filter((s: any) => {
-                                if (!studentSearchQuery) return true;
-                                const q = studentSearchQuery.toLowerCase();
-                                return (
-                                  s.registration_number?.toLowerCase().includes(q) ||
-                                  s.index_number?.toLowerCase().includes(q)
-                                );
-                              })
+                            {filteredGridStudents
                               .slice(0, marksVisibleLimit)
                               .map((student: any, idx: number) => {
                                 const row1st = firstMarkerMarks[student.student_id] || {};
@@ -2179,6 +2287,13 @@ export default function MarksRegistryPage() {
                               })}
                           </tbody>
                         </table>
+                        <ProgressiveLoadFooter
+                          loadedCount={Math.min(marksVisibleLimit, filteredGridStudents.length)}
+                          totalCount={filteredGridStudents.length}
+                          isLoadingMore={filteredGridStudents.length > marksVisibleLimit}
+                          hasMore={filteredGridStudents.length > marksVisibleLimit}
+                          entityLabel="student records"
+                        />
                       </div>
                     </div>
                   )}
@@ -2572,15 +2687,7 @@ export default function MarksRegistryPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-border/40 font-mono">
-                            {(gridData.students || [])
-                              .filter((s: any) => {
-                                if (!studentSearchQuery) return true;
-                                const q = studentSearchQuery.toLowerCase();
-                                return (
-                                  s.registration_number?.toLowerCase().includes(q) ||
-                                  s.index_number?.toLowerCase().includes(q)
-                                );
-                              })
+                            {filteredGridStudents
                               .slice(0, marksVisibleLimit)
                               .map((student: any, idx: number) => {
                                 const row1st = firstMarkerMarks[student.student_id] || {};
@@ -2814,6 +2921,13 @@ export default function MarksRegistryPage() {
                               })}
                           </tbody>
                         </table>
+                        <ProgressiveLoadFooter
+                          loadedCount={Math.min(marksVisibleLimit, filteredGridStudents.length)}
+                          totalCount={filteredGridStudents.length}
+                          isLoadingMore={filteredGridStudents.length > marksVisibleLimit}
+                          hasMore={filteredGridStudents.length > marksVisibleLimit}
+                          entityLabel="student records"
+                        />
                       </div>
                     </div>
                   )}
@@ -2906,15 +3020,7 @@ export default function MarksRegistryPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-border/40 font-mono">
-                            {(gridData.students || [])
-                              .filter((s: any) => {
-                                if (!studentSearchQuery) return true;
-                                const q = studentSearchQuery.toLowerCase();
-                                return (
-                                  s.registration_number?.toLowerCase().includes(q) ||
-                                  s.index_number?.toLowerCase().includes(q)
-                                );
-                              })
+                            {filteredGridStudents
                               .slice(0, marksVisibleLimit)
                               .map((student: any, idx: number) => {
                                 const row1st = firstMarkerMarks[student.student_id] || {};
@@ -3055,6 +3161,13 @@ export default function MarksRegistryPage() {
                               })}
                           </tbody>
                         </table>
+                        <ProgressiveLoadFooter
+                          loadedCount={Math.min(marksVisibleLimit, filteredGridStudents.length)}
+                          totalCount={filteredGridStudents.length}
+                          isLoadingMore={filteredGridStudents.length > marksVisibleLimit}
+                          hasMore={filteredGridStudents.length > marksVisibleLimit}
+                          entityLabel="student records"
+                        />
                       </div>
                     </div>
                   )}
@@ -3079,34 +3192,54 @@ export default function MarksRegistryPage() {
 
                   {/* Section A: Assessment Weight Distribution */}
                   <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <h4 className="font-bold text-foreground flex items-center gap-1.5 text-sm">
-                        {/*<Percent className="h-4 w-4 text-primary" />*/}
-                        Assessment Weight Distribution (%)
-                      </h4>
-                      {(() => {
-                        const exams = gridData.exams || [];
-                        const weights = customConfig.weights || {};
-                        const contributes = customConfig.contributes || {};
-                        const totalAssignedWeight = exams.reduce((acc: number, e: any) => {
-                          const isContributing =
-                            contributes[e.exam_id] !== undefined ? !!contributes[e.exam_id] : true;
-                          if (!isContributing) return acc;
-                          return acc + (weights[e.exam_id] || 0);
-                        }, 0);
+                    <div className="flex flex-wrap justify-between items-center gap-3">
+                      <div className="flex items-center gap-2.5">
+                        {allAssessmentIds.length > 0 && (
+                          <SelectAllCheckbox
+                            checked={assessmentSelection.isAllSelected(allAssessmentIds)}
+                            indeterminate={assessmentSelection.isIndeterminate(allAssessmentIds)}
+                            disabled={isAssessmentDeleteLocked || isBulkDeletingAssessments}
+                            onChange={() => assessmentSelection.toggleAll(allAssessmentIds)}
+                            ariaLabel="Select all assessments"
+                          />
+                        )}
+                        <h4 className="font-bold text-foreground flex items-center gap-1.5 text-sm">
+                          {/*<Percent className="h-4 w-4 text-primary" />*/}
+                          Assessment Weight Distribution (%)
+                        </h4>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <BulkDeleteButton
+                          count={assessmentSelection.selectedCount}
+                          isDeleting={isBulkDeletingAssessments}
+                          onClick={handleBulkDeleteAssessments}
+                        />
+                        {(() => {
+                          const exams = gridData.exams || [];
+                          const weights = customConfig.weights || {};
+                          const contributes = customConfig.contributes || {};
+                          const totalAssignedWeight = exams.reduce((acc: number, e: any) => {
+                            const isContributing =
+                              contributes[e.exam_id] !== undefined
+                                ? !!contributes[e.exam_id]
+                                : true;
+                            if (!isContributing) return acc;
+                            return acc + (weights[e.exam_id] || 0);
+                          }, 0);
 
-                        return (
-                          <span
-                            className={`text-xs font-extrabold px-3 py-1 rounded-full border ${
-                              totalAssignedWeight > 100
-                                ? 'bg-destructive/10 text-destructive border-destructive/25'
-                                : 'bg-primary/10 text-primary border-primary/20'
-                            }`}
-                          >
-                            Total Assigned Weight: {totalAssignedWeight}% (Max 100%)
-                          </span>
-                        );
-                      })()}
+                          return (
+                            <span
+                              className={`text-xs font-extrabold px-3 py-1 rounded-full border ${
+                                totalAssignedWeight > 100
+                                  ? 'bg-destructive/10 text-destructive border-destructive/25'
+                                  : 'bg-primary/10 text-primary border-primary/20'
+                              }`}
+                            >
+                              Total Assigned Weight: {totalAssignedWeight}% (Max 100%)
+                            </span>
+                          );
+                        })()}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -3125,8 +3258,25 @@ export default function MarksRegistryPage() {
                             key={exam.exam_id}
                             className="p-4 bg-secondary/15 rounded-2xl border border-border/40 space-y-3"
                           >
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
+                            <div className="flex justify-between items-start gap-2">
+                              <input
+                                type="checkbox"
+                                checked={assessmentSelection.isSelected(exam.exam_id)}
+                                disabled={isAssessmentDeleteLocked || isBulkDeletingAssessments}
+                                onChange={() => assessmentSelection.toggle(exam.exam_id)}
+                                aria-label={`Select assessment ${exam.exam_title}`}
+                                title={
+                                  isAssessmentDeleteLocked
+                                    ? 'Course marks are locked or submitted'
+                                    : 'Select assessment'
+                                }
+                                className={`mt-0.5 h-4 w-4 shrink-0 rounded border-border/80 bg-secondary/40 text-primary focus:ring-primary/40 accent-primary ${
+                                  isAssessmentDeleteLocked
+                                    ? 'opacity-40 cursor-not-allowed'
+                                    : 'cursor-pointer'
+                                }`}
+                              />
+                              <div className="flex-1 min-w-0">
                                 {renamingExamId === exam.exam_id ? (
                                   <div className="flex items-center gap-1.5 mb-1">
                                     <input
@@ -3702,45 +3852,55 @@ export default function MarksRegistryPage() {
                   No submitted marksheets are pending staff review.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {reviewQueueData.map((c: any) => (
-                    <div
-                      key={c.course_id}
-                      className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/30 transition"
-                    >
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-start">
-                          <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded uppercase">
-                            {c.course_code}
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded uppercase">
-                            Pending Receive
-                          </span>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {visibleReviewQueue.map((c: any) => (
+                      <div
+                        key={c.course_id}
+                        className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/30 transition"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-start">
+                            <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded uppercase">
+                              {c.course_code}
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded uppercase">
+                              Pending Receive
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-sm text-foreground pt-1 truncate">
+                            {c.course_name}
+                          </h4>
+                          <p className="text-xs text-muted-foreground">
+                            Semester: {c.semester} | Batch: {c.academic_year}
+                          </p>
                         </div>
-                        <h4 className="font-bold text-sm text-foreground pt-1 truncate">
-                          {c.course_name}
-                        </h4>
-                        <p className="text-xs text-muted-foreground">
-                          Semester: {c.semester} | Batch: {c.academic_year}
-                        </p>
+                        <div className="border-t border-border/60 pt-4 mt-6 flex items-center justify-between">
+                          <button
+                            onClick={() => setSelectedCourseReview(c)}
+                            className="text-xs text-primary font-bold hover:underline"
+                          >
+                            Review Marksheet &rarr;
+                          </button>
+                          <button
+                            onClick={() => receiveCourseMutation.mutate(c.course_id)}
+                            disabled={receiveCourseMutation.isPending}
+                            className="px-3 py-1.5 bg-primary text-primary-foreground text-xs font-bold rounded-lg hover:bg-primary/90 transition cursor-pointer"
+                          >
+                            Mark Received
+                          </button>
+                        </div>
                       </div>
-                      <div className="border-t border-border/60 pt-4 mt-6 flex items-center justify-between">
-                        <button
-                          onClick={() => setSelectedCourseReview(c)}
-                          className="text-xs text-primary font-bold hover:underline"
-                        >
-                          Review Marksheet &rarr;
-                        </button>
-                        <button
-                          onClick={() => receiveCourseMutation.mutate(c.course_id)}
-                          disabled={receiveCourseMutation.isPending}
-                          className="px-3 py-1.5 bg-primary text-primary-foreground text-xs font-bold rounded-lg hover:bg-primary/90 transition cursor-pointer"
-                        >
-                          Mark Received
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                  <ProgressiveLoadFooter
+                    loadedCount={visibleReviewQueueCount}
+                    totalCount={totalReviewQueueCount}
+                    isLoadingMore={hasMoreReviewQueue}
+                    hasMore={hasMoreReviewQueue}
+                    entityLabel="courses"
+                    className="rounded-2xl border border-border/60"
+                  />
                 </div>
               )}
             </div>
@@ -3759,53 +3919,63 @@ export default function MarksRegistryPage() {
                   No received marksheets are waiting for final publishing.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {receivedQueueData.map((c: any) => (
-                    <div
-                      key={c.course_id}
-                      className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/30 transition"
-                    >
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-start">
-                          <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded uppercase">
-                            {c.course_code}
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded uppercase">
-                            Received
-                          </span>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {visibleReceivedQueue.map((c: any) => (
+                      <div
+                        key={c.course_id}
+                        className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/30 transition"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-start">
+                            <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded uppercase">
+                              {c.course_code}
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded uppercase">
+                              Received
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-sm text-foreground pt-1 truncate">
+                            {c.course_name}
+                          </h4>
+                          <p className="text-xs text-muted-foreground">
+                            Semester: {c.semester} | Batch: {c.academic_year}
+                          </p>
                         </div>
-                        <h4 className="font-bold text-sm text-foreground pt-1 truncate">
-                          {c.course_name}
-                        </h4>
-                        <p className="text-xs text-muted-foreground">
-                          Semester: {c.semester} | Batch: {c.academic_year}
-                        </p>
-                      </div>
-                      <div className="border-t border-border/60 pt-4 mt-6 flex items-center justify-between gap-2">
-                        <button
-                          onClick={() => setSelectedCourseReview(c)}
-                          className="text-xs text-primary font-bold hover:underline"
-                        >
-                          Review Sheet &rarr;
-                        </button>
-                        <div className="flex gap-2">
+                        <div className="border-t border-border/60 pt-4 mt-6 flex items-center justify-between gap-2">
                           <button
-                            onClick={() => setStaffRejectCourseId(c.course_id)}
-                            className="px-3 py-1.5 bg-destructive text-white text-xs font-bold rounded-lg hover:bg-destructive/90 transition cursor-pointer"
+                            onClick={() => setSelectedCourseReview(c)}
+                            className="text-xs text-primary font-bold hover:underline"
                           >
-                            Reject
+                            Review Sheet &rarr;
                           </button>
-                          <button
-                            onClick={() => approveCourseMutation.mutate(c.course_id)}
-                            disabled={approveCourseMutation.isPending}
-                            className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-500 transition cursor-pointer"
-                          >
-                            Publish
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setStaffRejectCourseId(c.course_id)}
+                              className="px-3 py-1.5 bg-destructive text-white text-xs font-bold rounded-lg hover:bg-destructive/90 transition cursor-pointer"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              onClick={() => approveCourseMutation.mutate(c.course_id)}
+                              disabled={approveCourseMutation.isPending}
+                              className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-500 transition cursor-pointer"
+                            >
+                              Publish
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                  <ProgressiveLoadFooter
+                    loadedCount={visibleReceivedQueueCount}
+                    totalCount={totalReceivedQueueCount}
+                    isLoadingMore={hasMoreReceivedQueue}
+                    hasMore={hasMoreReceivedQueue}
+                    entityLabel="courses"
+                    className="rounded-2xl border border-border/60"
+                  />
                 </div>
               )}
             </div>
@@ -3824,38 +3994,48 @@ export default function MarksRegistryPage() {
                   No courses published yet.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {approvedDirectoryData.map((c: any) => (
-                    <div
-                      key={c.course_id}
-                      className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md"
-                    >
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-start">
-                          <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded uppercase">
-                            {c.course_code}
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded uppercase">
-                            Published
-                          </span>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {visibleApprovedDirectory.map((c: any) => (
+                      <div
+                        key={c.course_id}
+                        className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-start">
+                            <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded uppercase">
+                              {c.course_code}
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded uppercase">
+                              Published
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-sm text-foreground pt-1 truncate">
+                            {c.course_name}
+                          </h4>
+                          <p className="text-xs text-muted-foreground">
+                            Semester: {c.semester} | Batch: {c.academic_year}
+                          </p>
                         </div>
-                        <h4 className="font-bold text-sm text-foreground pt-1 truncate">
-                          {c.course_name}
-                        </h4>
-                        <p className="text-xs text-muted-foreground">
-                          Semester: {c.semester} | Batch: {c.academic_year}
-                        </p>
+                        <div className="border-t border-border/60 pt-4 mt-6 flex items-center justify-between">
+                          <button
+                            onClick={() => setSelectedCourseReview(c)}
+                            className="text-xs text-primary font-bold hover:underline"
+                          >
+                            View Published Sheet &rarr;
+                          </button>
+                        </div>
                       </div>
-                      <div className="border-t border-border/60 pt-4 mt-6 flex items-center justify-between">
-                        <button
-                          onClick={() => setSelectedCourseReview(c)}
-                          className="text-xs text-primary font-bold hover:underline"
-                        >
-                          View Published Sheet &rarr;
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                  <ProgressiveLoadFooter
+                    loadedCount={visibleApprovedDirectoryCount}
+                    totalCount={totalApprovedDirectoryCount}
+                    isLoadingMore={hasMoreApprovedDirectory}
+                    hasMore={hasMoreApprovedDirectory}
+                    entityLabel="courses"
+                    className="rounded-2xl border border-border/60"
+                  />
                 </div>
               )}
             </div>
@@ -3906,6 +4086,7 @@ export default function MarksRegistryPage() {
                       <table className="w-full text-left border-collapse text-xs">
                         <thead>
                           <tr className="border-b border-border/60 bg-secondary/15 text-muted-foreground font-bold font-mono">
+                            <th className="px-4 py-4 w-12 text-center">#</th>
                             <th className="px-6 py-4">Index No</th>
                             <th className="px-6 py-4">Reg No</th>
                             <th className="px-6 py-4 text-center">Continuous Assessment (CA)</th>
@@ -3915,12 +4096,15 @@ export default function MarksRegistryPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border/40 font-medium">
-                          {combinedResults.students.map((st: any) => {
+                          {visibleCombinedStudents.map((st: any, idx: number) => {
                             const gradeRecord = combinedResults.grades?.find(
                               (g: any) => g.student_id === st.student_id,
                             );
                             return (
                               <tr key={st.student_id} className="hover:bg-secondary/10">
+                                <td className="px-4 py-3 text-center font-mono text-muted-foreground font-bold">
+                                  {idx + 1}
+                                </td>
                                 <td className="px-6 py-3 font-bold font-mono text-foreground">
                                   {st.index_number}
                                 </td>
@@ -3952,6 +4136,13 @@ export default function MarksRegistryPage() {
                           })}
                         </tbody>
                       </table>
+                      <ProgressiveLoadFooter
+                        loadedCount={visibleCombinedCount}
+                        totalCount={totalCombinedCount}
+                        isLoadingMore={hasMoreCombined}
+                        hasMore={hasMoreCombined}
+                        entityLabel="student records"
+                      />
                     </div>
                   )}
                 </div>
@@ -3995,6 +4186,9 @@ export default function MarksRegistryPage() {
                       <table className="w-full text-left border-collapse text-xs">
                         <thead>
                           <tr className="bg-secondary/40 border-b border-border/80">
+                            <th className="p-3 w-12 font-bold text-muted-foreground uppercase text-center">
+                              #
+                            </th>
                             <th className="p-3 font-bold text-muted-foreground uppercase">
                               Reg No
                             </th>
@@ -4016,7 +4210,7 @@ export default function MarksRegistryPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border/60">
-                          {staffGridData.students.map((st: any) => {
+                          {visibleStaffGridStudents.map((st: any, idx: number) => {
                             const grade = staffGridData.grades?.find(
                               (g: any) => g.student_id === st.student_id,
                             );
@@ -4025,6 +4219,9 @@ export default function MarksRegistryPage() {
                                 key={st.student_id}
                                 className="hover:bg-secondary/20 transition-colors"
                               >
+                                <td className="p-3 text-center font-mono text-muted-foreground font-bold">
+                                  {idx + 1}
+                                </td>
                                 <td className="p-3 font-bold font-mono text-foreground">
                                   {st.registration_number || 'N/A'}
                                 </td>
@@ -4052,6 +4249,13 @@ export default function MarksRegistryPage() {
                           })}
                         </tbody>
                       </table>
+                      <ProgressiveLoadFooter
+                        loadedCount={visibleStaffGridCount}
+                        totalCount={totalStaffGridCount}
+                        isLoadingMore={hasMoreStaffGrid}
+                        hasMore={hasMoreStaffGrid}
+                        entityLabel="student records"
+                      />
                     </div>
                   )}
                 </div>

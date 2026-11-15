@@ -210,8 +210,8 @@ export async function validateCoursesSpreadsheetLocally(
       }
     }
 
-    if (status && status.toUpperCase() !== 'COMPULSORY' && status.toUpperCase() !== 'OPTIONAL') {
-      rowErrors.push(`Status "${status}" must be COMPULSORY or OPTIONAL.`);
+    if (status && !['C', 'O', 'COMPULSORY', 'OPTIONAL'].includes(status.trim().toUpperCase())) {
+      rowErrors.push(`Status "${status}" must be C (Compulsory) or O (Optional).`);
     }
 
     return {

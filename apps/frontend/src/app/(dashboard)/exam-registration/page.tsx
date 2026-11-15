@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../../lib/api-client';
 import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
+import { useProgressiveList } from '../../../hooks/use-progressive-load';
+import { ProgressiveLoadFooter } from '../../../components/ui/progressive-load-footer';
 import { BookOpen, CheckCircle, Clock, ShieldAlert, AlertCircle } from 'lucide-react';
 
 interface EligibleRepeatCourse {
@@ -27,6 +29,13 @@ export default function ExamRegistrationPage() {
   const [registeringId, setRegisteringId] = useState<number | null>(null);
   const [activePeriod, setActivePeriod] = useState<any>(null);
   const [eligibleCourses, setEligibleCourses] = useState<EligibleRepeatCourse[]>([]);
+
+  const {
+    visibleItems: visibleEligibleCourses,
+    visibleCount: visibleEligibleCount,
+    totalCount: totalEligibleCount,
+    hasMore: hasMoreEligible,
+  } = useProgressiveList<EligibleRepeatCourse>(eligibleCourses);
   const setError = (msg: string | null) => {
     if (msg) toast.error(msg);
   };
@@ -176,6 +185,7 @@ export default function ExamRegistrationPage() {
             <table className="w-full text-left border-collapse text-xs">
               <thead className="bg-secondary/20 text-muted-foreground font-bold uppercase text-[11px] tracking-wider border-b border-border/80">
                 <tr>
+                  <th className="px-4 py-4 w-12 text-center">#</th>
                   <th className="px-6 py-4">Course Code</th>
                   <th className="px-6 py-4">Course Title</th>
                   <th className="px-6 py-4">Credits</th>
@@ -187,8 +197,11 @@ export default function ExamRegistrationPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60 font-medium">
-                {eligibleCourses.map((c) => (
+                {visibleEligibleCourses.map((c, idx) => (
                   <tr key={c.course_id} className="hover:bg-secondary/15 transition-colors">
+                    <td className="px-4 py-4 text-center font-mono text-muted-foreground font-bold">
+                      {idx + 1}
+                    </td>
                     <td className="px-6 py-4 font-bold font-mono text-primary">{c.course_code}</td>
                     <td className="px-6 py-4 font-semibold text-foreground">{c.course_name}</td>
                     <td className="px-6 py-4 font-mono text-muted-foreground">{c.credit_value}</td>
@@ -221,6 +234,13 @@ export default function ExamRegistrationPage() {
                 ))}
               </tbody>
             </table>
+            <ProgressiveLoadFooter
+              loadedCount={visibleEligibleCount}
+              totalCount={totalEligibleCount}
+              isLoadingMore={hasMoreEligible}
+              hasMore={hasMoreEligible}
+              entityLabel="repeat courses"
+            />
           </div>
         )}
       </div>
