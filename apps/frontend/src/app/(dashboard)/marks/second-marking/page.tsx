@@ -9,6 +9,7 @@ import { useProgressiveList } from '../../../../hooks/use-progressive-load';
 import { ProgressiveLoadFooter } from '../../../../components/ui/progressive-load-footer';
 import { ShieldCheck, AlertTriangle, Loader2, Download, Upload, Send } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import ExcelUploadDialog from '../../../../components/marks/excel-upload-dialog';
 
 function SecondMarkingContent() {
   const searchParams = useSearchParams();
@@ -37,6 +38,7 @@ function SecondMarkingContent() {
   }>({});
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
   const {
     visibleItems: visibleStudents,
@@ -131,53 +133,63 @@ function SecondMarkingContent() {
     XLSX.writeFile(workbook, `2nd_Marking_${courseData.course_code}_Nominal_List.xlsx`);
   };
 
-  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleProcessSecondMarkingExcel = async (file: File) => {
+    return new Promise<void>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const bstr = evt.target?.result;
+          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wsname = wb.SheetNames[0];
+          const ws = wb.Sheets[wsname];
+          const data = XLSX.utils.sheet_to_json<any>(ws);
 
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json<any>(ws);
-
-        const exams = gridData?.exams || [];
-        const finalExam = exams.find((e: any) => e.exam_type.toUpperCase() === 'FINAL') || exams[0];
-        if (!finalExam) return;
-
-        const updatedDraft = { ...secondMarksDraft };
-
-        data.forEach((row: any) => {
-          const indexNo = String(row['Index Number'] || row['index_number'] || '').trim();
-          const regNo = String(
-            row['Registration Number'] || row['registration_number'] || '',
-          ).trim();
-          const secondMarkVal =
-            row['2nd Marking Score'] || row['second_marking_score'] || row['Score'] || row['Marks'];
-
-          const student = students.find(
-            (s: any) =>
-              (indexNo && s.index_number.trim() === indexNo) ||
-              (regNo && s.registration_number.trim() === regNo),
-          );
-
-          if (student && secondMarkVal !== undefined && secondMarkVal !== null) {
-            if (!updatedDraft[student.student_id]) updatedDraft[student.student_id] = {};
-            updatedDraft[student.student_id][finalExam.exam_id] = String(secondMarkVal);
+          const exams = gridData?.exams || [];
+          const finalExam =
+            exams.find((e: any) => e.exam_type.toUpperCase() === 'FINAL') || exams[0];
+          if (!finalExam) {
+            throw new Error('No final exam found for this course.');
           }
-        });
 
-        setSecondMarksDraft(updatedDraft);
-        setSuccessMsg('Imported 2nd marking scores from spreadsheet successfully!');
-        setErrorMsg(null);
-      } catch {
-        setErrorMsg('Failed to parse uploaded Excel file. Ensure valid headers are present.');
-      }
-    };
-    reader.readAsBinaryString(file);
+          const updatedDraft = { ...secondMarksDraft };
+          let matchedCount = 0;
+
+          data.forEach((row: any) => {
+            const indexNo = String(row['Index Number'] || row['index_number'] || '').trim();
+            const regNo = String(
+              row['Registration Number'] || row['registration_number'] || '',
+            ).trim();
+            const secondMarkVal =
+              row['2nd Marking Score'] ||
+              row['second_marking_score'] ||
+              row['Score'] ||
+              row['Marks'] ||
+              row['Total'];
+
+            const student = students.find(
+              (s: any) =>
+                (indexNo && s.index_number.trim().toLowerCase() === indexNo.toLowerCase()) ||
+                (regNo && s.registration_number.trim().toLowerCase() === regNo.toLowerCase()),
+            );
+
+            if (student && secondMarkVal !== undefined && secondMarkVal !== null) {
+              matchedCount++;
+              if (!updatedDraft[student.student_id]) updatedDraft[student.student_id] = {};
+              updatedDraft[student.student_id][finalExam.exam_id] = String(secondMarkVal);
+            }
+          });
+
+          setSecondMarksDraft(updatedDraft);
+          toast.success(`Imported 2nd marking scores for ${matchedCount} student(s)!`);
+          resolve();
+        } catch (err: any) {
+          toast.error(err.message || 'Failed to parse uploaded Excel file.');
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file from disk.'));
+      reader.readAsBinaryString(file);
+    });
   };
 
   const handleSubmitSecondMarking = async () => {
@@ -290,16 +302,14 @@ function SecondMarkingContent() {
               Download Nominal Excel
             </button>
 
-            <label className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold bg-emerald-600 text-white rounded-xl shadow-md hover:bg-emerald-500 transition cursor-pointer">
+            <button
+              type="button"
+              onClick={() => setIsUploadModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold bg-emerald-600 text-white rounded-xl shadow-md hover:bg-emerald-500 transition cursor-pointer"
+            >
               <Upload className="h-4 w-4" />
               Import 2nd Marks Excel
-              <input
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleExcelImport}
-                className="hidden"
-              />
-            </label>
+            </button>
           </div>
         </div>
       </div>
@@ -432,6 +442,20 @@ function SecondMarkingContent() {
           </button>
         </div>
       </div>
+      <ExcelUploadDialog
+        open={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        title="Upload 2nd Marking Evaluation Sheet"
+        subtitle={`Upload 2nd marker evaluation spreadsheet for ${courseData?.course_code || 'Course'}`}
+        expectedHeaders={[
+          'Registration Number',
+          'Index Number',
+          '2nd Marking Score (or Score / Marks / Total)',
+        ]}
+        notes="You can download the Nominal Excel sheet, enter scores, and upload it back here. Column headers are case-insensitive."
+        onDownloadTemplate={handleDownloadNominalList}
+        onUpload={handleProcessSecondMarkingExcel}
+      />
     </div>
   );
 }

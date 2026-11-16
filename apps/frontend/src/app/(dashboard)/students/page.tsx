@@ -2175,7 +2175,10 @@ export default function StudentDirectoryPage() {
                         filteredLecturerStudents
                           .slice(0, visibleStudentsLimit)
                           .map((student: any, idx: number) => {
-                            const caMarks = student.ca_marks ? `${student.ca_marks}%` : null;
+                            const caMarks =
+                              student.ca_marks !== null && student.ca_marks !== undefined
+                                ? `${student.ca_marks}%`
+                                : null;
                             const finalGrade = student.final_grade || null;
                             const isFinalPrepared = Boolean(student.is_final_prepared);
                             const batchDisplay =

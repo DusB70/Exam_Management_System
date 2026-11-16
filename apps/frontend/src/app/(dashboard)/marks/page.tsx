@@ -38,6 +38,7 @@ import { useProgressiveList } from '../../../hooks/use-progressive-load';
 import { ProgressiveLoadFooter } from '../../../components/ui/progressive-load-footer';
 import { useToast } from '../../../hooks/use-toast';
 import { useConfirm } from '../../../hooks/use-confirm';
+import ExcelUploadDialog from '../../../components/marks/excel-upload-dialog';
 
 const STABLE_EMPTY_ARRAY: any[] = [];
 
@@ -82,6 +83,11 @@ export default function MarksRegistryPage() {
 
   // Detailed Sheet CA Marks
   const [caMarksData, setCaMarksData] = useState<{ [studentId: number]: number }>({});
+
+  // Spreadsheet Upload Dialog States
+  const [isFirstMarkerUploadOpen, setIsFirstMarkerUploadOpen] = useState<boolean>(false);
+  const [isSecondMarkerUploadOpen, setIsSecondMarkerUploadOpen] = useState<boolean>(false);
+  const [selectedCaUploadExam, setSelectedCaUploadExam] = useState<any | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -1065,6 +1071,397 @@ export default function MarksRegistryPage() {
     return count > 0 ? Math.round((avgScore / count) * 10) / 10 : 0;
   };
 
+  // ==========================================
+  // SPREADSHEET UPLOAD & TEMPLATE HANDLERS
+  // ==========================================
+
+  const handleFirstMarkerExcelProcess = async (file: File) => {
+    return new Promise<void>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const bstr = evt.target?.result;
+          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wsName = wb.SheetNames[0];
+          const ws = wb.Sheets[wsName];
+          const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+          if (!rows || rows.length < 2) {
+            throw new Error('Spreadsheet appears to be empty or has no data rows.');
+          }
+
+          let headerRowIdx = 0;
+          for (let i = 0; i < Math.min(10, rows.length); i++) {
+            const r = rows[i] || [];
+            if (
+              r.some(
+                (c: any) =>
+                  String(c).toLowerCase().includes('reg') ||
+                  String(c).toLowerCase().includes('index'),
+              )
+            ) {
+              headerRowIdx = i;
+              break;
+            }
+          }
+
+          const headers = (rows[headerRowIdx] || []).map((h: any) => String(h || '').trim());
+          const lowerHeaders = headers.map((h: string) => h.toLowerCase());
+
+          const regIdx = lowerHeaders.findIndex((h: string) => h.includes('reg'));
+          const indexIdx = lowerHeaders.findIndex((h: string) => h.includes('index'));
+          const totalIdx = lowerHeaders.findIndex(
+            (h: string) => h === 'total' || h.includes('total'),
+          );
+
+          if (regIdx < 0 && indexIdx < 0) {
+            throw new Error('Could not locate Registration Number or Index Number column.');
+          }
+
+          const qCols: { key: string; colIdx: number; name: string }[] = [];
+          const startIdx = indexIdx >= 0 ? indexIdx + 1 : 2;
+          const endIdx = totalIdx >= 0 ? totalIdx : headers.length;
+
+          for (let c = startIdx; c < endIdx; c++) {
+            const hName = headers[c];
+            if (
+              hName &&
+              !lowerHeaders[c].includes('proper') &&
+              !lowerHeaders[c].includes('p/r') &&
+              !lowerHeaders[c].includes('status')
+            ) {
+              qCols.push({ key: `q_${c}`, colIdx: c, name: hName });
+            }
+          }
+
+          if (qCols.length > 0) {
+            setFirstMarkerQuestions(
+              qCols.map((q) => ({
+                key: q.key,
+                label: q.name,
+                maxMarks: 20,
+              })),
+            );
+          }
+
+          const new1st = { ...firstMarkerMarks };
+          const stList = gridData?.students || [];
+          let matchedCount = 0;
+
+          for (let i = headerRowIdx + 1; i < rows.length; i++) {
+            const r = rows[i];
+            if (!r || r.length === 0) continue;
+            const rVal = regIdx >= 0 ? String(r[regIdx] || '').trim() : '';
+            const iVal = indexIdx >= 0 ? String(r[indexIdx] || '').trim() : '';
+
+            const st = stList.find((s: any) => {
+              if (rVal && s.registration_number?.toLowerCase() === rVal.toLowerCase()) return true;
+              if (iVal && s.index_number?.toLowerCase() === iVal.toLowerCase()) return true;
+              return false;
+            });
+
+            if (st) {
+              matchedCount++;
+              new1st[st.student_id] = new1st[st.student_id] || {};
+              qCols.forEach((q) => {
+                new1st[st.student_id][q.key] = parseFloat(r[q.colIdx]) || 0;
+              });
+            }
+          }
+
+          setFirstMarkerMarks(new1st);
+          toast.success(`1st marker evaluation imported for ${matchedCount} student(s)!`);
+          resolve();
+        } catch (err: any) {
+          toast.error(err.message || 'Failed to parse 1st marker Excel sheet.');
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file from disk.'));
+      reader.readAsBinaryString(file);
+    });
+  };
+
+  const handleFirstMarkerDownloadTemplate = () => {
+    const students = gridData?.students || [];
+    const sampleData = (
+      students.length > 0
+        ? students
+        : [
+            { registration_number: 'UWU/CST/21/001', index_number: 'CST21001' },
+            { registration_number: 'UWU/CST/21/002', index_number: 'CST21002' },
+          ]
+    ).map((s: any) => ({
+      'Registration Number': s.registration_number || '',
+      'Index Number': s.index_number || '',
+      'P/R Status': s.attempt_type === 'REPEAT' ? 'R' : 'P',
+      Q1: 15,
+      Q2: 18,
+      Q3: 16,
+      Q4: 17,
+      Total: 66,
+      'Final (100)': 82.5,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '1st_Marking');
+    XLSX.writeFile(wb, `${gridData?.course?.course_code || 'Course'}_1st_Marking_Template.xlsx`);
+  };
+
+  const handleSecondMarkerExcelProcess = async (file: File) => {
+    return new Promise<void>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const bstr = evt.target?.result;
+          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wsName = wb.SheetNames[0];
+          const ws = wb.Sheets[wsName];
+          const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+          if (!rows || rows.length < 2) {
+            throw new Error('Spreadsheet appears to be empty or has no data rows.');
+          }
+
+          let headerRowIdx = 0;
+          for (let i = 0; i < Math.min(10, rows.length); i++) {
+            const r = rows[i] || [];
+            if (
+              r.some(
+                (c: any) =>
+                  String(c).toLowerCase().includes('reg') ||
+                  String(c).toLowerCase().includes('index'),
+              )
+            ) {
+              headerRowIdx = i;
+              break;
+            }
+          }
+
+          const headers = (rows[headerRowIdx] || []).map((h: any) => String(h || '').trim());
+          const lowerHeaders = headers.map((h: string) => h.toLowerCase());
+
+          const regIdx = lowerHeaders.findIndex((h: string) => h.includes('reg'));
+          const indexIdx = lowerHeaders.findIndex((h: string) => h.includes('index'));
+          const totalIdx = lowerHeaders.findIndex(
+            (h: string) => h === 'total' || h.includes('total'),
+          );
+
+          if (regIdx < 0 && indexIdx < 0) {
+            throw new Error('Could not locate Registration Number or Index Number column.');
+          }
+
+          const qCols: { key: string; colIdx: number; name: string }[] = [];
+          const startIdx = indexIdx >= 0 ? indexIdx + 1 : 2;
+          const endIdx = totalIdx >= 0 ? totalIdx : headers.length;
+
+          for (let c = startIdx; c < endIdx; c++) {
+            const hName = headers[c];
+            if (
+              hName &&
+              !lowerHeaders[c].includes('proper') &&
+              !lowerHeaders[c].includes('p/r') &&
+              !lowerHeaders[c].includes('status')
+            ) {
+              qCols.push({ key: `q_${c}`, colIdx: c, name: hName });
+            }
+          }
+
+          if (qCols.length > 0 && firstMarkerQuestions.length === 0) {
+            setFirstMarkerQuestions(
+              qCols.map((q) => ({
+                key: q.key,
+                label: q.name,
+                maxMarks: 20,
+              })),
+            );
+          }
+
+          const new2nd = { ...secondMarkerMarks };
+          const stList = gridData?.students || [];
+          let matchedCount = 0;
+
+          for (let i = headerRowIdx + 1; i < rows.length; i++) {
+            const r = rows[i];
+            if (!r || r.length === 0) continue;
+            const rVal = regIdx >= 0 ? String(r[regIdx] || '').trim() : '';
+            const iVal = indexIdx >= 0 ? String(r[indexIdx] || '').trim() : '';
+
+            const st = stList.find((s: any) => {
+              if (rVal && s.registration_number?.toLowerCase() === rVal.toLowerCase()) return true;
+              if (iVal && s.index_number?.toLowerCase() === iVal.toLowerCase()) return true;
+              return false;
+            });
+
+            if (st) {
+              matchedCount++;
+              new2nd[st.student_id] = new2nd[st.student_id] || {};
+              qCols.forEach((q) => {
+                new2nd[st.student_id][q.key] = parseFloat(r[q.colIdx]) || 0;
+              });
+            }
+          }
+
+          setSecondMarkerMarks(new2nd);
+          toast.success(`2nd marker evaluation imported for ${matchedCount} student(s)!`);
+          resolve();
+        } catch (err: any) {
+          toast.error(err.message || 'Failed to parse 2nd marker Excel sheet.');
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file from disk.'));
+      reader.readAsBinaryString(file);
+    });
+  };
+
+  const handleSecondMarkerDownloadTemplate = () => {
+    const students = gridData?.students || [];
+    const questions =
+      firstMarkerQuestions.length > 0 ? firstMarkerQuestions : [{ key: 'q_1', label: 'Q1' }];
+    const sampleData = (
+      students.length > 0
+        ? students
+        : [
+            { registration_number: 'UWU/CST/21/001', index_number: 'CST21001' },
+            { registration_number: 'UWU/CST/21/002', index_number: 'CST21002' },
+          ]
+    ).map((s: any) => {
+      const row1st = firstMarkerMarks[s.student_id] || {};
+      const rowObj: any = {
+        'Registration Number': s.registration_number || '',
+        'Index Number': s.index_number || '',
+        'P/R Status': s.attempt_type === 'REPEAT' ? 'R' : 'P',
+      };
+      let tot = 0;
+      questions.forEach((q: any) => {
+        const val = row1st[q.key] !== undefined ? row1st[q.key] : 15;
+        rowObj[q.label] = val;
+        tot += Number(val || 0);
+      });
+      rowObj['Total'] = tot;
+      rowObj['Final (100)'] = (tot / (questions.length * 20 || 100)) * 100;
+      return rowObj;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '2nd_Marking');
+    XLSX.writeFile(wb, `${gridData?.course?.course_code || 'Course'}_2nd_Marking_Evaluation.xlsx`);
+  };
+
+  const handleCaExcelProcess = async (file: File) => {
+    if (!selectedCaUploadExam) return;
+    return new Promise<void>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const bstr = evt.target?.result;
+          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wsName = wb.SheetNames[0];
+          const ws = wb.Sheets[wsName];
+          const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+          if (!rows || rows.length < 2) {
+            throw new Error('Spreadsheet appears to be empty or has no data rows.');
+          }
+
+          let headerRowIdx = 0;
+          for (let i = 0; i < Math.min(10, rows.length); i++) {
+            const r = rows[i] || [];
+            if (
+              r.some(
+                (c: any) =>
+                  String(c).toLowerCase().includes('reg') ||
+                  String(c).toLowerCase().includes('index'),
+              )
+            ) {
+              headerRowIdx = i;
+              break;
+            }
+          }
+
+          const headers = (rows[headerRowIdx] || []).map((h: any) => String(h || '').trim());
+          const lowerHeaders = headers.map((h: string) => h.toLowerCase());
+
+          const regIdx = lowerHeaders.findIndex((h: string) => h.includes('reg'));
+          const indexIdx = lowerHeaders.findIndex((h: string) => h.includes('index'));
+          const caIdx = lowerHeaders.findIndex(
+            (h: string) =>
+              h.includes('mark') || h.includes('total') || h.includes('ca') || h.includes('score'),
+          );
+
+          if (regIdx < 0 && indexIdx < 0) {
+            throw new Error('Could not find Registration Number or Index Number column in sheet.');
+          }
+          if (caIdx < 0) {
+            throw new Error('Could not find Total, Mark, or Score column in sheet.');
+          }
+
+          const newDraft = { ...gridMarksDraft };
+          const newCaData = { ...caMarksData };
+          const stList = gridData?.students || [];
+          let matchedCount = 0;
+
+          for (let i = headerRowIdx + 1; i < rows.length; i++) {
+            const r = rows[i];
+            if (!r || r.length === 0) continue;
+            const rVal = regIdx >= 0 ? String(r[regIdx] || '').trim() : '';
+            const iVal = indexIdx >= 0 ? String(r[indexIdx] || '').trim() : '';
+
+            const st = stList.find((s: any) => {
+              if (rVal && s.registration_number?.toLowerCase() === rVal.toLowerCase()) return true;
+              if (iVal && s.index_number?.toLowerCase() === iVal.toLowerCase()) return true;
+              return false;
+            });
+
+            if (st) {
+              matchedCount++;
+              const val = parseFloat(r[caIdx]) || 0;
+              if (selectedCaUploadExam.exam_id && selectedCaUploadExam.exam_id !== 'ca1') {
+                newDraft[st.student_id] = newDraft[st.student_id] || {};
+                newDraft[st.student_id][selectedCaUploadExam.exam_id] = val.toString();
+              }
+              newCaData[st.student_id] = val;
+            }
+          }
+
+          setGridMarksDraft(newDraft);
+          setCaMarksData(newCaData);
+          toast.success(
+            `Imported CA marks for ${matchedCount} student(s) into ${selectedCaUploadExam.exam_title || 'CA'}!`,
+          );
+          resolve();
+        } catch (err: any) {
+          toast.error(err.message || 'Failed to parse CA Excel sheet.');
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file from disk.'));
+      reader.readAsBinaryString(file);
+    });
+  };
+
+  const handleDownloadCaTemplate = () => {
+    const students = gridData?.students || [];
+    const examTitle = selectedCaUploadExam?.exam_title || 'CA';
+    const sampleData = (
+      students.length > 0
+        ? students
+        : [
+            { registration_number: 'UWU/CST/21/001', index_number: 'CST21001' },
+            { registration_number: 'UWU/CST/21/002', index_number: 'CST21002' },
+          ]
+    ).map((s: any) => ({
+      'Registration Number': s.registration_number || '',
+      'Index Number': s.index_number || '',
+      Total: 75,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'CA_Marks');
+    XLSX.writeFile(wb, `${gridData?.course?.course_code || 'Course'}_${examTitle}_Template.xlsx`);
+  };
+
   const [isSavingCaMarks, setIsSavingCaMarks] = useState<boolean>(false);
 
   const handleSaveDetailedMarks = async () => {
@@ -1617,148 +2014,36 @@ export default function MarksRegistryPage() {
                               'APPROVED',
                               'PUBLISHED',
                             ].includes(gridData?.course?.result_submission_status) && (
-                              <label className="px-3.5 py-2 bg-secondary hover:bg-secondary/80 text-foreground font-bold rounded-xl transition text-xs border border-border/80 flex items-center gap-1.5 cursor-pointer">
+                              <button
+                                type="button"
+                                onClick={() => setIsFirstMarkerUploadOpen(true)}
+                                className="px-3.5 py-2 bg-secondary hover:bg-secondary/80 text-foreground font-bold rounded-xl transition text-xs border border-border/80 flex items-center gap-1.5 cursor-pointer"
+                              >
                                 <Upload className="h-3.5 w-3.5 text-primary" />
                                 Upload 1st Marking Excel
-                                <input
-                                  type="file"
-                                  accept=".xlsx, .xls, .csv"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (!file) return;
-                                    const reader = new FileReader();
-                                    reader.onload = (evt) => {
-                                      try {
-                                        const bstr = evt.target?.result;
-                                        const wb = XLSX.read(bstr, { type: 'binary' });
-                                        const wsName = wb.SheetNames[0];
-                                        const ws = wb.Sheets[wsName];
-                                        const rows: any[] = XLSX.utils.sheet_to_json(ws, {
-                                          header: 1,
-                                        });
-                                        if (!rows || rows.length < 2) return;
-
-                                        let headerRowIdx = 0;
-                                        for (let i = 0; i < Math.min(10, rows.length); i++) {
-                                          const r = rows[i] || [];
-                                          if (
-                                            r.some(
-                                              (c: any) =>
-                                                String(c).toLowerCase().includes('reg') ||
-                                                String(c).toLowerCase().includes('index'),
-                                            )
-                                          ) {
-                                            headerRowIdx = i;
-                                            break;
-                                          }
-                                        }
-
-                                        const headers = (rows[headerRowIdx] || []).map((h: any) =>
-                                          String(h || '').trim(),
-                                        );
-                                        const lowerHeaders = headers.map((h: string) =>
-                                          h.toLowerCase(),
-                                        );
-
-                                        const regIdx = lowerHeaders.findIndex((h: string) =>
-                                          h.includes('reg'),
-                                        );
-                                        const indexIdx = lowerHeaders.findIndex((h: string) =>
-                                          h.includes('index'),
-                                        );
-                                        const totalIdx = lowerHeaders.findIndex(
-                                          (h: string) => h === 'total' || h.includes('total'),
-                                        );
-
-                                        const qCols: {
-                                          key: string;
-                                          colIdx: number;
-                                          name: string;
-                                        }[] = [];
-                                        const startIdx = indexIdx >= 0 ? indexIdx + 1 : 2;
-                                        const endIdx = totalIdx >= 0 ? totalIdx : headers.length;
-
-                                        for (let c = startIdx; c < endIdx; c++) {
-                                          const hName = headers[c];
-                                          if (
-                                            hName &&
-                                            !lowerHeaders[c].includes('proper') &&
-                                            !lowerHeaders[c].includes('p/r')
-                                          ) {
-                                            qCols.push({ key: `q_${c}`, colIdx: c, name: hName });
-                                          }
-                                        }
-
-                                        if (qCols.length > 0) {
-                                          setFirstMarkerQuestions(
-                                            qCols.map((q) => ({
-                                              key: q.key,
-                                              label: q.name,
-                                              maxMarks: 20,
-                                            })),
-                                          );
-                                        }
-
-                                        const new1st = { ...firstMarkerMarks };
-                                        const stList = gridData?.students || [];
-                                        for (let i = headerRowIdx + 1; i < rows.length; i++) {
-                                          const r = rows[i];
-                                          if (!r || r.length === 0) continue;
-                                          const rVal =
-                                            regIdx >= 0 ? String(r[regIdx] || '').trim() : '';
-                                          const iVal =
-                                            indexIdx >= 0 ? String(r[indexIdx] || '').trim() : '';
-
-                                          const st = stList.find((s: any) => {
-                                            if (
-                                              rVal &&
-                                              s.registration_number?.toLowerCase() ===
-                                                rVal.toLowerCase()
-                                            )
-                                              return true;
-                                            if (
-                                              iVal &&
-                                              s.index_number?.toLowerCase() === iVal.toLowerCase()
-                                            )
-                                              return true;
-                                            return false;
-                                          });
-
-                                          if (st) {
-                                            new1st[st.student_id] = new1st[st.student_id] || {};
-                                            qCols.forEach((q) => {
-                                              new1st[st.student_id][q.key] =
-                                                parseFloat(r[q.colIdx]) || 0;
-                                            });
-                                          }
-                                        }
-                                        setFirstMarkerMarks(new1st);
-                                        toast.success(
-                                          '1st marker evaluation sheet imported successfully from spreadsheet!',
-                                        );
-                                        setSuccessMsg(
-                                          '1st marker evaluation sheet imported successfully from spreadsheet!',
-                                        );
-                                      } catch (err: any) {
-                                        toast.error(
-                                          'Failed to parse 1st marker Excel sheet: ' + err.message,
-                                        );
-                                        setErrorMsg(
-                                          'Failed to parse 1st marker Excel sheet: ' + err.message,
-                                        );
-                                      }
-                                    };
-                                    reader.readAsBinaryString(file);
-                                  }}
-                                  className="hidden"
-                                />
-                              </label>
+                              </button>
                             )}
                         </>
                       )}
 
                       {gridSubpart === '2nd_marker' && (
                         <>
+                          {![
+                            'SUBMITTED_FINAL',
+                            'SUBMITTED_PROVISIONAL',
+                            'SUBMITTED',
+                            'APPROVED',
+                            'PUBLISHED',
+                          ].includes(gridData?.course?.result_submission_status) && (
+                            <button
+                              type="button"
+                              onClick={() => setIsSecondMarkerUploadOpen(true)}
+                              className="px-3.5 py-2 bg-secondary hover:bg-secondary/80 text-foreground font-bold rounded-xl transition text-xs border border-border/80 flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Upload className="h-3.5 w-3.5 text-primary" />
+                              Upload 2nd Marking Excel
+                            </button>
+                          )}
                           {/* Save Changes button for In-Charge lecturer to save reconciliation choices */}
                           {![
                             'SUBMITTED_FINAL',
@@ -2494,134 +2779,14 @@ export default function MarksRegistryPage() {
                                           'APPROVED',
                                           'PUBLISHED',
                                         ].includes(gridData?.course?.result_submission_status) && (
-                                          <label className="px-2 py-0.5 bg-secondary hover:bg-secondary/80 text-primary border border-border/60 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer">
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedCaUploadExam(caExam)}
+                                            className="px-2 py-0.5 bg-secondary hover:bg-secondary/80 text-primary border border-border/60 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                                          >
                                             <Upload className="h-2.5 w-2.5" />
                                             Upload Excel
-                                            <input
-                                              type="file"
-                                              accept=".xlsx, .xls, .csv"
-                                              onChange={(e) => {
-                                                const file = e.target.files?.[0];
-                                                if (!file) return;
-                                                const reader = new FileReader();
-                                                reader.onload = (evt) => {
-                                                  try {
-                                                    const bstr = evt.target?.result;
-                                                    const wb = XLSX.read(bstr, { type: 'binary' });
-                                                    const wsName = wb.SheetNames[0];
-                                                    const ws = wb.Sheets[wsName];
-                                                    const rows: any[] = XLSX.utils.sheet_to_json(
-                                                      ws,
-                                                      { header: 1 },
-                                                    );
-                                                    if (!rows || rows.length < 2) return;
-
-                                                    let headerRowIdx = 0;
-                                                    for (
-                                                      let i = 0;
-                                                      i < Math.min(10, rows.length);
-                                                      i++
-                                                    ) {
-                                                      const r = rows[i] || [];
-                                                      if (
-                                                        r.some(
-                                                          (c: any) =>
-                                                            String(c)
-                                                              .toLowerCase()
-                                                              .includes('reg') ||
-                                                            String(c)
-                                                              .toLowerCase()
-                                                              .includes('index'),
-                                                        )
-                                                      ) {
-                                                        headerRowIdx = i;
-                                                        break;
-                                                      }
-                                                    }
-
-                                                    const headers = (rows[headerRowIdx] || []).map(
-                                                      (h: any) => String(h || '').trim(),
-                                                    );
-                                                    const lowerHeaders = headers.map((h: string) =>
-                                                      h.toLowerCase(),
-                                                    );
-
-                                                    const regIdx = lowerHeaders.findIndex(
-                                                      (h: string) => h.includes('reg'),
-                                                    );
-                                                    const indexIdx = lowerHeaders.findIndex(
-                                                      (h: string) => h.includes('index'),
-                                                    );
-                                                    const caIdx = lowerHeaders.findIndex(
-                                                      (h: string) =>
-                                                        h.includes('mark') ||
-                                                        h.includes('total') ||
-                                                        h.includes('ca') ||
-                                                        h.includes('score'),
-                                                    );
-
-                                                    const newDraft = { ...gridMarksDraft };
-                                                    const newCaData = { ...caMarksData };
-                                                    const stList = gridData?.students || [];
-
-                                                    for (
-                                                      let i = headerRowIdx + 1;
-                                                      i < rows.length;
-                                                      i++
-                                                    ) {
-                                                      const r = rows[i];
-                                                      if (!r || r.length === 0) continue;
-                                                      const rVal =
-                                                        regIdx >= 0
-                                                          ? String(r[regIdx] || '').trim()
-                                                          : '';
-                                                      const iVal =
-                                                        indexIdx >= 0
-                                                          ? String(r[indexIdx] || '').trim()
-                                                          : '';
-
-                                                      const st = stList.find((s: any) => {
-                                                        if (
-                                                          rVal &&
-                                                          s.registration_number?.toLowerCase() ===
-                                                            rVal.toLowerCase()
-                                                        )
-                                                          return true;
-                                                        if (
-                                                          iVal &&
-                                                          s.index_number?.toLowerCase() ===
-                                                            iVal.toLowerCase()
-                                                        )
-                                                          return true;
-                                                        return false;
-                                                      });
-
-                                                      if (st && caIdx >= 0) {
-                                                        const val = parseFloat(r[caIdx]) || 0;
-                                                        newDraft[st.student_id] =
-                                                          newDraft[st.student_id] || {};
-                                                        newDraft[st.student_id][caExam.exam_id] =
-                                                          val.toString();
-                                                        newCaData[st.student_id] = val;
-                                                      }
-                                                    }
-                                                    setGridMarksDraft(newDraft);
-                                                    setCaMarksData(newCaData);
-                                                    setSuccessMsg(
-                                                      `Marks imported for ${caExam.exam_title || 'CA Component'}!`,
-                                                    );
-                                                  } catch (err: any) {
-                                                    setErrorMsg(
-                                                      'Failed to parse CA Excel sheet: ' +
-                                                        err.message,
-                                                    );
-                                                  }
-                                                };
-                                                reader.readAsBinaryString(file);
-                                              }}
-                                              className="hidden"
-                                            />
-                                          </label>
+                                          </button>
                                         )}
                                       </div>
                                     </th>
@@ -2637,120 +2802,19 @@ export default function MarksRegistryPage() {
                                       'APPROVED',
                                       'PUBLISHED',
                                     ].includes(gridData?.course?.result_submission_status) && (
-                                      <label className="px-2 py-0.5 bg-secondary hover:bg-secondary/80 text-primary border border-border/60 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setSelectedCaUploadExam({
+                                            exam_id: 'ca1',
+                                            exam_title: 'CA 1',
+                                          })
+                                        }
+                                        className="px-2 py-0.5 bg-secondary hover:bg-secondary/80 text-primary border border-border/60 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                                      >
                                         <Upload className="h-2.5 w-2.5" />
                                         Upload Excel
-                                        <input
-                                          type="file"
-                                          accept=".xlsx, .xls, .csv"
-                                          onChange={(e) => {
-                                            const file = e.target.files?.[0];
-                                            if (!file) return;
-                                            const reader = new FileReader();
-                                            reader.onload = (evt) => {
-                                              try {
-                                                const bstr = evt.target?.result;
-                                                const wb = XLSX.read(bstr, { type: 'binary' });
-                                                const wsName = wb.SheetNames[0];
-                                                const ws = wb.Sheets[wsName];
-                                                const rows: any[] = XLSX.utils.sheet_to_json(ws, {
-                                                  header: 1,
-                                                });
-                                                if (!rows || rows.length < 2) return;
-
-                                                let headerRowIdx = 0;
-                                                for (
-                                                  let i = 0;
-                                                  i < Math.min(10, rows.length);
-                                                  i++
-                                                ) {
-                                                  const r = rows[i] || [];
-                                                  if (
-                                                    r.some(
-                                                      (c: any) =>
-                                                        String(c).toLowerCase().includes('reg') ||
-                                                        String(c).toLowerCase().includes('index'),
-                                                    )
-                                                  ) {
-                                                    headerRowIdx = i;
-                                                    break;
-                                                  }
-                                                }
-
-                                                const headers = (rows[headerRowIdx] || []).map(
-                                                  (h: any) => String(h || '').trim(),
-                                                );
-                                                const lowerHeaders = headers.map((h: string) =>
-                                                  h.toLowerCase(),
-                                                );
-
-                                                const regIdx = lowerHeaders.findIndex((h: string) =>
-                                                  h.includes('reg'),
-                                                );
-                                                const indexIdx = lowerHeaders.findIndex(
-                                                  (h: string) => h.includes('index'),
-                                                );
-                                                const caIdx = lowerHeaders.findIndex(
-                                                  (h: string) =>
-                                                    h.includes('mark') ||
-                                                    h.includes('total') ||
-                                                    h.includes('ca') ||
-                                                    h.includes('score'),
-                                                );
-
-                                                const newCaData = { ...caMarksData };
-                                                const stList = gridData?.students || [];
-
-                                                for (
-                                                  let i = headerRowIdx + 1;
-                                                  i < rows.length;
-                                                  i++
-                                                ) {
-                                                  const r = rows[i];
-                                                  if (!r || r.length === 0) continue;
-                                                  const rVal =
-                                                    regIdx >= 0
-                                                      ? String(r[regIdx] || '').trim()
-                                                      : '';
-                                                  const iVal =
-                                                    indexIdx >= 0
-                                                      ? String(r[indexIdx] || '').trim()
-                                                      : '';
-
-                                                  const st = stList.find((s: any) => {
-                                                    if (
-                                                      rVal &&
-                                                      s.registration_number?.toLowerCase() ===
-                                                        rVal.toLowerCase()
-                                                    )
-                                                      return true;
-                                                    if (
-                                                      iVal &&
-                                                      s.index_number?.toLowerCase() ===
-                                                        iVal.toLowerCase()
-                                                    )
-                                                      return true;
-                                                    return false;
-                                                  });
-
-                                                  if (st && caIdx >= 0) {
-                                                    newCaData[st.student_id] =
-                                                      parseFloat(r[caIdx]) || 0;
-                                                  }
-                                                }
-                                                setCaMarksData(newCaData);
-                                                setSuccessMsg('CA 1 marks imported successfully!');
-                                              } catch (err: any) {
-                                                setErrorMsg(
-                                                  'Failed to parse CA Excel sheet: ' + err.message,
-                                                );
-                                              }
-                                            };
-                                            reader.readAsBinaryString(file);
-                                          }}
-                                          className="hidden"
-                                        />
-                                      </label>
+                                      </button>
                                     )}
                                   </div>
                                 </th>
@@ -4541,6 +4605,53 @@ export default function MarksRegistryPage() {
           )}
         </div>
       )}
+      {/* 1st Marking Upload Dialog */}
+      <ExcelUploadDialog
+        open={isFirstMarkerUploadOpen}
+        onClose={() => setIsFirstMarkerUploadOpen(false)}
+        title="Upload 1st Marking Evaluation Sheet"
+        subtitle={`Upload 1st marker evaluation spreadsheet for ${gridData?.course?.course_code || 'course'}`}
+        expectedHeaders={[
+          'Registration Number',
+          'Index Number',
+          'Question Columns (e.g. Q1, Q2...)',
+          'Total',
+          'Final (Out of 100)',
+        ]}
+        notes="Any number of question columns between Index Number and Total will be recognized automatically according to the paper. Column headers are case-insensitive."
+        onDownloadTemplate={handleFirstMarkerDownloadTemplate}
+        onUpload={handleFirstMarkerExcelProcess}
+      />
+
+      {/* 2nd Marking Upload Dialog */}
+      <ExcelUploadDialog
+        open={isSecondMarkerUploadOpen}
+        onClose={() => setIsSecondMarkerUploadOpen(false)}
+        title="Upload 2nd Marking Evaluation Sheet"
+        subtitle={`Upload 2nd marker evaluation spreadsheet for ${gridData?.course?.course_code || 'course'}`}
+        expectedHeaders={[
+          'Registration Number',
+          'Index Number',
+          'Question Columns (e.g. Q1, Q2...)',
+          'Total',
+          'Final (Out of 100)',
+        ]}
+        notes="You can download the 1st marker evaluation sheet, amend marks as needed, and upload it back here. Column headers are case-insensitive."
+        onDownloadTemplate={handleSecondMarkerDownloadTemplate}
+        onUpload={handleSecondMarkerExcelProcess}
+      />
+
+      {/* CA Marks Upload Dialog */}
+      <ExcelUploadDialog
+        open={Boolean(selectedCaUploadExam)}
+        onClose={() => setSelectedCaUploadExam(null)}
+        title={`Upload CA Marks — ${selectedCaUploadExam?.exam_title || 'Continuous Assessment'}`}
+        subtitle={`Import component marks for ${gridData?.course?.course_code || 'course'}`}
+        expectedHeaders={['Registration Number', 'Index Number', 'Total (or Mark / Score)']}
+        notes="Student records will be matched automatically by Registration Number or Index Number. Column headers are case-insensitive."
+        onDownloadTemplate={handleDownloadCaTemplate}
+        onUpload={handleCaExcelProcess}
+      />
     </div>
   );
 }

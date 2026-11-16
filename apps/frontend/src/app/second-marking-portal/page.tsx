@@ -9,6 +9,7 @@ import { useProgressiveList } from '../../hooks/use-progressive-load';
 import { ProgressiveLoadFooter } from '../../components/ui/progressive-load-footer';
 import { Loader2, CheckCircle, AlertTriangle, Upload, Download, Search, Check } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import ExcelUploadDialog from '../../components/marks/excel-upload-dialog';
 
 export default function SecondMarkingPortalPage() {
   const searchParams = useSearchParams();
@@ -38,6 +39,7 @@ export default function SecondMarkingPortalPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const isInitialLoad = React.useRef(true);
@@ -159,102 +161,109 @@ export default function SecondMarkingPortalPage() {
     return Math.round((rowTotal / totalMax) * 100 * 10) / 10;
   };
 
-  const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProcessSecondMarkingExcel = async (file: File) => {
     if (isSubmitted) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
+    return new Promise<void>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const bstr = evt.target?.result;
+          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wsName = wb.SheetNames[0];
+          const ws = wb.Sheets[wsName];
+          const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsName = wb.SheetNames[0];
-        const ws = wb.Sheets[wsName];
-        const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+          if (!rows || rows.length < 2) {
+            throw new Error('Invalid Excel sheet layout. Ensure valid rows are present.');
+          }
 
-        if (!rows || rows.length < 2) {
-          toast.error('Invalid Excel sheet layout. Ensure valid rows are present.');
-          return;
-        }
+          // Search for header row
+          let headerRowIdx = 0;
+          for (let i = 0; i < Math.min(10, rows.length); i++) {
+            const r = rows[i] || [];
+            const hasReg = r.some(
+              (cell: any) =>
+                String(cell).toLowerCase().includes('reg') ||
+                String(cell).toLowerCase().includes('index'),
+            );
+            if (hasReg) {
+              headerRowIdx = i;
+              break;
+            }
+          }
 
-        // Search for header row
-        let headerRowIdx = 0;
-        for (let i = 0; i < Math.min(10, rows.length); i++) {
-          const r = rows[i] || [];
-          const hasReg = r.some(
-            (cell: any) =>
-              String(cell).toLowerCase().includes('reg') ||
-              String(cell).toLowerCase().includes('index'),
+          const headers = (rows[headerRowIdx] || []).map((h: any) => String(h || '').trim());
+          const lowerHeaders = headers.map((h: string) => h.toLowerCase());
+
+          const regIdx = lowerHeaders.findIndex((h: string) => h.includes('reg'));
+          const indexIdx = lowerHeaders.findIndex((h: string) => h.includes('index'));
+          const totalIdx = lowerHeaders.findIndex(
+            (h: string) => h === 'total' || h.includes('total'),
           );
-          if (hasReg) {
-            headerRowIdx = i;
-            break;
+
+          if (regIdx < 0 && indexIdx < 0) {
+            throw new Error('Could not locate Registration Number or Index Number column.');
           }
-        }
 
-        const headers = (rows[headerRowIdx] || []).map((h: any) => String(h || '').trim());
-        const lowerHeaders = headers.map((h: string) => h.toLowerCase());
+          // Identify question columns between Index Number and Total
+          const qColIndices: { key: string; colIdx: number; name: string }[] = [];
+          const startQIdx = indexIdx >= 0 ? indexIdx + 1 : 2;
+          const endQIdx = totalIdx >= 0 ? totalIdx : headers.length;
 
-        const regIdx = lowerHeaders.findIndex((h: string) => h.includes('reg'));
-        const indexIdx = lowerHeaders.findIndex((h: string) => h.includes('index'));
-        const totalIdx = lowerHeaders.findIndex(
-          (h: string) => h === 'total' || h.includes('total'),
-        );
-
-        // Identify question columns between Index Number and Total
-        const qColIndices: { key: string; colIdx: number; name: string }[] = [];
-        const startQIdx = indexIdx >= 0 ? indexIdx + 1 : 2;
-        const endQIdx = totalIdx >= 0 ? totalIdx : headers.length;
-
-        for (let c = startQIdx; c < endQIdx; c++) {
-          const headerName = headers[c];
-          if (
-            headerName &&
-            !lowerHeaders[c].includes('proper') &&
-            !lowerHeaders[c].includes('p/r')
-          ) {
-            const key = `q_${c}`;
-            qColIndices.push({ key, colIdx: c, name: headerName });
+          for (let c = startQIdx; c < endQIdx; c++) {
+            const headerName = headers[c];
+            if (
+              headerName &&
+              !lowerHeaders[c].includes('proper') &&
+              !lowerHeaders[c].includes('p/r')
+            ) {
+              const key = `q_${c}`;
+              qColIndices.push({ key, colIdx: c, name: headerName });
+            }
           }
-        }
 
-        if (qColIndices.length > 0) {
-          setQuestions(qColIndices.map((q) => ({ key: q.key, label: q.name, maxMarks: 20 })));
-        }
+          if (qColIndices.length > 0) {
+            setQuestions(qColIndices.map((q) => ({ key: q.key, label: q.name, maxMarks: 20 })));
+          }
 
-        const updatedMarks = { ...secondMarks };
-        for (let i = headerRowIdx + 1; i < rows.length; i++) {
-          const rowData = rows[i];
-          if (!rowData || rowData.length === 0) continue;
+          const updatedMarks = { ...secondMarks };
+          let matchedCount = 0;
+          for (let i = headerRowIdx + 1; i < rows.length; i++) {
+            const rowData = rows[i];
+            if (!rowData || rowData.length === 0) continue;
 
-          const regVal = regIdx >= 0 ? String(rowData[regIdx] || '').trim() : '';
-          const idxVal = indexIdx >= 0 ? String(rowData[indexIdx] || '').trim() : '';
+            const regVal = regIdx >= 0 ? String(rowData[regIdx] || '').trim() : '';
+            const idxVal = indexIdx >= 0 ? String(rowData[indexIdx] || '').trim() : '';
 
-          const matchingStudent = students.find((s) => {
-            if (regVal && s.registration_number?.toLowerCase() === regVal.toLowerCase())
-              return true;
-            if (idxVal && s.index_number?.toLowerCase() === idxVal.toLowerCase()) return true;
-            return false;
-          });
-
-          if (matchingStudent) {
-            const sId = matchingStudent.student_id;
-            updatedMarks[sId] = updatedMarks[sId] || {};
-            qColIndices.forEach((q) => {
-              const val = parseFloat(rowData[q.colIdx]) || 0;
-              updatedMarks[sId][q.key] = val;
+            const matchingStudent = students.find((s) => {
+              if (regVal && s.registration_number?.toLowerCase() === regVal.toLowerCase())
+                return true;
+              if (idxVal && s.index_number?.toLowerCase() === idxVal.toLowerCase()) return true;
+              return false;
             });
-          }
-        }
 
-        setSecondMarks(updatedMarks);
-        setSuccess('Excel spreadsheet imported successfully! Review marks below.');
-      } catch (err: any) {
-        toast.error('Failed to parse Excel file: ' + err.message);
-      }
-    };
-    reader.readAsBinaryString(file);
+            if (matchingStudent) {
+              matchedCount++;
+              const sId = matchingStudent.student_id;
+              updatedMarks[sId] = updatedMarks[sId] || {};
+              qColIndices.forEach((q) => {
+                const val = parseFloat(rowData[q.colIdx]) || 0;
+                updatedMarks[sId][q.key] = val;
+              });
+            }
+          }
+
+          setSecondMarks(updatedMarks);
+          toast.success(`Excel spreadsheet imported successfully for ${matchedCount} student(s)!`);
+          resolve();
+        } catch (err: any) {
+          toast.error(err.message || 'Failed to parse Excel file.');
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file from disk.'));
+      reader.readAsBinaryString(file);
+    });
   };
 
   const handleDownloadExcel = () => {
@@ -394,16 +403,14 @@ export default function SecondMarkingPortalPage() {
             </button>
 
             {!isSubmitted && (
-              <label className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl font-bold text-xs flex items-center gap-2 transition cursor-pointer">
+              <button
+                type="button"
+                onClick={() => setIsUploadModalOpen(true)}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl font-bold text-xs flex items-center gap-2 transition cursor-pointer"
+              >
                 <Upload className="h-4 w-4 text-blue-400" />
                 Upload Spreadsheet
-                <input
-                  type="file"
-                  accept=".xlsx, .xls, .csv"
-                  onChange={handleExcelUpload}
-                  className="hidden"
-                />
-              </label>
+              </button>
             )}
 
             <button
@@ -554,6 +561,22 @@ export default function SecondMarkingPortalPage() {
           />
         </div>
       </div>
+      <ExcelUploadDialog
+        open={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        title="Upload 2nd Marking Evaluation Sheet"
+        subtitle={`Upload evaluated spreadsheet for ${courseData?.course_code || 'Course'}`}
+        expectedHeaders={[
+          'Registration Number',
+          'Index Number',
+          'Question Columns (e.g. Q1, Q2...)',
+          'Total',
+          'Final (Out of 100)',
+        ]}
+        notes="You can download the 1st marker evaluation sheet, amend marks as needed, and upload it back here. Column headers are case-insensitive."
+        onDownloadTemplate={handleDownloadExcel}
+        onUpload={handleProcessSecondMarkingExcel}
+      />
     </div>
   );
 }

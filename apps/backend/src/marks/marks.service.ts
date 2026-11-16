@@ -165,6 +165,19 @@ export class MarksService {
           })
         : [];
 
+    const resolvedWeights = cfg.weights || {};
+    const resolvedContributes = cfg.contributes || {};
+
+    const contributingCaExams = caExams.filter((e) =>
+      resolvedContributes[e.exam_id] !== undefined ? !!resolvedContributes[e.exam_id] : true,
+    );
+
+    const totalCaWeightAllocated =
+      contributingCaExams.reduce((sum, e) => {
+        const w = resolvedWeights[e.exam_id] !== undefined ? Number(resolvedWeights[e.exam_id]) : 0;
+        return sum + (isNaN(w) ? 0 : w);
+      }, 0) || Number((course as any).ca_weight || 40);
+
     const students = await this.prisma.student.findMany({
       where: {
         registrations: {
@@ -210,18 +223,50 @@ export class MarksService {
 
     return students.map((student) => {
       let caMarksVal: number | null = null;
-      if (
+      const studentCaMarks = caExamMarks.filter((m) => m.student_id === student.student_id);
+
+      if (studentCaMarks.length > 0 && contributingCaExams.length > 0) {
+        let weightedScore = 0;
+        let hasMark = false;
+
+        for (const caExam of contributingCaExams) {
+          const markObj = studentCaMarks.find((m) => m.exam_id === caExam.exam_id);
+          const weight =
+            resolvedWeights[caExam.exam_id] !== undefined
+              ? Number(resolvedWeights[caExam.exam_id])
+              : contributingCaExams.length > 0
+                ? totalCaWeightAllocated / contributingCaExams.length
+                : 0;
+          const maxMarks = caExam.total_marks || 100;
+
+          if (markObj && markObj.marks_obtained !== null && markObj.marks_obtained !== undefined) {
+            hasMark = true;
+            const score = Number(markObj.marks_obtained);
+            if (maxMarks > 0 && weight > 0) {
+              weightedScore += (score / maxMarks) * weight;
+            }
+          }
+        }
+
+        if (hasMark) {
+          caMarksVal = Math.round(weightedScore * 10) / 10;
+        }
+      } else if (caMarksConfig[student.student_id] !== undefined) {
+        const rawCa = Number(caMarksConfig[student.student_id]);
+        if (!isNaN(rawCa)) {
+          caMarksVal = Math.round(((rawCa * totalCaWeightAllocated) / 100) * 10) / 10;
+        }
+      } else if (
         student.course_grades &&
         student.course_grades.length > 0 &&
         student.course_grades[0].continuous_assessment_marks !== null
       ) {
-        caMarksVal = Number(student.course_grades[0].continuous_assessment_marks);
-      } else {
-        const studentCaMarks = caExamMarks.filter((m) => m.student_id === student.student_id);
-        if (studentCaMarks.length > 0) {
-          caMarksVal = studentCaMarks.reduce((sum, m) => sum + Number(m.marks_obtained || 0), 0);
-        } else if (caMarksConfig[student.student_id] !== undefined) {
-          caMarksVal = Number(caMarksConfig[student.student_id]);
+        const gradeCa = Number(student.course_grades[0].continuous_assessment_marks);
+        if (!isNaN(gradeCa)) {
+          caMarksVal =
+            gradeCa > totalCaWeightAllocated
+              ? Math.round(((gradeCa * totalCaWeightAllocated) / 100) * 10) / 10
+              : Math.round(gradeCa * 10) / 10;
         }
       }
 
@@ -1453,7 +1498,7 @@ export class MarksService {
           },
         },
         update: {
-          continuous_assessment_marks: totalCAObtained,
+          continuous_assessment_marks: Math.round(totalCAWeightedScore * 10) / 10,
           final_exam_marks: totalFinalObtained,
           total_marks: totalWeightedPercentage,
           grade,
@@ -1468,7 +1513,7 @@ export class MarksService {
           attempt_number: attemptNumber,
           attempt_type: attemptType,
           max_allowed_grade: maxAllowedGrade,
-          continuous_assessment_marks: totalCAObtained,
+          continuous_assessment_marks: Math.round(totalCAWeightedScore * 10) / 10,
           final_exam_marks: totalFinalObtained,
           total_marks: totalWeightedPercentage,
           grade,
