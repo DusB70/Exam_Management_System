@@ -23,7 +23,11 @@ export class UsersRepository {
                 },
               },
             },
-            specialization: true,
+            specialization: {
+              include: {
+                department: true,
+              },
+            },
           },
         },
         lecturer: {
@@ -52,7 +56,11 @@ export class UsersRepository {
                 },
               },
             },
-            specialization: true,
+            specialization: {
+              include: {
+                department: true,
+              },
+            },
           },
         },
         lecturer: {

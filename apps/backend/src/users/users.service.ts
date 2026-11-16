@@ -45,6 +45,9 @@ export class UsersService {
       where.OR = [
         { full_name: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
+        { nic_no: { contains: search, mode: 'insensitive' } },
+        { student: { is: { registration_number: { contains: search, mode: 'insensitive' } } } },
+        { student: { is: { index_number: { contains: search, mode: 'insensitive' } } } },
       ];
     }
 
@@ -70,7 +73,11 @@ export class UsersService {
                   department: true,
                 },
               },
-              specialization: true,
+              specialization: {
+                include: {
+                  department: true,
+                },
+              },
             },
           },
           lecturer: {
@@ -465,7 +472,11 @@ export class UsersService {
                   department: true,
                 },
               },
-              specialization: true,
+              specialization: {
+                include: {
+                  department: true,
+                },
+              },
             },
           },
           lecturer: { include: { department: true } },

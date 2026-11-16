@@ -591,7 +591,7 @@ export default function StudentDirectoryPage() {
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-border/60 bg-secondary/15 text-muted-foreground font-bold font-mono uppercase">
-                  <th className="px-4 py-4 w-10 text-center">
+                  <th className="px-3.5 py-3 w-10 text-center">
                     <SelectAllCheckbox
                       checked={studentSelection.isAllSelected(visibleStudentIds)}
                       indeterminate={studentSelection.isIndeterminate(visibleStudentIds)}
@@ -600,20 +600,19 @@ export default function StudentDirectoryPage() {
                       ariaLabel="Select all visible students"
                     />
                   </th>
-                  <th className="px-4 py-4 w-12 text-center">#</th>
-                  <th className="px-6 py-4">Index No</th>
-                  <th className="px-6 py-4">Registration No</th>
-                  <th className="px-6 py-4">Student Name</th>
-                  <th className="px-6 py-4">Degree & Specialization</th>
-                  <th className="px-6 py-4">Batch</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4 text-center">Action</th>
+                  <th className="px-3 py-3 w-10 text-center">#</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Registration & Index No</th>
+                  <th className="px-4 py-3">Student Name & Email</th>
+                  <th className="px-4 py-3">Degree & Specialization</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Batch</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Status</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/40 font-medium">
+              <tbody className="divide-y divide-border/60 text-xs font-medium">
                 {isStaffStudentsLoading ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-20 text-muted-foreground">
+                    <td colSpan={8} className="text-center py-20 text-muted-foreground">
                       <span className="inline-flex items-center gap-2">
                         <Loader2 className="h-5 w-5 animate-spin text-primary" />
                         Loading student directory records...
@@ -622,91 +621,101 @@ export default function StudentDirectoryPage() {
                   </tr>
                 ) : studentsList.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-20 text-muted-foreground">
+                    <td colSpan={8} className="text-center py-20 text-muted-foreground">
                       No student records found matching your filters.
                     </td>
                   </tr>
                 ) : (
                   studentsList.map((st: any, idx: number) => {
                     const statusVal = st.status || 'ACTIVE';
+                    const degreeCode = st.degree?.degree_code || st.degree?.degree_name || '-';
+                    const specialization = st.specialization?.specialization_name || '-';
 
                     return (
                       <tr
                         key={st.student_id}
-                        className={`hover:bg-secondary/10 transition-colors ${
+                        className={`hover:bg-secondary/15 transition-colors ${
                           studentSelection.isSelected(st.student_id) ? 'bg-primary/5' : ''
                         }`}
                       >
-                        <td className="px-4 py-4 text-center">
+                        <td className="px-3.5 py-2.5 text-center">
                           <input
                             type="checkbox"
                             checked={studentSelection.isSelected(st.student_id)}
                             onChange={() => studentSelection.toggle(st.student_id)}
                             aria-label={`Select student ${st.user?.full_name || st.registration_number}`}
-                            className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
+                            className="h-3.5 w-3.5 rounded border-border/80 accent-primary cursor-pointer"
                           />
                         </td>
-                        <td className="px-4 py-4 text-center font-mono text-muted-foreground font-bold">
+                        <td className="px-3 py-2.5 text-center font-mono text-muted-foreground font-bold text-xs">
                           {idx + 1}
                         </td>
-                        <td className="px-6 py-4 font-bold text-foreground font-mono">
-                          {st.index_number}
-                        </td>
-                        <td className="px-6 py-4 font-mono text-muted-foreground">
-                          {st.registration_number}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="font-semibold text-foreground">{st.user?.full_name}</div>
-                          <div className="text-[10px] text-muted-foreground">{st.user?.email}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="font-semibold text-foreground">
-                            {st.degree?.degree_name} ({st.degree?.degree_code})
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <div className="font-bold text-xs text-black dark:text-zinc-100 font-mono leading-snug">
+                            {st.registration_number || '-'}
                           </div>
-                          {st.specialization && (
-                            <div className="text-[10px] text-primary">
-                              Spec: {st.specialization.specialization_name}
+                          <div className="text-[10px] text-muted-foreground font-mono leading-none mt-0.5">
+                            {st.index_number || '-'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 max-w-[210px]">
+                          <div
+                            className="font-bold text-xs text-foreground leading-snug truncate"
+                            title={st.user?.full_name}
+                          >
+                            {st.user?.full_name || '-'}
+                          </div>
+                          {st.user?.email && (
+                            <div
+                              className="text-[10px] text-muted-foreground font-mono leading-none mt-0.5 truncate"
+                              title={st.user.email}
+                            >
+                              {st.user.email}
                             </div>
                           )}
                         </td>
-                        <td className="px-6 py-4 font-mono font-bold text-muted-foreground">
+                        <td className="px-4 py-2.5 max-w-[200px]">
+                          <div
+                            className="font-bold text-xs text-foreground leading-snug truncate"
+                            title={degreeCode}
+                          >
+                            {degreeCode}
+                          </div>
+                          <div
+                            className="text-[10px] text-muted-foreground leading-none mt-0.5 truncate"
+                            title={specialization}
+                          >
+                            {specialization}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-xs font-bold text-muted-foreground whitespace-nowrap">
                           {formatBatchDisplay(st)}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-4 py-2.5 whitespace-nowrap">
                           <span
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider ${
                               statusVal === 'ACTIVE'
-                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                ? 'bg-emerald-500/10 text-foreground dark:text-emerald-300 border-emerald-400/60 dark:border-emerald-500/40'
                                 : statusVal === 'GRADUATED'
-                                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
                                   : statusVal === 'SUSPENDED'
-                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                                    : 'bg-red-500/10 text-red-400 border-red-500/30'
                             }`}
                           >
-                            <span
-                              className={`h-1.5 w-1.5 rounded-full ${
-                                statusVal === 'ACTIVE'
-                                  ? 'bg-emerald-400'
-                                  : statusVal === 'GRADUATED'
-                                    ? 'bg-purple-400'
-                                    : statusVal === 'SUSPENDED'
-                                      ? 'bg-amber-400'
-                                      : 'bg-red-400'
-                              }`}
-                            />
                             {statusVal}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-center">
+                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
                           <button
                             onClick={() => {
                               setSelectedStudentRecordId(st.student_id);
                               setRecordModalTab('personal');
                             }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground border border-primary/20 rounded-xl transition-all text-xs font-bold cursor-pointer shadow-sm"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-background border border-border/80 rounded-md text-[11px] font-bold text-foreground hover:bg-secondary/80 transition shadow-2xs cursor-pointer whitespace-nowrap"
                           >
-                            <Eye className="h-3.5 w-3.5" /> View Full Record
+                            <Eye className="h-3 w-3 text-muted-foreground" />
+                            <span>View Full Record</span>
                           </button>
                         </td>
                       </tr>
@@ -750,12 +759,12 @@ export default function StudentDirectoryPage() {
                       </h3>
                       {studentRecord?.status && (
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
                             studentRecord.status === 'ACTIVE'
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              ? 'bg-emerald-500/10 text-foreground dark:text-emerald-300 border-emerald-400/60 dark:border-emerald-500/40'
                               : studentRecord.status === 'GRADUATED'
-                                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                                : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
                           }`}
                         >
                           {studentRecord.status}

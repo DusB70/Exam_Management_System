@@ -443,7 +443,7 @@ describe('ImportsService', () => {
           address: 'Kandy',
           indexNumber: 'TG/2021/199',
           registrationNumber: 'UWU/BICT/21/199',
-          'enrollment year (e.g. 21/22)': '21/22',
+          'enrollment year': '21/22',
           'enrolled degree': 'BICT',
         },
       ]);

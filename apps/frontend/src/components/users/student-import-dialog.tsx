@@ -159,7 +159,7 @@ export default function StudentImportDialog({
         address: 'No 45, Temple Road, Kandy',
         indexNumber: 'TG/2021/101',
         registrationNumber: 'UWU/BICT/21/101',
-        'enrollment year (e.g. 21/22)': '21/22',
+        'enrollment year': '21/22',
         'enrolled degree': 'BICT',
       },
       {
@@ -172,7 +172,7 @@ export default function StudentImportDialog({
         address: 'No 12, Galle Road, Colombo 03',
         indexNumber: 'TG/2021/102',
         registrationNumber: 'UWU/BET/21/102',
-        'enrollment year (e.g. 21/22)': '21/22',
+        'enrollment year': '21/22',
         'enrolled degree': 'BET',
       },
     ];
@@ -311,7 +311,7 @@ export default function StudentImportDialog({
               <span>• address</span>
               <span>• indexNumber</span>
               <span>• registrationNumber</span>
-              <span>• enrollment year (e.g. 21/22)</span>
+              <span>• enrollment year</span>
               <span>• enrolled degree</span>
             </div>
             <p className="text-[10px] italic pt-1">

@@ -155,8 +155,10 @@ export default function ProfilePage() {
             </div>
 
             <h2 className="text-xl font-bold relative z-10 leading-tight">{profile?.full_name}</h2>
-            <p className="text-xs text-primary font-bold tracking-widest uppercase mt-1 px-3 py-1 bg-primary/10 border border-primary/15 rounded-full relative z-10">
-              {profile?.role?.role_name || user?.role}
+            <p className="text-xs text-primary font-bold tracking-widest uppercase mt-1 px-2.5 py-0.5 bg-primary/10 border border-primary/20 rounded relative z-10">
+              {(profile?.role?.role_name || user?.role) === 'Exam Division Staff'
+                ? 'Staff'
+                : profile?.role?.role_name || user?.role}
             </p>
 
             <div className="w-full border-t border-border/60 my-5 relative z-10" />

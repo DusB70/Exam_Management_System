@@ -16,9 +16,12 @@ export class ImportsService {
 
   private getCaseInsensitiveValue(row: Record<string, any>, possibleKeys: string[]): string {
     const rowKeys = Object.keys(row);
+    // 1. Direct match with standard cleanup
     for (const pKey of possibleKeys) {
-      const cleanPKey = pKey.toLowerCase().replace(/[\s_-]/g, '');
-      const foundKey = rowKeys.find((rk) => rk.toLowerCase().replace(/[\s_-]/g, '') === cleanPKey);
+      const cleanPKey = pKey.toLowerCase().replace(/[\s_\-.:]/g, '');
+      const foundKey = rowKeys.find(
+        (rk) => rk.toLowerCase().replace(/[\s_\-.:]/g, '') === cleanPKey,
+      );
       if (
         foundKey &&
         row[foundKey] !== undefined &&
@@ -28,6 +31,55 @@ export class ImportsService {
         return String(row[foundKey]).trim();
       }
     }
+
+    // 2. Parenthetical-stripped match (e.g. 'enrollment year (e.g. 21/22)' -> 'enrollmentyear')
+    for (const pKey of possibleKeys) {
+      const cleanPKey = pKey
+        .toLowerCase()
+        .replace(/\(.*?\)/g, '')
+        .replace(/[\s_\-.:]/g, '');
+      if (!cleanPKey) continue;
+      const foundKey = rowKeys.find((rk) => {
+        const cleanRk = rk
+          .toLowerCase()
+          .replace(/\(.*?\)/g, '')
+          .replace(/[\s_\-.:]/g, '');
+        return cleanRk === cleanPKey;
+      });
+      if (
+        foundKey &&
+        row[foundKey] !== undefined &&
+        row[foundKey] !== null &&
+        String(row[foundKey]).trim() !== ''
+      ) {
+        return String(row[foundKey]).trim();
+      }
+    }
+
+    // 3. Fallback partial/substring match
+    for (const pKey of possibleKeys) {
+      const cleanPKey = pKey
+        .toLowerCase()
+        .replace(/\(.*?\)/g, '')
+        .replace(/[\s_\-.:]/g, '');
+      if (cleanPKey.length < 4) continue;
+      const foundKey = rowKeys.find((rk) => {
+        const cleanRk = rk
+          .toLowerCase()
+          .replace(/\(.*?\)/g, '')
+          .replace(/[\s_\-.:]/g, '');
+        return cleanRk.includes(cleanPKey) || cleanPKey.includes(cleanRk);
+      });
+      if (
+        foundKey &&
+        row[foundKey] !== undefined &&
+        row[foundKey] !== null &&
+        String(row[foundKey]).trim() !== ''
+      ) {
+        return String(row[foundKey]).trim();
+      }
+    }
+
     return '';
   }
 
@@ -182,12 +234,16 @@ export class ImportsService {
             'reg_no',
           ]);
           const academicYear = this.getCaseInsensitiveValue(row, [
+            'enrollment year (e.g. 21/22)',
+            'enrollment year',
             'enrollmentyear',
             'enrollment_year',
-            'enrollment year',
             'academicyear',
             'academic_year',
             'academic year',
+            'batch',
+            'intake',
+            'intake year',
             'year',
           ]);
           const degreeCode = this.getCaseInsensitiveValue(row, [
@@ -319,7 +375,7 @@ export class ImportsService {
               index_number: indexNumber.trim(),
               degree_id: degree.degree_id,
               specialization_id: specializationId,
-              batch: (batchVal || academicYear || '21/22').trim(),
+              batch: (academicYear || batchVal || '21/22').trim(),
             },
           });
 
@@ -1401,13 +1457,16 @@ export class ImportsService {
         'reg_no',
       ]);
       const academicYear = this.getCaseInsensitiveValue(row, [
+        'enrollment year (e.g. 21/22)',
+        'enrollment year',
         'enrollmentyear',
         'enrollment_year',
-        'enrollment year',
-        'enrollment year (e.g. 21/22)',
+        'batch',
         'academicyear',
         'academic_year',
         'academic year',
+        'intake',
+        'intake year',
         'year',
       ]);
       const degreeCode = this.getCaseInsensitiveValue(row, [
@@ -1527,7 +1586,7 @@ export class ImportsService {
         address,
         indexNumber,
         registrationNumber,
-        enrollmentYear: (batchVal || academicYear || '21/22').trim(),
+        enrollmentYear: (academicYear || batchVal || '21/22').trim(),
         enrolledDegree: degreeCode,
         errors: rowErrors,
         isValid: rowErrors.length === 0,

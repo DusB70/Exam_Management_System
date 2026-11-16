@@ -24,11 +24,11 @@ import {
   BookOpen,
   Calendar,
   Plus,
-  Trash2,
   Play,
   Pause,
   StopCircle,
   Edit3,
+  SquarePen,
   UserCheck,
   User,
   Check,
@@ -43,59 +43,63 @@ const fetchDepartments = async () => {
   return response.data?.data || [];
 };
 
-const getStatusDegreeCode = (degree?: any, fallbackId?: number | string) => {
-  const rawCode = (degree?.degree_code || '').toUpperCase();
-  const name = (degree?.degree_name || '').toUpperCase();
-  if (
-    rawCode === 'BICT' ||
-    rawCode === 'ICT' ||
-    rawCode === 'ITT' ||
-    name.includes('INFORMATION AND COMMUNICATION TECHNOLOGY')
-  ) {
-    return 'ITT';
-  }
-  return degree?.degree_code || String(fallbackId ?? '');
-};
-
 const renderCourseStatus = (course: any) => {
   const specs: any[] = course.course_specializations || [];
   const degs: any[] = course.degrees || [];
-  const entries: { code: string; status: 'COMPULSORY' | 'OPTIONAL' }[] = [];
+
+  // 1. Group status by degree and its specializations
+  // Degree entries: { degreeCode, status }
+  // Specialization entries: { specCode, status, degreeCode }
+  const compulsoryItems: { label: string; sub?: string }[] = [];
+  const optionalItems: { label: string; sub?: string }[] = [];
+
   const coveredSpecIds = new Set<number>();
 
   for (const d of degs) {
+    const degCode = d.degree?.degree_code || String(d.degree_id);
     const matchingSpecs = specs.filter((cs: any) => cs.specialization?.degree_id === d.degree_id);
+
     if (matchingSpecs.length > 0) {
       for (const cs of matchingSpecs) {
         coveredSpecIds.add(cs.specialization_id);
-        entries.push({
-          code: cs.specialization?.specialization_code || String(cs.specialization_id),
-          status: cs.status === 'OPTIONAL' ? 'OPTIONAL' : 'COMPULSORY',
-        });
+        const specCode = cs.specialization?.specialization_code || String(cs.specialization_id);
+        const item = { label: specCode, sub: degCode };
+        if (cs.status === 'OPTIONAL') {
+          optionalItems.push(item);
+        } else {
+          compulsoryItems.push(item);
+        }
       }
     } else {
-      entries.push({
-        code: getStatusDegreeCode(d.degree, d.degree_id),
-        status: d.status === 'OPTIONAL' ? 'OPTIONAL' : 'COMPULSORY',
-      });
+      const item = { label: degCode };
+      if (d.status === 'OPTIONAL') {
+        optionalItems.push(item);
+      } else {
+        compulsoryItems.push(item);
+      }
     }
   }
 
+  // Any remaining specs not covered by degrees list
   for (const cs of specs) {
     if (!coveredSpecIds.has(cs.specialization_id)) {
-      entries.push({
-        code: cs.specialization?.specialization_code || String(cs.specialization_id),
-        status: cs.status === 'OPTIONAL' ? 'OPTIONAL' : 'COMPULSORY',
-      });
+      const specCode = cs.specialization?.specialization_code || String(cs.specialization_id);
+      const degCode = cs.specialization?.degree?.degree_code;
+      const item = { label: specCode, sub: degCode };
+      if (cs.status === 'OPTIONAL') {
+        optionalItems.push(item);
+      } else {
+        compulsoryItems.push(item);
+      }
     }
   }
 
-  if (entries.length === 0) {
+  if (compulsoryItems.length === 0 && optionalItems.length === 0) {
     if (course.specialization) {
       return (
         <span
           title={`Specialization: ${course.specialization.specialization_name}`}
-          className="inline-block px-2 py-0.5 bg-secondary/70 text-secondary-foreground border border-border/60 rounded text-[10px] font-bold font-mono"
+          className="inline-block px-2 py-0.5 bg-secondary text-secondary-foreground border border-border/60 rounded text-[10px] font-bold font-mono"
         >
           {course.specialization.specialization_code}
         </span>
@@ -104,72 +108,68 @@ const renderCourseStatus = (course: any) => {
     return <span className="text-xs text-muted-foreground/60 italic">—</span>;
   }
 
-  const specCodes = Array.from(
-    new Set(
-      specs.length > 0
-        ? specs.map(
-            (cs: any) => cs.specialization?.specialization_code || String(cs.specialization_id),
-          )
-        : course.specialization
-          ? [course.specialization.specialization_code || String(course.specialization_id)]
-          : [],
-    ),
-  ).filter(Boolean);
-
-  const allCompulsory = entries.every((e) => e.status === 'COMPULSORY');
-  const allOptional = entries.every((e) => e.status === 'OPTIONAL');
-
-  if (allCompulsory) {
+  // If ALL items are COMPULSORY
+  if (optionalItems.length === 0) {
     return (
-      <div className="flex flex-wrap gap-1 items-center">
-        <span className="inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-primary/10 text-primary border-primary/30">
+      <div className="flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-primary/10 text-primary border-primary/30 shrink-0">
           Compulsory
         </span>
-        {specCodes.map((code) => (
-          <span
-            key={code}
-            className="inline-block px-2 py-0.5 bg-secondary/70 text-secondary-foreground border border-border/60 rounded text-[10px] font-bold font-mono"
-          >
-            {code}
-          </span>
-        ))}
       </div>
     );
   }
 
-  if (allOptional) {
+  // If ALL items are OPTIONAL
+  if (compulsoryItems.length === 0) {
     return (
-      <div className="flex flex-wrap gap-1 items-center">
-        <span className="inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-amber-500/10 text-amber-500 border-amber-500/30">
+      <div className="flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-amber-500/10 text-amber-500 border-amber-500/30 shrink-0">
           Optional
         </span>
-        {specCodes.map((code) => (
-          <span
-            key={code}
-            className="inline-block px-2 py-0.5 bg-secondary/70 text-secondary-foreground border border-border/60 rounded text-[10px] font-bold font-mono"
-          >
-            {code}
-          </span>
-        ))}
       </div>
     );
   }
 
+  // Mixed: some compulsory, some optional for specific degrees/specializations
+  // Display both sections cleanly separated
   return (
-    <div className="flex flex-wrap gap-1 max-w-[200px] items-center">
-      {entries.map((entry, entryIdx) => (
-        <span
-          key={`${entry.code}-${entryIdx}`}
-          title={`${entry.code}: ${entry.status}`}
-          className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold font-mono border ${
-            entry.status === 'COMPULSORY'
-              ? 'bg-primary/10 text-primary border-primary/30'
-              : 'bg-amber-500/10 text-amber-500 border-amber-500/30'
-          }`}
-        >
-          {entry.code}: {entry.status === 'COMPULSORY' ? 'C' : 'O'}
-        </span>
-      ))}
+    <div className="flex flex-col gap-1 text-[10px] font-mono whitespace-nowrap">
+      {compulsoryItems.length > 0 && (
+        <div className="flex items-center gap-1">
+          <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider border bg-primary/10 text-primary border-primary/25 rounded">
+            C
+          </span>
+          <div className="flex items-center gap-1">
+            {compulsoryItems.map((ci, i) => (
+              <span
+                key={i}
+                title={ci.sub ? `${ci.label} (${ci.sub})` : ci.label}
+                className="px-1.5 py-0.5 bg-secondary text-secondary-foreground border border-border/70 rounded text-[10px] font-bold"
+              >
+                {ci.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {optionalItems.length > 0 && (
+        <div className="flex items-center gap-1">
+          <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider border bg-amber-500/10 text-amber-500 border-amber-500/25 rounded">
+            O
+          </span>
+          <div className="flex items-center gap-1">
+            {optionalItems.map((oi, i) => (
+              <span
+                key={i}
+                title={oi.sub ? `${oi.label} (${oi.sub})` : oi.label}
+                className="px-1.5 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded text-[10px] font-bold"
+              >
+                {oi.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -892,11 +892,11 @@ export default function CoursesManagementPage() {
             {/* Courses Table */}
             <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
                       {isAdminOrStaff && (
-                        <th className="px-4 py-4 w-10 text-center">
+                        <th className="px-3.5 py-3 w-10 text-center">
                           <SelectAllCheckbox
                             checked={courseSelection.isAllSelected(
                               courses.map((c: any) => c.course_id),
@@ -912,18 +912,20 @@ export default function CoursesManagementPage() {
                           />
                         </th>
                       )}
-                      <th className="px-4 py-4 w-12 text-center">#</th>
-                      <th className="px-6 py-4">Semester</th>
-                      <th className="px-6 py-4">Course Code</th>
-                      <th className="px-6 py-4">Course Name</th>
-                      <th className="px-6 py-4">Department</th>
-                      <th className="px-6 py-4">Degrees</th>
-                      <th className="px-6 py-4">Status</th>
-                      <th className="px-6 py-4">Credits</th>
-                      {isAdminOrStaff && <th className="px-6 py-4 text-right">Actions</th>}
+                      <th className="px-3 py-3 w-10 text-center">#</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Semester</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Course Code</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Course Name</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Department</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Degrees</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Status</th>
+                      <th className="px-4 py-3 whitespace-nowrap text-center">Credits</th>
+                      {isAdminOrStaff && (
+                        <th className="px-4 py-3 text-right whitespace-nowrap">Actions</th>
+                      )}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/60 text-sm font-medium">
+                  <tbody className="divide-y divide-border/60 text-xs font-medium">
                     {isCoursesLoading ? (
                       <tr>
                         <td
@@ -956,63 +958,75 @@ export default function CoursesManagementPage() {
                           }`}
                         >
                           {isAdminOrStaff && (
-                            <td className="px-4 py-4.5 text-center">
+                            <td className="px-3.5 py-2.5 text-center">
                               <input
                                 type="checkbox"
                                 checked={courseSelection.isSelected(course.course_id)}
                                 onChange={() => courseSelection.toggle(course.course_id)}
                                 aria-label={`Select course ${course.course_code}`}
-                                className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
+                                className="h-3.5 w-3.5 rounded border-border/80 accent-primary cursor-pointer"
                               />
                             </td>
                           )}
-                          <td className="px-4 py-4.5 text-center font-mono text-muted-foreground font-bold text-xs">
+                          <td className="px-3 py-2.5 text-center font-mono text-muted-foreground font-bold text-xs">
                             {idx + 1}
                           </td>
-                          <td className="px-6 py-4.5 font-bold font-mono text-primary text-xs">
+                          <td className="px-4 py-2.5 font-bold font-mono text-primary text-xs whitespace-nowrap">
                             Sem {course.semester}
                           </td>
-                          <td className="px-6 py-4.5 font-bold text-foreground font-mono">
+                          <td className="px-4 py-2.5 font-bold text-foreground font-mono whitespace-nowrap">
                             {course.course_code}
                           </td>
-                          <td className="px-6 py-4.5 text-foreground">{course.course_name}</td>
-                          <td className="px-6 py-4.5 text-xs text-muted-foreground uppercase font-semibold">
+                          <td
+                            className="px-4 py-2.5 text-foreground whitespace-nowrap max-w-sm truncate"
+                            title={course.course_name}
+                          >
+                            {course.course_name}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-muted-foreground uppercase font-semibold whitespace-nowrap">
                             {course.department?.department_code}
                           </td>
-                          <td className="px-6 py-4.5">
-                            <div className="flex flex-wrap gap-1 max-w-xs items-center">
+                          <td className="px-4 py-2.5 whitespace-nowrap">
+                            <div className="flex flex-nowrap items-center gap-1">
                               {course.degrees && course.degrees.length > 0 ? (
                                 course.degrees.map((d: any) => (
                                   <span
                                     key={d.degree_id}
-                                    className="inline-block px-2 py-0.5 bg-secondary text-secondary-foreground rounded text-[10px] font-bold font-mono"
+                                    className="inline-block px-1.5 py-0.5 bg-secondary text-secondary-foreground rounded text-[10px] font-bold font-mono whitespace-nowrap"
                                   >
                                     {d.degree?.degree_code || d.degree_id}
                                   </span>
                                 ))
                               ) : (
-                                <span className="text-xs text-muted-foreground/60 italic">
+                                <span className="text-xs text-muted-foreground/60 italic whitespace-nowrap">
                                   None
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4.5">{renderCourseStatus(course)}</td>
-                          <td className="px-6 py-4.5 font-mono text-xs">{course.credit_value}</td>
+                          <td className="px-4 py-2.5 whitespace-nowrap">
+                            {renderCourseStatus(course)}
+                          </td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-center whitespace-nowrap">
+                            {course.credit_value}
+                          </td>
                           {isAdminOrStaff && (
-                            <td className="px-6 py-4.5 text-right space-x-2 whitespace-nowrap">
-                              <button
-                                onClick={() => handleEditCourse(course)}
-                                className="px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg transition text-xs font-semibold cursor-pointer"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleDeleteCourse(course.course_id)}
-                                className="px-3 py-1.5 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-lg transition text-xs font-semibold cursor-pointer"
-                              >
-                                Delete
-                              </button>
+                            <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                              <div className="inline-flex items-center justify-end gap-2.5 whitespace-nowrap">
+                                <button
+                                  onClick={() => handleEditCourse(course)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-background border border-border/80 rounded-md text-[11px] font-bold text-foreground hover:bg-secondary/80 transition shadow-2xs cursor-pointer"
+                                >
+                                  <SquarePen className="h-3 w-3" />
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteCourse(course.course_id)}
+                                  className="text-[11px] font-bold text-red-500 hover:text-red-600 transition cursor-pointer px-1 py-0.5"
+                                >
+                                  Delete
+                                </button>
+                              </div>
                             </td>
                           )}
                         </tr>
@@ -1220,28 +1234,19 @@ export default function CoursesManagementPage() {
                             </td>
                             <td className="px-6 py-4.5">
                               <span
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                                className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${
                                   isOpen
-                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                    ? 'bg-emerald-500/10 text-foreground dark:text-emerald-300 border-emerald-400/60 dark:border-emerald-500/40'
                                     : isSuspended
-                                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                      : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                      ? 'bg-amber-500/10 text-amber-500 dark:text-amber-400 border-amber-500/30'
+                                      : 'bg-red-500/10 text-red-500 dark:text-red-400 border-red-500/30'
                                 }`}
                               >
-                                <span
-                                  className={`h-1.5 w-1.5 rounded-full ${
-                                    isOpen
-                                      ? 'bg-emerald-400'
-                                      : isSuspended
-                                        ? 'bg-amber-400'
-                                        : 'bg-red-400'
-                                  }`}
-                                />
                                 {p.status}
                               </span>
                             </td>
                             {isAdminOrStaff && (
-                              <td className="px-6 py-4.5 text-right space-x-1.5 whitespace-nowrap">
+                              <td className="px-6 py-4.5 text-right space-x-2 whitespace-nowrap">
                                 {!isOpen && (
                                   <button
                                     onClick={() => handlePeriodStatusChange(p.period_id, 'OPEN')}
@@ -1273,10 +1278,9 @@ export default function CoursesManagementPage() {
                                 )}
                                 <button
                                   onClick={() => handleDeletePeriod(p.period_id)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-lg transition text-xs font-semibold cursor-pointer"
+                                  className="text-[11px] font-bold text-red-500 hover:text-red-600 transition cursor-pointer px-1 py-0.5"
                                   title="Delete Window"
                                 >
-                                  <Trash2 className="h-3 w-3" />
                                   Delete
                                 </button>
                               </td>

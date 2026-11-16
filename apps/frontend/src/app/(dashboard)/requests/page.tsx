@@ -429,20 +429,20 @@ export default function RequestsPortalPage() {
     switch (status) {
       case 'APPROVED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-xs font-semibold">
-            <CheckCircle className="h-3.5 w-3.5" /> Approved
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded text-[10px] font-bold">
+            <CheckCircle className="h-3 w-3" /> Approved
           </span>
         );
       case 'REJECTED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full text-xs font-semibold">
-            <XCircle className="h-3.5 w-3.5" /> Rejected
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded text-[10px] font-bold">
+            <XCircle className="h-3 w-3" /> Rejected
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full text-xs font-semibold">
-            <Clock className="h-3.5 w-3.5" /> Pending
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded text-[10px] font-bold">
+            <Clock className="h-3 w-3" /> Pending
           </span>
         );
     }

@@ -2,19 +2,43 @@ import * as XLSX from 'xlsx';
 import type { SpreadsheetValidationResult } from '../components/imports/spreadsheet-inspector-modal';
 
 function normalizeKey(key: string): string {
-  return key.toLowerCase().replace(/[\s_-]/g, '');
+  return key
+    .toLowerCase()
+    .replace(/\(.*?\)/g, '')
+    .replace(/[\s_\-.:]/g, '');
 }
 
 function hasMatchingHeader(headerRow: string[], possibleKeys: string[]): boolean {
   const normalized = headerRow.map(normalizeKey);
-  return possibleKeys.some((pk) => normalized.includes(normalizeKey(pk)));
+  return possibleKeys.some((pk) => {
+    const cleanPk = normalizeKey(pk);
+    return normalized.some((h) => h === cleanPk || h.includes(cleanPk) || cleanPk.includes(h));
+  });
 }
 
 function getVal(row: Record<string, any>, possibleKeys: string[]): string {
   const rowKeys = Object.keys(row);
+  // 1. Direct match
   for (const pKey of possibleKeys) {
     const cleanPKey = normalizeKey(pKey);
     const foundKey = rowKeys.find((rk) => normalizeKey(rk) === cleanPKey);
+    if (
+      foundKey &&
+      row[foundKey] !== undefined &&
+      row[foundKey] !== null &&
+      String(row[foundKey]).trim() !== ''
+    ) {
+      return String(row[foundKey]).trim();
+    }
+  }
+  // 2. Partial match fallback
+  for (const pKey of possibleKeys) {
+    const cleanPKey = normalizeKey(pKey);
+    if (cleanPKey.length < 4) continue;
+    const foundKey = rowKeys.find((rk) => {
+      const cleanRk = normalizeKey(rk);
+      return cleanRk.includes(cleanPKey) || cleanPKey.includes(cleanRk);
+    });
     if (
       foundKey &&
       row[foundKey] !== undefined &&
@@ -395,13 +419,16 @@ export async function validateStudentsSpreadsheetLocally(
       'reg_no',
     ]);
     const enrollmentYear = getVal(row, [
+      'enrollment year (e.g. 21/22)',
+      'enrollment year',
       'enrollmentyear',
       'enrollment_year',
-      'enrollment year',
-      'enrollment year (e.g. 21/22)',
+      'batch',
       'academicyear',
       'academic_year',
       'academic year',
+      'intake',
+      'intake year',
       'year',
     ]);
     const enrolledDegree = getVal(row, [

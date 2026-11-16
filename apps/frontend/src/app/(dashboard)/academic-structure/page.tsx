@@ -1614,13 +1614,13 @@ export default function AcademicStructurePage() {
                             <td className="px-4 py-2 text-foreground font-bold">
                               {limit.max_credits.toFixed(1)} Credits
                             </td>
-                            <td className="px-4 py-2 text-right">
+                            <td className="px-4 py-2 text-right whitespace-nowrap">
                               <button
                                 type="button"
                                 onClick={() => handleDeleteLimit(limit.limit_id)}
-                                className="p-1 hover:bg-destructive/10 hover:text-destructive rounded transition text-muted-foreground"
+                                className="text-xs font-bold text-red-500 hover:text-red-600 transition-colors cursor-pointer px-1 py-1"
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                Delete
                               </button>
                             </td>
                           </tr>

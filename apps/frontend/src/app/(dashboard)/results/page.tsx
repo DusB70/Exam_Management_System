@@ -655,7 +655,7 @@ export default function ResultsAndImportsPage() {
                   </div>
                 </div>
                 <span
-                  className={`px-3 py-1 rounded-full border text-xs font-extrabold ${
+                  className={`px-2 py-0.5 rounded border text-[10px] font-extrabold ${
                     selectedProgressCourse.progress?.exam_held === 'HELD'
                       ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                       : selectedProgressCourse.progress?.exam_held === 'POSTPONED'
@@ -678,7 +678,7 @@ export default function ResultsAndImportsPage() {
                   </div>
                 </div>
                 <span
-                  className={`px-3 py-1 rounded-full border text-xs font-extrabold ${
+                  className={`px-2 py-0.5 rounded border text-[10px] font-extrabold ${
                     selectedProgressCourse.progress?.first_marking === 'COMPLETED'
                       ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                       : selectedProgressCourse.progress?.first_marking === 'IN_PROGRESS'
@@ -701,7 +701,7 @@ export default function ResultsAndImportsPage() {
                   </div>
                 </div>
                 <span
-                  className={`px-3 py-1 rounded-full border text-xs font-extrabold ${
+                  className={`px-2 py-0.5 rounded border text-[10px] font-extrabold ${
                     selectedProgressCourse.progress?.second_marking === 'COMPLETED'
                       ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                       : selectedProgressCourse.progress?.second_marking === 'IN_PROGRESS'
@@ -724,7 +724,7 @@ export default function ResultsAndImportsPage() {
                   </div>
                 </div>
                 <span
-                  className={`px-3.5 py-1 rounded-full border text-xs font-extrabold ${
+                  className={`px-2.5 py-0.5 rounded border text-[10px] font-extrabold ${
                     selectedProgressCourse.progress?.published === 'PUBLISHED' ||
                     selectedProgressCourse.is_published
                       ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/40'

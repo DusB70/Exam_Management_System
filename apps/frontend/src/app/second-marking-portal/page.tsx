@@ -15,7 +15,6 @@ import {
   Upload,
   Download,
   Search,
-  Award,
   Users,
   ShieldCheck,
   ShieldAlert,
@@ -620,7 +619,7 @@ export default function SecondMarkingPortalPage() {
 
           <div className="text-center pt-2">
             <span className="text-[11px] text-muted-foreground font-mono">
-              Course: {courseData.course_code} &bull; SLIIT EMS Security Gate
+              Course: {courseData.course_code} &bull; RUSL FOT
             </span>
           </div>
         </div>
@@ -874,7 +873,6 @@ export default function SecondMarkingPortalPage() {
             {/* Top Grid Title & Subtitle (No Tabs) */}
             <div className="border-b border-border/60 pb-5">
               <h3 className="text-base font-bold text-foreground flex items-center gap-2">
-                <Award className="h-5 w-5 text-primary" />
                 Student Marks Registry Grid
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
