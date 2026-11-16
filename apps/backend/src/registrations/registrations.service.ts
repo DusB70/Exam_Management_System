@@ -141,7 +141,7 @@ export class RegistrationsService {
   async getMyRegistrations(userId: number) {
     const student = await this.getStudentByUserId(userId);
 
-    return this.prisma.courseRegistration.findMany({
+    const registrations = await this.prisma.courseRegistration.findMany({
       where: { student_id: student.student_id },
       include: {
         course: {
@@ -152,6 +152,7 @@ export class RegistrationsService {
                 degree: true,
               },
             },
+            course_specializations: true,
             specialization: true,
             lecturers: {
               include: {
@@ -170,6 +171,35 @@ export class RegistrationsService {
         },
       },
     });
+
+    return registrations
+      .map((reg) => {
+        let isCompulsory = false;
+        const specMatch = student.specialization_id
+          ? reg.course.course_specializations?.find(
+              (cs: any) => cs.specialization_id === student.specialization_id,
+            )
+          : null;
+
+        if (specMatch) {
+          isCompulsory = specMatch.status === 'COMPULSORY';
+        } else {
+          const courseDegree = reg.course.degrees?.find(
+            (d: any) => d.degree_id === student.degree_id,
+          );
+          isCompulsory = courseDegree ? courseDegree.status === 'COMPULSORY' : false;
+        }
+
+        return {
+          ...reg,
+          is_compulsory: isCompulsory,
+        };
+      })
+      .sort((a, b) => {
+        if (a.is_compulsory && !b.is_compulsory) return -1;
+        if (!a.is_compulsory && b.is_compulsory) return 1;
+        return 0;
+      });
   }
 
   async registerCourses(userId: number, dto: RegisterCoursesDto): Promise<CourseRegistration[]> {
@@ -230,26 +260,20 @@ export class RegistrationsService {
       }
     }
 
-    // 3. Verify Credit Hours Limits
-    const currentRegistrations = await this.prisma.courseRegistration.findMany({
-      where: { student_id: student.student_id },
-      include: { course: true },
-    });
+    // 3. Verify Compulsory Courses Are Included
+    // Students cannot remove or omit compulsory subjects offered for the semester
+    const eligibleCourses = await this.getEligibleCourses(userId);
+    const eligibleCompulsoryCourseIds = eligibleCourses
+      .filter((c) => c.is_compulsory)
+      .map((c) => c.course_id);
 
-    const existingCredits = currentRegistrations.reduce(
-      (sum, reg) => sum + parseFloat(reg.course.credit_value.toString()),
-      0,
-    );
-    const newCredits = selectedCourses.reduce(
-      (sum, course) => sum + parseFloat(course.credit_value.toString()),
-      0,
+    const missingCompulsory = eligibleCompulsoryCourseIds.filter(
+      (compulsoryId) => !courseIds.includes(compulsoryId),
     );
 
-    const totalCredits = existingCredits + newCredits;
-    const maxCreditsAllowed = period.max_credits ?? 22.0;
-    if (totalCredits > maxCreditsAllowed) {
+    if (missingCompulsory.length > 0) {
       throw new BadRequestException(
-        `Registration limits exceeded. Maximum credit load per semester is ${maxCreditsAllowed.toFixed(1)}. Selected: ${totalCredits.toFixed(1)}`,
+        'Compulsory courses cannot be removed and must be included in your registration.',
       );
     }
 
@@ -301,7 +325,14 @@ export class RegistrationsService {
 
     const registration = await this.prisma.courseRegistration.findUnique({
       where: { registration_id: registrationId },
-      include: { course: true },
+      include: {
+        course: {
+          include: {
+            degrees: true,
+            course_specializations: true,
+          },
+        },
+      },
     });
 
     if (!registration) {
@@ -318,6 +349,27 @@ export class RegistrationsService {
       throw new BadRequestException(
         'Cannot drop courses when the registration period is closed or suspended.',
       );
+    }
+
+    // Compulsory courses cannot be dropped by students
+    let isCompulsory = false;
+    const specMatch = student.specialization_id
+      ? registration.course.course_specializations?.find(
+          (cs) => cs.specialization_id === student.specialization_id,
+        )
+      : null;
+
+    if (specMatch) {
+      isCompulsory = specMatch.status === 'COMPULSORY';
+    } else {
+      const courseDegree = registration.course.degrees?.find(
+        (d) => d.degree_id === student.degree_id,
+      );
+      isCompulsory = courseDegree ? courseDegree.status === 'COMPULSORY' : false;
+    }
+
+    if (isCompulsory) {
+      throw new BadRequestException('Compulsory courses cannot be dropped.');
     }
 
     const result = await this.prisma.courseRegistration.delete({

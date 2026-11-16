@@ -22,6 +22,7 @@ import {
   Sparkles,
   ArrowRight,
   Info,
+  Lock,
 } from 'lucide-react';
 
 export default function CourseRegistrationPage() {
@@ -92,9 +93,6 @@ export default function CourseRegistrationPage() {
     },
   });
 
-  // Dynamic credits limit from active period
-  const maxCredits = activePeriod?.max_credits ?? 22.0;
-
   // Calculate credits
   const currentRegisteredCredits = myRegistrations.reduce(
     (sum: number, reg: any) => sum + parseFloat(reg.course.credit_value),
@@ -105,35 +103,64 @@ export default function CourseRegistrationPage() {
     selectedCourseIds.includes(c.course_id),
   );
 
+  const sortedSelectedCourses = [...selectedCourses].sort((a: any, b: any) => {
+    if (a.is_compulsory && !b.is_compulsory) return -1;
+    if (!a.is_compulsory && b.is_compulsory) return 1;
+    return 0;
+  });
+
+  const compulsorySelectedCredits = selectedCourses
+    .filter((c: any) => c.is_compulsory)
+    .reduce((sum: number, c: any) => sum + parseFloat(c.credit_value), 0);
+
+  const optionalSelectedCredits = selectedCourses
+    .filter((c: any) => !c.is_compulsory)
+    .reduce((sum: number, c: any) => sum + parseFloat(c.credit_value), 0);
+
   const selectedCredits = selectedCourses.reduce(
     (sum: number, c: any) => sum + parseFloat(c.credit_value),
     0,
   );
 
   const totalCreditsCalculated = currentRegisteredCredits + selectedCredits;
-  const isCreditOverlimit = totalCreditsCalculated > maxCredits;
 
   React.useEffect(() => {
     if (eligibleCourses && eligibleCourses.length > 0) {
       const compulsoryIds = eligibleCourses
         .filter((c: any) => c.is_compulsory)
         .map((c: any) => c.course_id);
-      setSelectedCourseIds(compulsoryIds);
+      setSelectedCourseIds((prev) => {
+        const next = new Set([...prev, ...compulsoryIds]);
+        return Array.from(next);
+      });
     }
   }, [eligibleCourses]);
 
   const handleToggleCourse = (courseId: number) => {
+    const course = eligibleCourses.find((c: any) => c.course_id === courseId);
+    if (course?.is_compulsory) {
+      toast.info('Compulsory subjects are required and cannot be removed.');
+      return;
+    }
     setSelectedCourseIds((prev) =>
       prev.includes(courseId) ? prev.filter((id) => id !== courseId) : [...prev, courseId],
     );
   };
 
   const handleRegister = () => {
-    if (selectedCourseIds.length === 0) return;
-    registerMutation.mutate(selectedCourseIds);
+    const compulsoryIds = eligibleCourses
+      .filter((c: any) => c.is_compulsory)
+      .map((c: any) => c.course_id);
+    const finalCourseIds = Array.from(new Set([...selectedCourseIds, ...compulsoryIds]));
+    if (finalCourseIds.length === 0) return;
+    registerMutation.mutate(finalCourseIds);
   };
 
-  const handleDrop = async (registrationId: number, courseCode: string) => {
+  const handleDrop = async (registrationId: number, courseCode: string, isCompulsory?: boolean) => {
+    if (isCompulsory) {
+      toast.error('Compulsory courses cannot be dropped.');
+      return;
+    }
     const confirmed = await confirm({
       title: 'Drop Course?',
       message: `Are you sure you want to drop course ${courseCode}? You can re-register if the registration window is still open.`,
@@ -145,9 +172,17 @@ export default function CourseRegistrationPage() {
     }
   };
 
-  const selectableRegistrationIds: number[] = myRegistrations.map(
-    (reg: any) => reg.registration_id,
-  );
+  const sortedMyRegistrations = React.useMemo(() => {
+    return [...myRegistrations].sort((a: any, b: any) => {
+      if (a.is_compulsory && !b.is_compulsory) return -1;
+      if (!a.is_compulsory && b.is_compulsory) return 1;
+      return 0;
+    });
+  }, [myRegistrations]);
+
+  const selectableRegistrationIds: number[] = sortedMyRegistrations
+    .filter((reg: any) => !reg.is_compulsory)
+    .map((reg: any) => reg.registration_id);
 
   const handleBulkDrop = async () => {
     const ids = Array.from(regSelection.selectedIds);
@@ -198,7 +233,7 @@ export default function CourseRegistrationPage() {
     visibleCount: visibleMyRegsCount,
     totalCount: totalMyRegsCount,
     hasMore: hasMoreMyRegs,
-  } = useProgressiveList<any>(myRegistrations);
+  } = useProgressiveList<any>(sortedMyRegistrations);
 
   // Loading Screen
   const isGlobalLoading = isActivePeriodLoading || isEligibleLoading || isMyRegsLoading;
@@ -275,21 +310,17 @@ export default function CourseRegistrationPage() {
           {/* Credit WORKLOAD tracker */}
           <div className="w-full md:w-80 bg-secondary/15 border border-border/40 p-4 rounded-2xl flex flex-col justify-center">
             <div className="flex justify-between text-xs font-bold text-muted-foreground mb-2">
-              <span>WORKLOAD BUDGET</span>
-              <span className={isCreditOverlimit ? 'text-destructive' : 'text-primary'}>
-                {totalCreditsCalculated.toFixed(1)} / {maxCredits.toFixed(1)} Credits
+              <span>SEMESTER WORKLOAD</span>
+              <span className="text-primary font-mono font-bold">
+                {totalCreditsCalculated.toFixed(1)} Credits
               </span>
             </div>
-            <div className="h-2.5 w-full bg-secondary/40 rounded-full overflow-hidden">
-              <div
-                style={{ width: `${Math.min((totalCreditsCalculated / maxCredits) * 100, 100)}%` }}
-                className={`h-full transition-all duration-300 rounded-full ${
-                  isCreditOverlimit ? 'bg-destructive' : 'bg-primary'
-                }`}
-              />
+            <div className="flex justify-between text-[11px] text-muted-foreground py-1 border-t border-border/30">
+              <span>Registered: {currentRegisteredCredits.toFixed(1)}</span>
+              <span>Selected: +{selectedCredits.toFixed(1)}</span>
             </div>
-            <p className="text-[10px] text-muted-foreground/80 mt-2 font-medium">
-              Maximum allowable registration budget is {maxCredits.toFixed(1)} credits per semester.
+            <p className="text-[10px] text-muted-foreground/80 mt-1.5 font-medium">
+              You can register for all available courses offered for this semester.
             </p>
           </div>
         </div>
@@ -328,15 +359,18 @@ export default function CourseRegistrationPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {visibleEligibleCourses.map((course: any) => {
-                const isSelected = selectedCourseIds.includes(course.course_id);
+                const isSelected =
+                  selectedCourseIds.includes(course.course_id) || course.is_compulsory;
                 return (
                   <div
                     key={course.course_id}
                     onClick={() => handleToggleCourse(course.course_id)}
-                    className={`p-4 rounded-2xl border transition-all cursor-pointer select-none flex flex-col justify-between h-44 ${
-                      isSelected
-                        ? 'bg-primary/10 border-primary shadow-lg shadow-primary/5'
-                        : 'bg-card/20 border-border/60 hover:border-border/80 hover:bg-card/45'
+                    className={`p-4 rounded-2xl border transition-all select-none flex flex-col justify-between h-44 ${
+                      course.is_compulsory
+                        ? 'bg-primary/10 border-primary shadow-lg shadow-primary/5 cursor-default'
+                        : isSelected
+                          ? 'bg-primary/10 border-primary shadow-lg shadow-primary/5 cursor-pointer'
+                          : 'bg-card/20 border-border/60 hover:border-border/80 hover:bg-card/45 cursor-pointer'
                     }`}
                   >
                     <div>
@@ -379,12 +413,21 @@ export default function CourseRegistrationPage() {
                       </div>
                       <div
                         className={`h-5 w-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
-                          isSelected
-                            ? 'bg-primary border-primary text-primary-foreground'
-                            : 'border-border/80'
+                          course.is_compulsory
+                            ? 'bg-amber-500/20 border-amber-500/40 text-amber-400'
+                            : isSelected
+                              ? 'bg-primary border-primary text-primary-foreground'
+                              : 'border-border/80'
                         }`}
+                        title={
+                          course.is_compulsory ? 'Compulsory module (Cannot be removed)' : undefined
+                        }
                       >
-                        {isSelected && <Sparkles className="h-3 w-3" />}
+                        {course.is_compulsory ? (
+                          <Lock className="h-3 w-3" />
+                        ) : isSelected ? (
+                          <Sparkles className="h-3 w-3" />
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -409,12 +452,29 @@ export default function CourseRegistrationPage() {
             <div className="p-5 bg-card/40 border border-border/80 rounded-3xl space-y-4 backdrop-blur-md shadow-xl">
               <h3 className="text-sm font-bold text-foreground">Registration Summary</h3>
               <div className="space-y-2">
-                {selectedCourses.map((c: any) => (
+                {sortedSelectedCourses.map((c: any) => (
                   <div
                     key={c.course_id}
-                    className="flex justify-between text-xs text-muted-foreground font-medium"
+                    className="flex justify-between items-center text-xs text-muted-foreground font-medium"
                   >
-                    <span className="truncate pr-4">{c.course_name}</span>
+                    <span className="truncate pr-4 flex items-center gap-1.5">
+                      {c.is_compulsory ? (
+                        <span
+                          className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded shrink-0"
+                          title="Compulsory"
+                        >
+                          C
+                        </span>
+                      ) : (
+                        <span
+                          className="text-[9px] font-bold px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded shrink-0"
+                          title="Optional"
+                        >
+                          O
+                        </span>
+                      )}
+                      <span className="truncate">{c.course_name}</span>
+                    </span>
                     <span className="font-mono text-foreground font-semibold">
                       {parseFloat(c.credit_value).toFixed(1)}
                     </span>
@@ -422,16 +482,41 @@ export default function CourseRegistrationPage() {
                 ))}
               </div>
 
-              <div className="pt-3 border-t border-border/40 flex justify-between items-center text-sm font-bold text-foreground">
+              <div className="pt-3 border-t border-border/40 space-y-1.5 text-xs">
+                <div className="flex justify-between items-center text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded shrink-0">
+                      C
+                    </span>
+                    <span>Compulsory:</span>
+                  </span>
+                  <span className="font-mono font-semibold text-foreground">
+                    {compulsorySelectedCredits.toFixed(1)} Credits
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded shrink-0">
+                      O
+                    </span>
+                    <span>Optional:</span>
+                  </span>
+                  <span className="font-mono font-semibold text-foreground">
+                    {optionalSelectedCredits.toFixed(1)} Credits
+                  </span>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-border/40 flex justify-between items-center text-sm font-bold text-foreground">
                 <span>Selected Load:</span>
-                <span className={isCreditOverlimit ? 'text-destructive' : 'text-primary'}>
+                <span className="text-primary font-mono">
                   +{selectedCredits.toFixed(1)} Credits
                 </span>
               </div>
 
               <button
                 onClick={handleRegister}
-                disabled={isCreditOverlimit || registerMutation.isPending}
+                disabled={registerMutation.isPending || selectedCourseIds.length === 0}
                 className="w-full py-3 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/95 transition flex items-center justify-center gap-2 text-sm shadow-lg shadow-primary/10 disabled:opacity-50"
               >
                 {registerMutation.isPending ? (
@@ -454,7 +539,7 @@ export default function CourseRegistrationPage() {
                   <SelectAllCheckbox
                     checked={regSelection.isAllSelected(selectableRegistrationIds)}
                     indeterminate={regSelection.isIndeterminate(selectableRegistrationIds)}
-                    disabled={isBulkDropping}
+                    disabled={isBulkDropping || selectableRegistrationIds.length === 0}
                     onChange={() => regSelection.toggleAll(selectableRegistrationIds)}
                     ariaLabel="Select all registered courses"
                   />
@@ -488,21 +573,38 @@ export default function CourseRegistrationPage() {
                     className="p-4 bg-card/30 border border-border/60 rounded-2xl hover:border-border transition flex items-start justify-between gap-3"
                   >
                     <div className="flex items-start gap-3 min-w-0">
-                      {isRegistrationWindowOpen && (
-                        <input
-                          type="checkbox"
-                          checked={regSelection.isSelected(reg.registration_id)}
-                          disabled={isBulkDropping}
-                          onChange={() => regSelection.toggle(reg.registration_id)}
-                          aria-label={`Select ${reg.course.course_code}`}
-                          className="mt-0.5 h-4 w-4 shrink-0 rounded border-border/80 bg-secondary/40 text-primary focus:ring-primary/40 cursor-pointer accent-primary"
-                        />
-                      )}
+                      {isRegistrationWindowOpen &&
+                        (reg.is_compulsory ? (
+                          <div
+                            className="mt-0.5 h-4 w-4 shrink-0 flex items-center justify-center text-amber-400"
+                            title="Compulsory course"
+                          >
+                            <Lock className="h-3.5 w-3.5" />
+                          </div>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={regSelection.isSelected(reg.registration_id)}
+                            disabled={isBulkDropping}
+                            onChange={() => regSelection.toggle(reg.registration_id)}
+                            aria-label={`Select ${reg.course.course_code}`}
+                            className="mt-0.5 h-4 w-4 shrink-0 rounded border-border/80 bg-secondary/40 text-primary focus:ring-primary/40 cursor-pointer accent-primary"
+                          />
+                        ))}
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1.5">
                           <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/15 text-primary rounded-md uppercase">
                             {reg.course.course_code}
                           </span>
+                          {reg.is_compulsory ? (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-amber-500/10 text-amber-400 border-amber-500/20">
+                              Compulsory
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-blue-500/10 text-blue-400 border-blue-500/20">
+                              Optional
+                            </span>
+                          )}
                           <span className="text-xs font-mono text-muted-foreground font-medium">
                             {parseFloat(reg.course.credit_value)} Credits
                           </span>
@@ -521,16 +623,31 @@ export default function CourseRegistrationPage() {
                       </div>
                     </div>
 
-                    {isRegistrationWindowOpen && (
-                      <button
-                        onClick={() => handleDrop(reg.registration_id, reg.course.course_code)}
-                        disabled={dropMutation.isPending}
-                        className="p-2 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition disabled:opacity-50 shrink-0"
-                        title="Drop course"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
+                    {isRegistrationWindowOpen &&
+                      (reg.is_compulsory ? (
+                        <span
+                          className="px-2.5 py-1 text-[10px] font-semibold text-muted-foreground bg-secondary/30 rounded-lg shrink-0 flex items-center gap-1 cursor-default select-none border border-border/40"
+                          title="Compulsory courses cannot be dropped"
+                        >
+                          <Lock className="h-3 w-3 text-amber-400" />
+                          Required
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            handleDrop(
+                              reg.registration_id,
+                              reg.course.course_code,
+                              reg.is_compulsory,
+                            )
+                          }
+                          disabled={dropMutation.isPending}
+                          className="p-2 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition disabled:opacity-50 shrink-0"
+                          title="Drop course"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      ))}
                   </div>
                 ))}
                 <ProgressiveLoadFooter
