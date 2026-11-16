@@ -483,12 +483,9 @@ export default function SecondMarkingPortalPage() {
                   {questions.map((q) => (
                     <th
                       key={q.key}
-                      className="px-4 py-4 min-w-28 text-center border-l border-slate-800"
+                      className="px-4 py-4 min-w-28 text-center border-l border-slate-800 font-bold"
                     >
-                      <div>{q.label}</div>
-                      <div className="text-[10px] text-slate-500 font-normal">
-                        Max: {q.maxMarks || 20}
-                      </div>
+                      {q.label}
                     </th>
                   ))}
 

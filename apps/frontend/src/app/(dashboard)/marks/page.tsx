@@ -2500,12 +2500,9 @@ export default function MarksRegistryPage() {
                               {firstMarkerQuestions.map((q) => (
                                 <th
                                   key={q.key}
-                                  className="px-4 py-4 min-w-28 text-center border-l border-border/40"
+                                  className="px-4 py-4 min-w-28 text-center border-l border-border/40 font-bold"
                                 >
                                   {q.label}
-                                  <div className="text-[10px] text-muted-foreground font-normal">
-                                    Max: {q.maxMarks || 20}
-                                  </div>
                                 </th>
                               ))}
 
@@ -2622,7 +2619,35 @@ export default function MarksRegistryPage() {
                   {/* SUBPART 2: 2ND MARKER EVALUATION & RECONCILIATION */}
                   {/* ===================================================================== */}
                   {gridSubpart === '2nd_marker' &&
-                    (!isSecondMarkingSubmitted ? (
+                    (!isFirstMarkingSubmitted ? (
+                      <div className="p-12 text-center bg-secondary/15 border border-dashed border-border/80 rounded-3xl flex flex-col items-center justify-center space-y-3 animate-fadeIn">
+                        <div className="p-3 bg-secondary/80 border border-border/80 rounded-2xl text-muted-foreground">
+                          <ClipboardList className="h-8 w-8 text-primary" />
+                        </div>
+                        <h3 className="text-base font-bold text-foreground">
+                          1st Marking Evaluation Not Finalized
+                        </h3>
+                        <p className="text-xs text-muted-foreground max-w-md">
+                          The 1st marker evaluation for this course has not been finalized yet.
+                          Please complete and submit the 1st marker evaluation sheet first. Once
+                          submitted, the 2nd marker will receive their evaluation packet and secure
+                          access link.
+                        </p>
+                        <div className="flex items-center gap-3 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setGridSubpart('1st_marker')}
+                            className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl text-xs transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                            Go to 1st Marker Evaluation
+                          </button>
+                        </div>
+                        <div className="text-[11px] font-mono px-3 py-1 bg-secondary rounded-lg text-muted-foreground mt-2">
+                          Status: Awaiting 1st Marker Submission
+                        </div>
+                      </div>
+                    ) : !isSecondMarkingSubmitted ? (
                       <div className="p-12 text-center bg-secondary/15 border border-dashed border-border/80 rounded-3xl flex flex-col items-center justify-center space-y-3 animate-fadeIn">
                         <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-400">
                           <Lock className="h-8 w-8" />
@@ -2661,12 +2686,9 @@ export default function MarksRegistryPage() {
                                 {firstMarkerQuestions.map((q) => (
                                   <th
                                     key={q.key}
-                                    className="px-4 py-4 min-w-28 text-center border-l border-border/40"
+                                    className="px-4 py-4 min-w-28 text-center border-l border-border/40 font-bold"
                                   >
                                     {q.label}
-                                    <div className="text-[10px] text-muted-foreground font-normal">
-                                      Max: {q.maxMarks || 20}
-                                    </div>
                                   </th>
                                 ))}
 
