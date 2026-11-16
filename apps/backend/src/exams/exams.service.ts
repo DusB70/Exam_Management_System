@@ -1464,7 +1464,7 @@ export class ExamsService {
         });
         const token = Buffer.from(payload).toString('base64url');
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-        const magicLinkUrl = `${frontendUrl}/marks/second-marking?token=${token}&courseId=${courseId}`;
+        const magicLinkUrl = `${frontendUrl}/second-marking-portal?token=${token}`;
 
         await this.notificationsService.sendSecondMarkerMagicLinkNotification(
           markerEmail,

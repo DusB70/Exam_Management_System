@@ -3,6 +3,8 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  UnauthorizedException,
+  HttpException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -1923,16 +1925,56 @@ export class MarksService {
         throw new NotFoundException('Course referenced in token not found.');
       }
 
+      const staffSubmittedStatuses = [
+        'SUBMITTED_FINAL',
+        'SUBMITTED_TO_STAFF',
+        'RECEIVED_BY_STAFF',
+        'APPROVED',
+        'PUBLISHED',
+      ];
+      const isFinalSubmittedToStaff =
+        staffSubmittedStatuses.includes(course.result_submission_status) ||
+        Boolean(course.publishing_progress?.final_submitted);
+
+      if (isFinalSubmittedToStaff) {
+        throw new BadRequestException(
+          'Evaluation concluded: The detailed marksheet has already been submitted to the Examination Division. This link has expired.',
+        );
+      }
+
+      const registeredEmail =
+        course.second_marker_type === 'EXTERNAL'
+          ? course.second_marker_email
+          : course.second_marker_lecturer?.user?.email;
+
+      if (!registeredEmail || registeredEmail.toLowerCase() !== payload.email?.toLowerCase()) {
+        throw new UnauthorizedException(
+          'Magic link authentication failed: Token email does not match the registered 2nd marker for this course.',
+        );
+      }
+
       const students = await this.getStudentsRegisteredForCourse(course.course_id);
       const grid = await this.getCourseGridData(course.course_id, 0, false);
+      const exam = await this.prisma.exam.findFirst({
+        where: { course_id: course.course_id },
+        select: { exam_id: true, exam_title: true, exam_type: true },
+      });
 
       return {
         course,
         students,
         grid,
+        examTitle: exam?.exam_title || `${course.course_name} Final Examination`,
         tokenEmail: payload.email,
+        isSubmitted: Boolean(
+          (course.marks_config as any)?.secondMarkerSheet?.submitted ||
+          course.publishing_progress?.second_marking_submitted,
+        ),
       };
-    } catch {
+    } catch (err: any) {
+      if (err instanceof HttpException) {
+        throw err;
+      }
       throw new BadRequestException('Invalid or corrupted magic token.');
     }
   }
@@ -2040,9 +2082,26 @@ export class MarksService {
   async saveSecondMarkingDraft(courseId: number, dto: { marks: any; config?: any }) {
     const course = await this.prisma.course.findUnique({
       where: { course_id: courseId },
+      include: { publishing_progress: true },
     });
     if (!course) {
       throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    const staffSubmittedStatuses = [
+      'SUBMITTED_FINAL',
+      'SUBMITTED_TO_STAFF',
+      'RECEIVED_BY_STAFF',
+      'APPROVED',
+      'PUBLISHED',
+    ];
+    if (
+      staffSubmittedStatuses.includes(course.result_submission_status) ||
+      Boolean(course.publishing_progress?.final_submitted)
+    ) {
+      throw new BadRequestException(
+        'Evaluation period has ended. The marksheet has been submitted to Examination Division.',
+      );
     }
 
     let existingConfig: any = course.marks_config || {};
@@ -2054,8 +2113,12 @@ export class MarksService {
       }
     }
 
+    if (existingConfig.secondMarkerSheet?.submitted) {
+      throw new BadRequestException('2nd marking has already been submitted and is locked.');
+    }
+
     existingConfig.secondMarkerSheet = {
-      submitted: existingConfig.secondMarkerSheet?.submitted || false,
+      submitted: false,
       submittedAt: existingConfig.secondMarkerSheet?.submittedAt || null,
       marks: dto.marks || existingConfig.secondMarkerSheet?.marks || {},
     };
@@ -2080,11 +2143,26 @@ export class MarksService {
       include: {
         first_marker_lecturer: { include: { user: true } },
         second_marker_lecturer: { include: { user: true } },
+        publishing_progress: true,
       },
     });
 
     if (!course) {
       throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    const staffSubmittedStatuses = [
+      'SUBMITTED_FINAL',
+      'SUBMITTED_TO_STAFF',
+      'RECEIVED_BY_STAFF',
+      'APPROVED',
+      'PUBLISHED',
+    ];
+    if (
+      staffSubmittedStatuses.includes(course.result_submission_status) ||
+      Boolean(course.publishing_progress?.final_submitted)
+    ) {
+      throw new BadRequestException('Evaluation period has ended. Results cannot be submitted.');
     }
 
     let existingConfig: any = course.marks_config || {};

@@ -141,12 +141,12 @@ export default function MarksRegistryPage() {
   const [staffActionReason, setStaffActionReason] = useState<string>('');
   const [isActioningCA, setIsActioningCA] = useState<boolean>(false);
 
-  // Notifications dispatcher
+  // Notifications dispatcher (No duplicate toasts - strictly dispatches single toast)
   const setErrorMsg = (msg: string | null) => {
-    if (msg) toast.error(msg);
+    void msg;
   };
   const setSuccessMsg = (msg: string | null) => {
-    if (msg) toast.success(msg);
+    void msg;
   };
   const [isUploadingExcel, setIsUploadingExcel] = useState<boolean>(false);
   void isUploadingExcel;
@@ -807,14 +807,14 @@ export default function MarksRegistryPage() {
       for (const exam of exams) {
         const rawVal = draft[exam.exam_id] || '';
         if (rawVal === '') {
-          setErrorMsg(
+          toast.error(
             `Every student must have a score for all assessments before submission. Missing entry for Student Index ${student.index_number} under "${exam.exam_title}".`,
           );
           return null;
         }
         const val = parseFloat(rawVal);
         if (isNaN(val) || val < 0 || val > exam.total_marks) {
-          setErrorMsg(
+          toast.error(
             `Invalid score for student index ${student.index_number} on assessment "${exam.exam_title}". Must be between 0 and ${exam.total_marks}`,
           );
           return null;
@@ -1117,7 +1117,7 @@ export default function MarksRegistryPage() {
   const handleFirstMarkerExcelProcess = async (file: File) => {
     return new Promise<void>((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (evt) => {
+      reader.onload = async (evt) => {
         try {
           const bstr = evt.target?.result;
           const wb = XLSX.read(bstr, { type: 'binary' });
@@ -1217,6 +1217,19 @@ export default function MarksRegistryPage() {
           }
 
           setFirstMarkerMarks(new1st);
+          // Auto-save draft with excelUploaded flag
+          try {
+            await apiClient.post(`/marks/courses/${selectedCourseId}/config`, {
+              firstMarkerSheet: {
+                ...(gridData?.course?.marks_config?.firstMarkerSheet || {}),
+                excelUploaded: true,
+                marks: new1st,
+              },
+              questions: firstMarkerQuestions,
+            });
+          } catch {
+            // Silently fallback if background config save encounters error
+          }
           toast.success(`1st marker evaluation imported for ${matchedCount} student(s)!`);
           resolve();
         } catch (err: any) {
@@ -2005,9 +2018,6 @@ export default function MarksRegistryPage() {
                               toast.success(
                                 '1st marking submitted successfully! Email notification and Magic Link sent to 2nd marker.',
                               );
-                              setSuccessMsg(
-                                '1st marking submitted successfully! Email notification and Magic Link sent to 2nd marker.',
-                              );
                               refetchGrid();
                             } catch (err: any) {
                               const msg =
@@ -2015,7 +2025,6 @@ export default function MarksRegistryPage() {
                                 err.message ||
                                 'Failed to submit 1st marking.';
                               toast.error(msg);
-                              setErrorMsg(msg);
                             }
                           }}
                           disabled={
@@ -2207,7 +2216,7 @@ export default function MarksRegistryPage() {
                         </>
                       )}
 
-                      {gridSubpart === '2nd_marker' && (
+                      {gridSubpart === '2nd_marker' && isFirstMarkingSubmitted && (
                         <>
                           {![
                             'SUBMITTED_FINAL',
@@ -2249,9 +2258,6 @@ export default function MarksRegistryPage() {
                                   toast.success(
                                     '2nd marking reconciliation changes saved successfully!',
                                   );
-                                  setSuccessMsg(
-                                    '2nd marking reconciliation changes saved successfully!',
-                                  );
                                   refetchGrid();
                                 } catch (err: any) {
                                   const msg =
@@ -2259,7 +2265,6 @@ export default function MarksRegistryPage() {
                                     err.message ||
                                     'Failed to save reconciliation changes.';
                                   toast.error(msg);
-                                  setErrorMsg(msg);
                                 }
                               }}
                               className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl transition text-xs flex items-center gap-1.5 shadow-md cursor-pointer"
@@ -2563,8 +2568,24 @@ export default function MarksRegistryPage() {
                                   totalMax > 0 ? Math.round((total / totalMax) * 100 * 10) / 10 : 0;
                                 const isRepeat =
                                   student.registrations?.[0]?.attempt_type === 'REPEAT';
+                                const marksConfig =
+                                  typeof gridData?.course?.marks_config === 'string'
+                                    ? (() => {
+                                        try {
+                                          return JSON.parse(gridData.course.marks_config);
+                                        } catch {
+                                          return {};
+                                        }
+                                      })()
+                                    : gridData?.course?.marks_config || {};
+                                const hasUploadedExcel = Boolean(
+                                  (firstMarkerMarks && Object.keys(firstMarkerMarks).length > 0) ||
+                                  marksConfig?.firstMarkerSheet?.excelUploaded ||
+                                  marksConfig?.firstMarkerSheet?.marks,
+                                );
                                 const isLocked =
                                   isFirstMarkingSubmitted ||
+                                  hasUploadedExcel ||
                                   [
                                     'SUBMITTED_FINAL',
                                     'SUBMITTED_PROVISIONAL',
@@ -2605,8 +2626,10 @@ export default function MarksRegistryPage() {
                                           min="0"
                                           max={q.maxMarks || 100}
                                           disabled={isLocked}
+                                          readOnly={isLocked}
                                           value={rowMarks[q.key] ?? ''}
                                           onChange={(e) => {
+                                            if (isLocked) return;
                                             const num = Math.max(
                                               0,
                                               parseFloat(e.target.value) || 0,
@@ -2619,7 +2642,7 @@ export default function MarksRegistryPage() {
                                               },
                                             }));
                                           }}
-                                          className="w-16 px-2 py-1 bg-secondary/30 border border-border/80 rounded text-center text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                                          className="w-16 px-2 py-1 bg-secondary/30 border border-border/80 rounded text-center text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-75 disabled:cursor-not-allowed"
                                         />
                                       </td>
                                     ))}
