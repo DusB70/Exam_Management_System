@@ -342,14 +342,38 @@ export default function MarksRegistryPage() {
       }
 
       const is1stSub = Boolean(
-        subConfig.firstMarkerSheet?.submitted ||
-        gridData.course?.publishing_progress?.first_marking_submitted,
+        subConfig.firstMarkerSheet?.submitted === true ||
+        subConfig.firstMarkerSheet?.submitted === 'true' ||
+        subConfig.firstMarkerSheet?.submittedAt ||
+        gridData.course?.publishing_progress?.first_marking_submitted ||
+        [
+          'SUBMITTED_FINAL',
+          'SUBMITTED_PROVISIONAL',
+          'SUBMITTED',
+          'APPROVED',
+          'PUBLISHED',
+          'PUBLISHED_PROVISIONAL',
+          'SUBMITTED_TO_STAFF',
+          'RECEIVED_BY_STAFF',
+        ].includes(gridData.course?.result_submission_status),
       );
       setIsFirstMarkingSubmitted(is1stSub);
 
       const is2ndSub = Boolean(
-        subConfig.secondMarkerSheet?.submitted ||
-        gridData.course?.publishing_progress?.second_marking_submitted,
+        subConfig.secondMarkerSheet?.submitted === true ||
+        subConfig.secondMarkerSheet?.submitted === 'true' ||
+        subConfig.secondMarkerSheet?.submittedAt ||
+        gridData.course?.publishing_progress?.second_marking_submitted ||
+        [
+          'SUBMITTED_FINAL',
+          'SUBMITTED_PROVISIONAL',
+          'SUBMITTED',
+          'APPROVED',
+          'PUBLISHED',
+          'PUBLISHED_PROVISIONAL',
+          'SUBMITTED_TO_STAFF',
+          'RECEIVED_BY_STAFF',
+        ].includes(gridData.course?.result_submission_status),
       );
       setIsSecondMarkingSubmitted(is2ndSub);
 

@@ -827,6 +827,9 @@ export class MarksService {
   async getCourseGridData(courseId: number, lecturerUserId: number, isLecturer: boolean) {
     const course = await this.prisma.course.findUnique({
       where: { course_id: courseId },
+      include: {
+        publishing_progress: true,
+      },
     });
     if (!course) {
       throw new NotFoundException(`Course with ID ${courseId} not found`);
