@@ -38,6 +38,35 @@ export default function SecondMarkingPortalPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const isInitialLoad = React.useRef(true);
+
+  // Auto-save 2nd marker draft changes automatically
+  useEffect(() => {
+    if (isLoading || isSubmitted || !courseData) return;
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsAutoSaving(true);
+        await apiClient.post(`/marks/second-marking/save-draft/${courseData.course_id}`, {
+          marks: secondMarks,
+          config: { questions },
+        });
+        setLastSaved(new Date());
+      } catch (e) {
+        console.warn('Auto-save failed:', e);
+      } finally {
+        setIsAutoSaving(false);
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [secondMarks, questions, courseData, isSubmitted, isLoading]);
 
   useEffect(() => {
     if (!token) {
@@ -328,12 +357,22 @@ export default function SecondMarkingPortalPage() {
         {/* Top Header Card */}
         <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-xl">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="px-3 py-1 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold rounded-lg uppercase tracking-wider">
                 2nd Marker Portal
               </span>
               {tokenEmail && (
                 <span className="text-xs text-slate-400 font-mono">({tokenEmail})</span>
+              )}
+              {isAutoSaving && (
+                <span className="text-[11px] font-mono text-amber-400 flex items-center gap-1 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Auto-saving...
+                </span>
+              )}
+              {!isAutoSaving && lastSaved && (
+                <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2.5 py-0.5 rounded-lg border border-emerald-500/20">
+                  <Check className="h-3 w-3" /> All changes auto-saved
+                </span>
               )}
             </div>
             <h1 className="text-2xl font-bold text-slate-100 mt-2">

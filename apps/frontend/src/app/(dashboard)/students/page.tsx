@@ -1859,97 +1859,14 @@ export default function StudentDirectoryPage() {
     ],
   };
 
-  const dummyEnrolledStudents = [
-    {
-      student_id: 1001,
-      index_number: 'S2021001',
-      registration_number: '2021/CS/001',
-      user: { full_name: 'Kavindu Perera', email: 'kavindu.p@univ.ac.lk' },
-      batch: '21/22',
-      academic_year: 2021,
-      ca_marks: '88.5',
-      final_grade: 'A',
-    },
-    {
-      student_id: 1002,
-      index_number: 'S2021002',
-      registration_number: '2021/CS/002',
-      user: { full_name: 'Nipuni Fernando', email: 'nipuni.f@univ.ac.lk' },
-      batch: '21/22',
-      academic_year: 2021,
-      ca_marks: '76.0',
-      final_grade: 'B+',
-    },
-    {
-      student_id: 1003,
-      index_number: 'S2021003',
-      registration_number: '2021/CS/003',
-      user: { full_name: 'Tharindu Silva', email: 'tharindu.s@univ.ac.lk' },
-      batch: '21/22',
-      academic_year: 2021,
-      ca_marks: '92.0',
-      final_grade: 'A+',
-    },
-    {
-      student_id: 1004,
-      index_number: 'S2020045',
-      registration_number: '2020/CS/045',
-      user: { full_name: 'Dinusha Jayasinghe', email: 'dinusha.j@univ.ac.lk' },
-      batch: '20/21',
-      academic_year: 2020,
-      ca_marks: '65.5',
-      final_grade: 'B-',
-    },
-    {
-      student_id: 1005,
-      index_number: 'S2021012',
-      registration_number: '2021/CS/012',
-      user: { full_name: 'Amaya De Silva', email: 'amaya.d@univ.ac.lk' },
-      batch: '21/22',
-      academic_year: 2021,
-      ca_marks: '81.0',
-      final_grade: 'A-',
-    },
-    {
-      student_id: 1006,
-      index_number: 'S2020088',
-      registration_number: '2020/CS/088',
-      user: { full_name: 'Rohan Wickramasinghe', email: 'rohan.w@univ.ac.lk' },
-      batch: '20/21',
-      academic_year: 2020,
-      ca_marks: '54.0',
-      final_grade: 'C+',
-    },
-    {
-      student_id: 1007,
-      index_number: 'S2021054',
-      registration_number: '2021/CS/054',
-      user: { full_name: 'Sanduni Ratnayake', email: 'sanduni.r@univ.ac.lk' },
-      batch: '21/22',
-      academic_year: 2021,
-      ca_marks: '78.5',
-      final_grade: 'B+',
-    },
-    {
-      student_id: 1008,
-      index_number: 'S2021099',
-      registration_number: '2021/CS/099',
-      user: { full_name: 'Pathum Nissanka', email: 'pathum.n@univ.ac.lk' },
-      batch: '21/22',
-      academic_year: 2021,
-      ca_marks: '84.0',
-      final_grade: 'A-',
-    },
-  ];
-
   // Overview distribution data (real API or dummy)
   const overviewDistribution =
     studentsOverviewData?.courseDistribution && studentsOverviewData.courseDistribution.length > 0
       ? studentsOverviewData.courseDistribution
       : dummyOverview.courseDistribution;
 
-  // Active enrolled students data (real API or dummy)
-  const baseStudents = enrolledStudents.length > 0 ? enrolledStudents : dummyEnrolledStudents;
+  // Active enrolled students data (real API only when course is selected)
+  const baseStudents = selectedLecturerCourseId ? enrolledStudents : STABLE_EMPTY_ARRAY;
 
   // Filter student list by Search Query and Batch Filter
   const filteredLecturerStudents = baseStudents.filter((student: any) => {
@@ -2258,19 +2175,11 @@ export default function StudentDirectoryPage() {
                         filteredLecturerStudents
                           .slice(0, visibleStudentsLimit)
                           .map((student: any, idx: number) => {
-                            const gradeObj =
-                              student.grades && student.grades.length > 0
-                                ? student.grades[0]
-                                : null;
-                            const caMarks =
-                              student.ca_marks ||
-                              (gradeObj
-                                ? Number(gradeObj.continuous_assessment_marks).toFixed(1)
-                                : '82.5');
-                            const finalGrade =
-                              student.final_grade || (gradeObj ? gradeObj.grade : 'A');
+                            const caMarks = student.ca_marks ? `${student.ca_marks}%` : null;
+                            const finalGrade = student.final_grade || null;
+                            const isFinalPrepared = Boolean(student.is_final_prepared);
                             const batchDisplay =
-                              student.batch || formatBatchDisplay(student) || '21/22';
+                              student.batch || formatBatchDisplay(student) || 'N/A';
 
                             return (
                               <tr
@@ -2295,13 +2204,26 @@ export default function StudentDirectoryPage() {
                                     {batchDisplay}
                                   </span>
                                 </td>
-                                <td className="px-5 py-3.5 text-center font-mono font-bold text-primary">
-                                  {caMarks}
+                                <td className="px-5 py-3.5 text-center font-mono font-bold">
+                                  {caMarks ? (
+                                    <span className="text-primary font-bold">{caMarks}</span>
+                                  ) : (
+                                    <span className="text-muted-foreground/40 font-mono">—</span>
+                                  )}
                                 </td>
                                 <td className="px-5 py-3.5 text-center">
-                                  <span className="px-2.5 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded-md font-bold text-xs">
-                                    {finalGrade}
-                                  </span>
+                                  {isFinalPrepared && finalGrade ? (
+                                    <span className="px-2.5 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded-md font-bold text-xs">
+                                      {finalGrade}
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="text-muted-foreground/40 font-mono"
+                                      title="Final marksheet not prepared yet"
+                                    >
+                                      —
+                                    </span>
+                                  )}
                                 </td>
                               </tr>
                             );

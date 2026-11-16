@@ -134,7 +134,38 @@ export class MarksService {
       throw new NotFoundException(`Course with ID ${courseId} not found`);
     }
 
-    return this.prisma.student.findMany({
+    const isFinalPrepared = [
+      'SUBMITTED_FINAL',
+      'SUBMITTED_PROVISIONAL',
+      'SUBMITTED',
+      'APPROVED',
+      'PUBLISHED',
+      'PUBLISHED_PROVISIONAL',
+    ].includes(course.result_submission_status);
+
+    let cfg: any = course.marks_config || {};
+    if (typeof cfg === 'string') {
+      try {
+        cfg = JSON.parse(cfg);
+      } catch {
+        cfg = {};
+      }
+    }
+    const caMarksConfig = cfg.caMarks || {};
+
+    const caExams = await this.prisma.exam.findMany({
+      where: { course_id: courseId, exam_type: 'CA' },
+      select: { exam_id: true, total_marks: true },
+    });
+    const caExamIds = caExams.map((e) => e.exam_id);
+    const caExamMarks =
+      caExamIds.length > 0
+        ? await this.prisma.examMark.findMany({
+            where: { exam_id: { in: caExamIds } },
+          })
+        : [];
+
+    const students = await this.prisma.student.findMany({
       where: {
         registrations: {
           some: { course_id: courseId },
@@ -175,6 +206,39 @@ export class MarksService {
         },
       },
       orderBy: { registration_number: 'asc' },
+    });
+
+    return students.map((student) => {
+      let caMarksVal: number | null = null;
+      if (
+        student.course_grades &&
+        student.course_grades.length > 0 &&
+        student.course_grades[0].continuous_assessment_marks !== null
+      ) {
+        caMarksVal = Number(student.course_grades[0].continuous_assessment_marks);
+      } else {
+        const studentCaMarks = caExamMarks.filter((m) => m.student_id === student.student_id);
+        if (studentCaMarks.length > 0) {
+          caMarksVal = studentCaMarks.reduce((sum, m) => sum + Number(m.marks_obtained || 0), 0);
+        } else if (caMarksConfig[student.student_id] !== undefined) {
+          caMarksVal = Number(caMarksConfig[student.student_id]);
+        }
+      }
+
+      const finalGradeVal =
+        isFinalPrepared &&
+        student.course_grades &&
+        student.course_grades.length > 0 &&
+        student.course_grades[0].grade
+          ? student.course_grades[0].grade
+          : null;
+
+      return {
+        ...student,
+        ca_marks: caMarksVal !== null && !isNaN(caMarksVal) ? caMarksVal.toFixed(1) : null,
+        final_grade: finalGradeVal,
+        is_final_prepared: isFinalPrepared,
+      };
     });
   }
 
@@ -750,10 +814,46 @@ export class MarksService {
       orderBy: { index_number: 'asc' },
     });
 
-    const exams = await this.prisma.exam.findMany({
+    let exams = await this.prisma.exam.findMany({
       where: { course_id: courseId },
       orderBy: { exam_id: 'asc' },
     });
+
+    // Default End Semester Examination: Every course has a default FINAL exam with 100% weight
+    if (exams.length === 0) {
+      const defaultExam = await this.prisma.exam.create({
+        data: {
+          course_id: courseId,
+          exam_type: 'FINAL',
+          exam_title: 'End Semester Examination',
+          total_marks: 100,
+          exam_date: new Date(),
+          start_time: new Date(1970, 0, 1, 9, 0, 0),
+          end_time: new Date(1970, 0, 1, 12, 0, 0),
+        },
+      });
+      exams = [defaultExam];
+
+      let currentConfig: any = course.marks_config || {};
+      if (typeof currentConfig === 'string') {
+        try {
+          currentConfig = JSON.parse(currentConfig);
+        } catch {
+          currentConfig = {};
+        }
+      }
+      currentConfig.weights = { ...(currentConfig.weights || {}), [defaultExam.exam_id]: 100 };
+      currentConfig.contributes = {
+        ...(currentConfig.contributes || {}),
+        [defaultExam.exam_id]: true,
+      };
+
+      await this.prisma.course.update({
+        where: { course_id: courseId },
+        data: { marks_config: currentConfig },
+      });
+      (course as any).marks_config = currentConfig;
+    }
 
     const examIds = exams.map((e) => e.exam_id);
     const marks = await this.prisma.examMark.findMany({
@@ -772,6 +872,28 @@ export class MarksService {
         },
       },
     });
+
+    // Academic Integrity Safeguard: Never disclose 2nd marker draft evaluations to 1st marker before official submission
+    if (isLecturer && course) {
+      let cfg: any = course.marks_config || {};
+      if (typeof cfg === 'string') {
+        try {
+          cfg = JSON.parse(cfg);
+        } catch {
+          cfg = {};
+        }
+      }
+      if (cfg.secondMarkerSheet && !cfg.secondMarkerSheet.submitted) {
+        (course as any).marks_config = {
+          ...cfg,
+          secondMarkerSheet: {
+            submitted: false,
+            submittedAt: null,
+            marks: {},
+          },
+        };
+      }
+    }
 
     return {
       course,
@@ -852,12 +974,38 @@ export class MarksService {
 
     if (data.weight !== undefined || data.contributes !== undefined) {
       const course = await this.prisma.course.findUnique({ where: { course_id: courseId } });
-      const currentConfig: any = course?.marks_config || {};
+      let currentConfig: any = course?.marks_config || {};
+      if (typeof currentConfig === 'string') {
+        try {
+          currentConfig = JSON.parse(currentConfig);
+        } catch {
+          currentConfig = {};
+        }
+      }
       const weights = currentConfig.weights || {};
       const contributes = currentConfig.contributes || {};
 
       if (data.weight !== undefined) weights[exam.exam_id] = data.weight;
       if (data.contributes !== undefined) contributes[exam.exam_id] = data.contributes;
+
+      // Automatically reduce End Semester Examination weight according to added CA weights!
+      const allCourseExams = await this.prisma.exam.findMany({ where: { course_id: courseId } });
+      const caExams = allCourseExams.filter((e) => e.exam_type?.toUpperCase() === 'CA');
+      const finalExams = allCourseExams.filter((e) => e.exam_type?.toUpperCase() === 'FINAL');
+
+      let totalCaWeight = 0;
+      caExams.forEach((ce) => {
+        const isContrib = contributes[ce.exam_id] !== undefined ? !!contributes[ce.exam_id] : true;
+        if (isContrib) {
+          totalCaWeight += Number(weights[ce.exam_id] || 0);
+        }
+      });
+
+      const remainingFinalWeight = Math.max(0, parseFloat((100 - totalCaWeight).toFixed(1)));
+      if (finalExams.length > 0) {
+        weights[finalExams[0].exam_id] = remainingFinalWeight;
+        contributes[finalExams[0].exam_id] = true;
+      }
 
       await this.prisma.course.update({
         where: { course_id: courseId },
@@ -914,9 +1062,54 @@ export class MarksService {
       }
     }
 
-    return this.prisma.exam.delete({
+    const deleted = await this.prisma.exam.delete({
       where: { exam_id: examId },
     });
+
+    // Rebalance End Semester Examination weight after deleting an assessment
+    const course = await this.prisma.course.findUnique({ where: { course_id: courseId } });
+    let currentConfig: any = course?.marks_config || {};
+    if (typeof currentConfig === 'string') {
+      try {
+        currentConfig = JSON.parse(currentConfig);
+      } catch {
+        currentConfig = {};
+      }
+    }
+    const weights = currentConfig.weights || {};
+    const contributes = currentConfig.contributes || {};
+    delete weights[examId];
+    delete contributes[examId];
+
+    const allRemainingExams = await this.prisma.exam.findMany({ where: { course_id: courseId } });
+    const caExams = allRemainingExams.filter((e) => e.exam_type?.toUpperCase() === 'CA');
+    const finalExams = allRemainingExams.filter((e) => e.exam_type?.toUpperCase() === 'FINAL');
+
+    let totalCaWeight = 0;
+    caExams.forEach((ce) => {
+      const isContrib = contributes[ce.exam_id] !== undefined ? !!contributes[ce.exam_id] : true;
+      if (isContrib) {
+        totalCaWeight += Number(weights[ce.exam_id] || 0);
+      }
+    });
+
+    const remainingFinalWeight = Math.max(0, parseFloat((100 - totalCaWeight).toFixed(1)));
+    if (finalExams.length > 0) {
+      weights[finalExams[0].exam_id] = remainingFinalWeight;
+    }
+
+    await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        marks_config: {
+          ...currentConfig,
+          weights,
+          contributes,
+        },
+      },
+    });
+
+    return deleted;
   }
 
   // 6. Submit Grid of Marks
@@ -982,6 +1175,23 @@ export class MarksService {
         }
       }
     });
+
+    if ((data as any).caMarks) {
+      const course = await this.prisma.course.findUnique({ where: { course_id: courseId } });
+      let currentConfig: any = course?.marks_config || {};
+      if (typeof currentConfig === 'string') {
+        try {
+          currentConfig = JSON.parse(currentConfig);
+        } catch {
+          currentConfig = {};
+        }
+      }
+      currentConfig.caMarks = { ...(currentConfig.caMarks || {}), ...(data as any).caMarks };
+      await this.prisma.course.update({
+        where: { course_id: courseId },
+        data: { marks_config: currentConfig },
+      });
+    }
 
     if (data.submissionType) {
       let dbStatus = '';
@@ -1772,7 +1982,44 @@ export class MarksService {
     };
   }
 
-  async submitSecondMarking(courseId: number, dto: { marks: any; config?: any }) {
+  async saveSecondMarkingDraft(courseId: number, dto: { marks: any; config?: any }) {
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+    });
+    if (!course) {
+      throw new NotFoundException(`Course with ID ${courseId} not found`);
+    }
+
+    let existingConfig: any = course.marks_config || {};
+    if (typeof existingConfig === 'string') {
+      try {
+        existingConfig = JSON.parse(existingConfig);
+      } catch {
+        existingConfig = {};
+      }
+    }
+
+    existingConfig.secondMarkerSheet = {
+      submitted: existingConfig.secondMarkerSheet?.submitted || false,
+      submittedAt: existingConfig.secondMarkerSheet?.submittedAt || null,
+      marks: dto.marks || existingConfig.secondMarkerSheet?.marks || {},
+    };
+
+    if (dto.config) {
+      existingConfig = { ...existingConfig, ...dto.config };
+    }
+
+    await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        marks_config: existingConfig,
+      },
+    });
+
+    return { success: true };
+  }
+
+  async submitSecondMarking(courseId: number, dto: { marks: any; config?: any; decisions?: any }) {
     const course = await this.prisma.course.findUnique({
       where: { course_id: courseId },
       include: {
@@ -1802,6 +2049,10 @@ export class MarksService {
 
     if (dto.config) {
       existingConfig = { ...existingConfig, ...dto.config };
+    }
+
+    if (dto.decisions) {
+      existingConfig.reconciliation = dto.decisions;
     }
 
     await this.prisma.course.update({

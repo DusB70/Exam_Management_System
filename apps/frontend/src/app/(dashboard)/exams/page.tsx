@@ -2527,9 +2527,21 @@ export default function ExamsManagementPage() {
                                         {/* 1ST MARKING SUBMITTED */}
                                         <td className="py-3 px-2 border-r border-border/40 text-center">
                                           {item.first_marking.submitted ? (
-                                            <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
-                                              <CheckCircle2 className="h-4 w-4" />
-                                            </span>
+                                            <div className="flex flex-col items-center justify-center gap-0.5">
+                                              <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
+                                                <CheckCircle2 className="h-4 w-4" />
+                                              </span>
+                                              {item.first_marking.submitted_date && (
+                                                <span className="text-[9px] font-mono text-emerald-400 font-semibold whitespace-nowrap">
+                                                  {new Date(
+                                                    item.first_marking.submitted_date,
+                                                  ).toLocaleDateString(undefined, {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                  })}
+                                                </span>
+                                              )}
+                                            </div>
                                           ) : (
                                             <span className="text-muted-foreground/40 font-mono">
                                               —
@@ -2586,9 +2598,21 @@ export default function ExamsManagementPage() {
                                         {/* 2ND MARKING SUBMITTED */}
                                         <td className="py-3 px-2 border-r border-border/40 text-center">
                                           {item.second_marking.submitted ? (
-                                            <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
-                                              <CheckCircle2 className="h-4 w-4" />
-                                            </span>
+                                            <div className="flex flex-col items-center justify-center gap-0.5">
+                                              <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
+                                                <CheckCircle2 className="h-4 w-4" />
+                                              </span>
+                                              {item.second_marking.submitted_date && (
+                                                <span className="text-[9px] font-mono text-emerald-400 font-semibold whitespace-nowrap">
+                                                  {new Date(
+                                                    item.second_marking.submitted_date,
+                                                  ).toLocaleDateString(undefined, {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                  })}
+                                                </span>
+                                              )}
+                                            </div>
                                           ) : (
                                             <span className="text-muted-foreground/40 font-mono">
                                               —

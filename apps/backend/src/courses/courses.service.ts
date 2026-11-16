@@ -353,6 +353,29 @@ export class CoursesService {
         });
       }
 
+      // Create default End Semester Examination assessment with 100% weight
+      const defaultExam = await tx.exam.create({
+        data: {
+          course_id: newCourse.course_id,
+          exam_type: 'FINAL',
+          exam_title: 'End Semester Examination',
+          total_marks: 100,
+          exam_date: new Date(),
+          start_time: new Date(1970, 0, 1, 9, 0, 0),
+          end_time: new Date(1970, 0, 1, 12, 0, 0),
+        },
+      });
+
+      await tx.course.update({
+        where: { course_id: newCourse.course_id },
+        data: {
+          marks_config: {
+            weights: { [defaultExam.exam_id]: 100 },
+            contributes: { [defaultExam.exam_id]: true },
+          },
+        },
+      });
+
       return newCourse;
     });
 

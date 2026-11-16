@@ -550,12 +550,27 @@ export class MarksController {
     };
   }
 
+  @Post('second-marking/save-draft/:courseId')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async saveSecondMarkingDraft(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Body() body: { marks: any; config?: any },
+  ) {
+    const data = await this.marksService.saveSecondMarkingDraft(courseId, body);
+    return {
+      success: true,
+      message: 'Draft auto-saved successfully',
+      data,
+    };
+  }
+
   @Post('second-marking/submit/:courseId')
   @Public()
   @HttpCode(HttpStatus.OK)
   async submitSecondMarking(
     @Param('courseId', ParseIntPipe) courseId: number,
-    @Body() body: { marks: any; config?: any },
+    @Body() body: { marks: any; config?: any; decisions?: any },
   ) {
     const data = await this.marksService.submitSecondMarking(courseId, body);
     return {

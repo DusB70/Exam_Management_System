@@ -1218,11 +1218,13 @@ export class ExamsService {
             collected: prog?.first_marking_collected || false,
             submitted: prog?.first_marking_submitted || false,
             returned: prog?.first_marking_returned || false,
+            submitted_date: cfg.firstMarkerSheet?.submittedAt || null,
           },
           second_marking: {
             collected: prog?.second_marking_collected || false,
             submitted: prog?.second_marking_submitted || false,
             returned: prog?.second_marking_returned || false,
+            submitted_date: cfg.secondMarkerSheet?.submittedAt || null,
           },
           final_submission: {
             submitted: prog?.final_submitted || false,
