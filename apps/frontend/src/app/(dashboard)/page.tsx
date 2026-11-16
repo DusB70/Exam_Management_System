@@ -1274,7 +1274,6 @@ export default function DashboardOverview() {
         (sum: number, reg: any) => sum + parseFloat(reg.course.credit_value),
         0,
       );
-      const maxCredits = activePeriod?.max_credits ?? 22.0;
 
       const studentCards = [
         {
@@ -1293,7 +1292,7 @@ export default function DashboardOverview() {
         {
           title: 'Registered Workload',
           value: `${registeredCredits.toFixed(1)} Credits`,
-          desc: `Total Workload Load (${maxCredits.toFixed(1)} Max)`,
+          desc: 'Total Workload Enrolled',
           icon: BookOpen,
           color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
         },
@@ -1363,7 +1362,7 @@ export default function DashboardOverview() {
                 </div>
                 {activePeriod && (
                   <span className="px-3 py-1.5 bg-primary/10 text-primary border border-primary/20 rounded-xl text-xs font-bold font-mono">
-                    Semester Limit: {maxCredits.toFixed(1)} Credits Max
+                    Semester {activePeriod.semester} Active
                   </span>
                 )}
               </div>

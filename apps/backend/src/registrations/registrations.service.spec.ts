@@ -17,9 +17,19 @@ describe('RegistrationsService', () => {
       findMany: jest.fn(),
       findUnique: jest.fn(),
     },
+    courseDegree: {
+      findUnique: jest.fn(),
+    },
+    courseSpecialization: {
+      findMany: jest.fn(),
+    },
+    degreeSemesterLimit: {
+      findFirst: jest.fn(),
+    },
     courseRegistration: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
       delete: jest.fn(),
     },
@@ -125,35 +135,45 @@ describe('RegistrationsService', () => {
       );
     });
 
-    it('should throw BadRequestException if credits limit of 22.0 is exceeded', async () => {
+    it('should throw BadRequestException if compulsory courses are not included in registration', async () => {
       mockPrismaService.student.findUnique.mockResolvedValue({
         student_id: 1,
-        department_id: 2,
+        degree_id: 2,
         academic_year: 2026,
-        semester: 1,
+        semester: '1',
       });
       mockPrismaService.registrationPeriod.findFirst.mockResolvedValue({
         period_id: 5,
         status: 'OPEN',
+        semester: '1',
       });
 
-      // Student already registered for 20 credits
-      mockPrismaService.courseRegistration.findMany.mockResolvedValue([
-        { course: { credit_value: 20 } },
-      ]);
-
-      // Student tries to register for another 3 credit course
-      mockPrismaService.course.findMany.mockResolvedValue([
+      jest.spyOn(service, 'getEligibleCourses').mockResolvedValue([
         {
           course_id: 10,
-          department_id: 2,
-          semester: 1,
-          academic_year: 2026,
+          course_code: 'CS-101',
+          semester: '1',
+          credit_value: 3,
+          is_compulsory: true,
+        } as any,
+      ]);
+
+      mockPrismaService.course.findMany.mockResolvedValue([
+        {
+          course_id: 11,
+          course_code: 'CS-102',
+          semester: '1',
           credit_value: 3,
         },
       ]);
+      mockPrismaService.courseDegree.findUnique.mockResolvedValue({
+        course_id: 11,
+        degree_id: 2,
+        status: 'OPTIONAL',
+      });
+      mockPrismaService.courseSpecialization.findMany.mockResolvedValue([]);
 
-      await expect(service.registerCourses(1, { courseIds: [10] })).rejects.toThrow(
+      await expect(service.registerCourses(1, { courseIds: [11] })).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -236,9 +256,10 @@ describe('RegistrationsService', () => {
       await expect(service.dropCourse(1, 99)).rejects.toThrow(BadRequestException);
     });
 
-    it('should drop course successfully and log audit', async () => {
+    it('should throw BadRequestException if attempting to drop a compulsory course', async () => {
       mockPrismaService.student.findUnique.mockResolvedValue({
         student_id: 1,
+        degree_id: 2,
         academic_year: 2026,
         semester: 1,
       });
@@ -246,6 +267,35 @@ describe('RegistrationsService', () => {
         registration_id: 99,
         student_id: 1,
         course_id: 10,
+        course: {
+          degrees: [{ degree_id: 2, status: 'COMPULSORY' }],
+          course_specializations: [],
+        },
+      };
+      mockPrismaService.courseRegistration.findUnique.mockResolvedValue(mockReg);
+      mockPrismaService.registrationPeriod.findFirst.mockResolvedValue({
+        period_id: 5,
+        status: 'OPEN',
+      });
+
+      await expect(service.dropCourse(1, 99)).rejects.toThrow(BadRequestException);
+    });
+
+    it('should drop course successfully and log audit', async () => {
+      mockPrismaService.student.findUnique.mockResolvedValue({
+        student_id: 1,
+        degree_id: 2,
+        academic_year: 2026,
+        semester: 1,
+      });
+      const mockReg = {
+        registration_id: 99,
+        student_id: 1,
+        course_id: 10,
+        course: {
+          degrees: [{ degree_id: 2, status: 'OPTIONAL' }],
+          course_specializations: [],
+        },
       };
       mockPrismaService.courseRegistration.findUnique.mockResolvedValue(mockReg);
       mockPrismaService.registrationPeriod.findFirst.mockResolvedValue({
