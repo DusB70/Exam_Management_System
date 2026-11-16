@@ -9,11 +9,11 @@ import { useProgressiveList } from '../../../hooks/use-progressive-load';
 import { ProgressiveLoadFooter } from '../../../components/ui/progressive-load-footer';
 import { useBulkSelection, runBulkDelete } from '../../../hooks/use-bulk-selection';
 import { BulkDeleteButton, SelectAllCheckbox } from '../../../components/ui/bulk-delete-button';
+import { ACADEMIC_BATCH_OPTIONS } from '../../../lib/academic-batches';
 import {
   Plus,
   Edit2,
   Trash2,
-  Search,
   Clock,
   Building2,
   GraduationCap,
@@ -36,6 +36,7 @@ export default function AcademicStructurePage() {
   // Bulk Specialization Assignment State
   const [bulkDegreeId, setBulkDegreeId] = useState<number>(0);
   const [bulkSpecId, setBulkSpecId] = useState<number>(0);
+  const [bulkSpecModalOpen, setBulkSpecModalOpen] = useState(false);
   const [bulkBatch, setBulkBatch] = useState<string>('');
   const [bulkStudents, setBulkStudents] = useState<any[]>([]);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
@@ -77,7 +78,6 @@ export default function AcademicStructurePage() {
   const [limitSemester, setLimitSemester] = useState<string>('Semester 1');
 
   // Bulk selection state for structure cards and semester limits
-  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isBulkDeletingLimits, setIsBulkDeletingLimits] = useState(false);
   const structureSelection = useBulkSelection<number>();
   const limitsSelection = useBulkSelection<number>();
@@ -275,57 +275,6 @@ export default function AcademicStructurePage() {
       toast.error(msg);
     } finally {
       setLimitsLoading(false);
-    }
-  };
-
-  const handleBulkDeleteStructure = async () => {
-    if (activeTab === 'bulk-specialization' || structureSelection.selectedCount === 0) {
-      return;
-    }
-    const target =
-      activeTab === 'departments'
-        ? 'department'
-        : activeTab === 'degrees'
-          ? 'degree'
-          : 'specialization';
-    const endpoint =
-      target === 'department'
-        ? '/departments'
-        : target === 'degree'
-          ? '/degrees'
-          : '/specializations';
-
-    const confirmed = await confirm({
-      title: `Delete Selected ${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}?`,
-      message: `Are you sure you want to delete ${structureSelection.selectedCount} selected ${target}(s)? Items referenced by existing records cannot be deleted.`,
-      confirmText: `Delete (${structureSelection.selectedCount})`,
-      variant: 'destructive',
-    });
-    if (!confirmed) return;
-
-    setIsBulkDeleting(true);
-    try {
-      const deletedIds: number[] = [];
-      const { deletedCount, failedCount, firstErrorMessage } = await runBulkDelete(
-        structureSelection.selectedIds,
-        async (id) => {
-          await apiClient.delete(`${endpoint}/${id}`);
-          deletedIds.push(id);
-        },
-      );
-      if (deletedCount > 0) {
-        toast.success(`${deletedCount} ${target}(s) deleted successfully.`);
-        structureSelection.removeFromSelection(deletedIds);
-        queryClient.invalidateQueries({ queryKey: [activeTab] });
-      }
-      if (failedCount > 0) {
-        toast.error(
-          `${failedCount} ${target}(s) could not be deleted${firstErrorMessage ? `: ${firstErrorMessage}` : '.'}`,
-        );
-      }
-      if (failedCount === 0) structureSelection.clear();
-    } finally {
-      setIsBulkDeleting(false);
     }
   };
 
@@ -616,56 +565,6 @@ export default function AcademicStructurePage() {
           <Users className="h-4 w-4" />
           Bulk Assign Specialization
         </button>
-      </div>
-
-      {/* Filter & Search Bar */}
-      <div className="bg-card border border-border/80 p-5 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder={`Search ${activeTab}...`}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-        {activeTab !== 'bulk-specialization' &&
-          (() => {
-            const visibleIds =
-              activeTab === 'departments'
-                ? visibleDepartments.map((d: any) => d.department_id)
-                : activeTab === 'degrees'
-                  ? visibleDegrees.map((d: any) => d.degree_id)
-                  : visibleSpecializations.map((s: any) => s.specialization_id);
-            return (
-              <div className="flex items-center gap-3">
-                <label className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground cursor-pointer select-none">
-                  <SelectAllCheckbox
-                    checked={structureSelection.isAllSelected(visibleIds)}
-                    indeterminate={structureSelection.isIndeterminate(visibleIds)}
-                    disabled={visibleIds.length === 0}
-                    onChange={() => structureSelection.toggleAll(visibleIds)}
-                    ariaLabel={`Select all visible ${activeTab}`}
-                  />
-                  <span>Select All</span>
-                </label>
-                <BulkDeleteButton
-                  count={structureSelection.selectedCount}
-                  isDeleting={isBulkDeleting}
-                  onClick={handleBulkDeleteStructure}
-                />
-              </div>
-            );
-          })()}
       </div>
 
       {/* Lists & Grids */}
@@ -1009,37 +908,21 @@ export default function AcademicStructurePage() {
 
               <div>
                 <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                  2. Select Target Specialization Area
-                </label>
-                <select
-                  value={bulkSpecId}
-                  onChange={(e) => setBulkSpecId(Number(e.target.value))}
-                  disabled={!bulkDegreeId}
-                  className="w-full px-3.5 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 font-medium disabled:opacity-50"
-                >
-                  <option value={0}>Select Specialization...</option>
-                  {specializations
-                    .filter((s: any) => s.degree_id === bulkDegreeId)
-                    .map((spec: any) => (
-                      <option key={spec.specialization_id} value={spec.specialization_id}>
-                        {spec.specialization_name} ({spec.specialization_code})
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                  3. Batch / Academic Year (Optional)
+                  2. Batch / Academic Year (Optional)
                 </label>
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="e.g. 2024"
+                  <select
                     value={bulkBatch}
                     onChange={(e) => setBulkBatch(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60"
-                  />
+                    className="w-full px-3.5 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 font-medium"
+                  >
+                    <option value="">All enrollment years</option>
+                    {ACADEMIC_BATCH_OPTIONS.map((batch) => (
+                      <option key={batch} value={batch}>
+                        {batch}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     onClick={async () => {
                       if (!bulkDegreeId) return;
@@ -1089,61 +972,35 @@ export default function AcademicStructurePage() {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => {
-                      if (selectedStudentIds.length === bulkStudents.length) {
+                      const assignableStudentIds = bulkStudents
+                        .filter((student: any) => !student.specialization_id)
+                        .map((student: any) => student.student_id);
+                      if (selectedStudentIds.length === assignableStudentIds.length) {
                         setSelectedStudentIds([]);
                       } else {
-                        setSelectedStudentIds(bulkStudents.map((s) => s.student_id));
+                        setSelectedStudentIds(assignableStudentIds);
                       }
                     }}
                     className="px-4 py-2.5 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs flex items-center gap-2 border border-border/80 cursor-pointer shadow-sm"
                   >
-                    {selectedStudentIds.length === bulkStudents.length
+                    {selectedStudentIds.length ===
+                    bulkStudents.filter((student: any) => !student.specialization_id).length
                       ? 'Deselect All'
                       : 'Select All'}
                   </button>
 
                   <button
-                    onClick={async () => {
-                      if (!bulkSpecId || selectedStudentIds.length === 0) {
-                        toast.error('Please select a specialization and at least one student.');
+                    onClick={() => {
+                      if (selectedStudentIds.length === 0) {
+                        toast.error('Please select at least one student.');
                         return;
                       }
-                      setBulkAssigning(true);
-                      try {
-                        const res = await apiClient.post('/specializations/bulk-assign', {
-                          specializationId: bulkSpecId,
-                          studentIds: selectedStudentIds,
-                        });
-                        if (res.data?.success) {
-                          toast.success(
-                            res.data.message || 'Specialization assigned successfully.',
-                          );
-                          // refresh student list
-                          const refreshRes = await apiClient.get(
-                            '/specializations/eligible-students',
-                            {
-                              params: { degreeId: bulkDegreeId, batch: bulkBatch || undefined },
-                            },
-                          );
-                          if (refreshRes.data?.success) {
-                            setBulkStudents(refreshRes.data.data || []);
-                            setSelectedStudentIds([]);
-                          }
-                        }
-                      } catch (err: any) {
-                        toast.error(
-                          err.response?.data?.message || 'Failed to assign specialization.',
-                        );
-                      } finally {
-                        setBulkAssigning(false);
-                      }
+                      setBulkSpecModalOpen(true);
                     }}
-                    disabled={!bulkSpecId || selectedStudentIds.length === 0 || bulkAssigning}
+                    disabled={selectedStudentIds.length === 0 || bulkAssigning}
                     className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl shadow-lg shadow-emerald-600/20 transition text-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
-                    {bulkAssigning
-                      ? 'Assigning...'
-                      : `Assign to ${selectedStudentIds.length} Selected`}
+                    {`Assign to ${selectedStudentIds.length} Selected`}
                   </button>
                 </div>
               </div>
@@ -1163,10 +1020,12 @@ export default function AcademicStructurePage() {
                   <tbody className="divide-y divide-border/60">
                     {visibleBulkStudents.map((student: any, idx: number) => {
                       const isSelected = selectedStudentIds.includes(student.student_id);
+                      const isAlreadyAssigned = Boolean(student.specialization_id);
                       return (
                         <tr
                           key={student.student_id}
                           onClick={() => {
+                            if (isAlreadyAssigned) return;
                             if (isSelected) {
                               setSelectedStudentIds(
                                 selectedStudentIds.filter((id) => id !== student.student_id),
@@ -1175,9 +1034,11 @@ export default function AcademicStructurePage() {
                               setSelectedStudentIds([...selectedStudentIds, student.student_id]);
                             }
                           }}
-                          className={`hover:bg-secondary/15 transition cursor-pointer ${
-                            isSelected ? 'bg-primary/5' : ''
-                          }`}
+                          className={`transition ${
+                            isAlreadyAssigned
+                              ? 'bg-secondary/10 opacity-70 cursor-not-allowed'
+                              : 'hover:bg-secondary/15 cursor-pointer'
+                          } ${isSelected ? 'bg-primary/5' : ''}`}
                         >
                           <td className="px-4 py-3 text-center font-mono text-muted-foreground font-bold">
                             {idx + 1}
@@ -1189,7 +1050,9 @@ export default function AcademicStructurePage() {
                             <input
                               type="checkbox"
                               checked={isSelected}
+                              disabled={isAlreadyAssigned}
                               onChange={(e) => {
+                                if (isAlreadyAssigned) return;
                                 if (e.target.checked) {
                                   setSelectedStudentIds([
                                     ...selectedStudentIds,
@@ -1201,7 +1064,7 @@ export default function AcademicStructurePage() {
                                   );
                                 }
                               }}
-                              className="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+                              className="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                             />
                           </td>
                           <td className="px-6 py-3 font-mono font-bold text-primary">
@@ -1241,6 +1104,113 @@ export default function AcademicStructurePage() {
         </div>
       )}
 
+      {bulkSpecModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm !m-0">
+          <div className="bg-card border border-border/80 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-border/60 flex items-center justify-between bg-secondary/5">
+              <div>
+                <h3 className="font-bold text-lg">Assign Specialization</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Choose a specialization for {selectedStudentIds.length} selected student
+                  {selectedStudentIds.length === 1 ? '' : 's'}.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBulkSpecModalOpen(false)}
+                className="p-1 hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground"
+                aria-label="Close specialization assignment dialog"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+                  Target Specialization Area
+                </label>
+                <select
+                  value={bulkSpecId}
+                  onChange={(e) => setBulkSpecId(Number(e.target.value))}
+                  className="w-full px-3.5 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 font-medium"
+                >
+                  <option value={0}>Select Specialization...</option>
+                  {specializations
+                    .filter((s: any) => s.degree_id === bulkDegreeId)
+                    .map((spec: any) => (
+                      <option key={spec.specialization_id} value={spec.specialization_id}>
+                        {spec.specialization_name} ({spec.specialization_code})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setBulkSpecModalOpen(false)}
+                  disabled={bulkAssigning}
+                  className="px-4 py-2.5 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 transition text-xs border border-border/80 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!bulkSpecId) {
+                      toast.error('Please select a specialization.');
+                      return;
+                    }
+                    const selectedSpec = specializations.find(
+                      (specialization: any) => specialization.specialization_id === bulkSpecId,
+                    );
+                    const confirmed = await confirm({
+                      title: 'Confirm Specialization Assignment',
+                      message: `Assign ${selectedSpec?.specialization_name || 'this specialization'} to ${selectedStudentIds.length} selected student${selectedStudentIds.length === 1 ? '' : 's'}? Assigned students will no longer appear in this list.`,
+                      confirmText: 'Assign Students',
+                      variant: 'primary',
+                    });
+                    if (!confirmed) return;
+
+                    setBulkAssigning(true);
+                    try {
+                      const res = await apiClient.post('/specializations/bulk-assign', {
+                        specializationId: bulkSpecId,
+                        studentIds: selectedStudentIds,
+                      });
+                      if (res.data?.success) {
+                        toast.success(res.data.message || 'Specialization assigned successfully.');
+                        const refreshRes = await apiClient.get(
+                          '/specializations/eligible-students',
+                          {
+                            params: { degreeId: bulkDegreeId, batch: bulkBatch || undefined },
+                          },
+                        );
+                        if (refreshRes.data?.success) {
+                          setBulkStudents(refreshRes.data.data || []);
+                          setSelectedStudentIds([]);
+                        }
+                        setBulkSpecModalOpen(false);
+                      }
+                    } catch (err: any) {
+                      toast.error(
+                        err.response?.data?.message || 'Failed to assign specialization.',
+                      );
+                    } finally {
+                      setBulkAssigning(false);
+                    }
+                  }}
+                  disabled={!bulkSpecId || bulkAssigning}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition text-xs disabled:opacity-50"
+                >
+                  {bulkAssigning ? 'Assigning...' : 'Confirm Assignment'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Creation / Editing Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in !m-0">
