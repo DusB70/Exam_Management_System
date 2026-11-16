@@ -215,7 +215,11 @@ export default function SecondMarkingPortalPage() {
             if (
               headerName &&
               !lowerHeaders[c].includes('proper') &&
-              !lowerHeaders[c].includes('p/r')
+              !lowerHeaders[c].includes('p/r') &&
+              !lowerHeaders[c].includes('status') &&
+              !lowerHeaders[c].includes('name') &&
+              !lowerHeaders[c].includes('student') &&
+              !lowerHeaders[c].includes('#')
             ) {
               const key = `q_${c}`;
               qColIndices.push({ key, colIdx: c, name: headerName });
@@ -272,10 +276,14 @@ export default function SecondMarkingPortalPage() {
         '#': index + 1,
         'Registration Number': st.registration_number || '',
         'Index Number': st.index_number || '',
-        'P/R': st.registrations?.[0]?.attempt_type === 'REPEAT' ? 'R' : 'P',
+        'Student Name': st.user?.full_name || st.full_name || '',
+        'Proper/Repeat (P/R) Status': st.registrations?.[0]?.attempt_type === 'REPEAT' ? 'R' : 'P',
       };
       questions.forEach((q) => {
-        row[q.label] = secondMarks[st.student_id]?.[q.key] || 0;
+        row[q.label] =
+          secondMarks[st.student_id]?.[q.key] !== undefined
+            ? secondMarks[st.student_id]?.[q.key]
+            : '';
       });
       row['Total'] = calculateRowTotal(st.student_id);
       row['Final (Out of 100)'] = calculateRowFinal(st.student_id);
@@ -283,9 +291,22 @@ export default function SecondMarkingPortalPage() {
     });
 
     const worksheet = XLSX.utils.json_to_sheet(dataRows);
+    worksheet['!cols'] = [
+      { wch: 6 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 30 },
+      { wch: 15 },
+      ...questions.map(() => ({ wch: 10 })),
+      { wch: 10 },
+      { wch: 14 },
+    ];
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '2nd Marking');
-    XLSX.writeFile(workbook, `${courseData?.course_code}_2nd_Marking_Sheet.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, '2nd_Marking');
+    XLSX.writeFile(
+      workbook,
+      `${courseData?.course_code || 'Course'}_2nd_Marking_Student_List.xlsx`,
+    );
   };
 
   const handleSubmit = async () => {

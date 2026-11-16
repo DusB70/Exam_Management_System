@@ -1075,6 +1075,21 @@ export default function MarksRegistryPage() {
   // SPREADSHEET UPLOAD & TEMPLATE HANDLERS
   // ==========================================
 
+  const getCourseEnrolledStudents = async (): Promise<any[]> => {
+    let students = gridData?.students || [];
+    if ((!students || students.length === 0) && selectedCourseId) {
+      try {
+        const res = await apiClient.get(`/marks/courses/${selectedCourseId}/students`);
+        if (res.data?.data && Array.isArray(res.data.data)) {
+          students = res.data.data;
+        }
+      } catch {
+        // fallback
+      }
+    }
+    return students;
+  };
+
   const handleFirstMarkerExcelProcess = async (file: File) => {
     return new Promise<void>((resolve, reject) => {
       const reader = new FileReader();
@@ -1127,7 +1142,10 @@ export default function MarksRegistryPage() {
               hName &&
               !lowerHeaders[c].includes('proper') &&
               !lowerHeaders[c].includes('p/r') &&
-              !lowerHeaders[c].includes('status')
+              !lowerHeaders[c].includes('status') &&
+              !lowerHeaders[c].includes('name') &&
+              !lowerHeaders[c].includes('student') &&
+              !lowerHeaders[c].includes('#')
             ) {
               qCols.push({ key: `q_${c}`, colIdx: c, name: hName });
             }
@@ -1163,7 +1181,13 @@ export default function MarksRegistryPage() {
               matchedCount++;
               new1st[st.student_id] = new1st[st.student_id] || {};
               qCols.forEach((q) => {
-                new1st[st.student_id][q.key] = parseFloat(r[q.colIdx]) || 0;
+                const rawVal = r[q.colIdx];
+                if (rawVal !== undefined && rawVal !== null && String(rawVal).trim() !== '') {
+                  const parsed = parseFloat(rawVal);
+                  if (!isNaN(parsed)) {
+                    new1st[st.student_id][q.key] = parsed;
+                  }
+                }
               });
             }
           }
@@ -1181,31 +1205,78 @@ export default function MarksRegistryPage() {
     });
   };
 
-  const handleFirstMarkerDownloadTemplate = () => {
-    const students = gridData?.students || [];
-    const sampleData = (
-      students.length > 0
-        ? students
-        : [
-            { registration_number: 'UWU/CST/21/001', index_number: 'CST21001' },
-            { registration_number: 'UWU/CST/21/002', index_number: 'CST21002' },
-          ]
-    ).map((s: any) => ({
-      'Registration Number': s.registration_number || '',
-      'Index Number': s.index_number || '',
-      'P/R Status': s.attempt_type === 'REPEAT' ? 'R' : 'P',
-      Q1: 15,
-      Q2: 18,
-      Q3: 16,
-      Q4: 17,
-      Total: 66,
-      'Final (100)': 82.5,
-    }));
+  const handleFirstMarkerDownloadTemplate = async () => {
+    const students = await getCourseEnrolledStudents();
+    if (!students || students.length === 0) {
+      toast.warning('No enrolled students found for this course.');
+      return;
+    }
 
-    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const questionCols =
+      firstMarkerQuestions.length > 0
+        ? firstMarkerQuestions.map((q: any) => q.label || q.name)
+        : ['Q1', 'Q2', 'Q3', 'Q4'];
+
+    const sortedStudents = [...students].sort((a: any, b: any) =>
+      (a.index_number || a.registration_number || '').localeCompare(
+        b.index_number || b.registration_number || '',
+      ),
+    );
+
+    const dataRows = sortedStudents.map((s: any, idx: number) => {
+      const row1st = firstMarkerMarks[s.student_id] || {};
+      const isRepeat =
+        s.registrations?.[0]?.attempt_type === 'REPEAT' ||
+        s.attempt_type === 'REPEAT' ||
+        s.attempt_number > 1;
+
+      const rowObj: any = {
+        '#': idx + 1,
+        'Registration Number': s.registration_number || '',
+        'Index Number': s.index_number || '',
+        'Student Name': s.user?.full_name || s.full_name || '',
+        'Proper/Repeat (P/R) Status': isRepeat ? 'R' : 'P',
+      };
+
+      let total = 0;
+      let hasAnyMark = false;
+
+      questionCols.forEach((colName: string, qIdx: number) => {
+        const qKey = firstMarkerQuestions[qIdx]?.key || `q_${qIdx + 1}`;
+        const val = row1st[qKey];
+        if (typeof val === 'number' && !isNaN(val)) {
+          rowObj[colName] = Number(val);
+          total += Number(val);
+          hasAnyMark = true;
+        } else {
+          rowObj[colName] = '';
+        }
+      });
+
+      rowObj['Total'] = hasAnyMark ? total : '';
+      rowObj['Final (100)'] = hasAnyMark
+        ? Math.round((total / (questionCols.length * 20 || 100)) * 100 * 10) / 10
+        : '';
+
+      return rowObj;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(dataRows);
+    ws['!cols'] = [
+      { wch: 6 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 30 },
+      { wch: 15 },
+      ...questionCols.map(() => ({ wch: 10 })),
+      { wch: 10 },
+      { wch: 14 },
+    ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '1st_Marking');
-    XLSX.writeFile(wb, `${gridData?.course?.course_code || 'Course'}_1st_Marking_Template.xlsx`);
+    const courseCode = gridData?.course?.course_code || 'Course';
+    XLSX.writeFile(wb, `${courseCode}_1st_Marking_Student_List.xlsx`);
+    toast.success(`Downloaded student list for ${dataRows.length} registered student(s).`);
   };
 
   const handleSecondMarkerExcelProcess = async (file: File) => {
@@ -1260,7 +1331,10 @@ export default function MarksRegistryPage() {
               hName &&
               !lowerHeaders[c].includes('proper') &&
               !lowerHeaders[c].includes('p/r') &&
-              !lowerHeaders[c].includes('status')
+              !lowerHeaders[c].includes('status') &&
+              !lowerHeaders[c].includes('name') &&
+              !lowerHeaders[c].includes('student') &&
+              !lowerHeaders[c].includes('#')
             ) {
               qCols.push({ key: `q_${c}`, colIdx: c, name: hName });
             }
@@ -1296,7 +1370,13 @@ export default function MarksRegistryPage() {
               matchedCount++;
               new2nd[st.student_id] = new2nd[st.student_id] || {};
               qCols.forEach((q) => {
-                new2nd[st.student_id][q.key] = parseFloat(r[q.colIdx]) || 0;
+                const rawVal = r[q.colIdx];
+                if (rawVal !== undefined && rawVal !== null && String(rawVal).trim() !== '') {
+                  const parsed = parseFloat(rawVal);
+                  if (!isNaN(parsed)) {
+                    new2nd[st.student_id][q.key] = parsed;
+                  }
+                }
               });
             }
           }
@@ -1314,39 +1394,81 @@ export default function MarksRegistryPage() {
     });
   };
 
-  const handleSecondMarkerDownloadTemplate = () => {
-    const students = gridData?.students || [];
-    const questions =
-      firstMarkerQuestions.length > 0 ? firstMarkerQuestions : [{ key: 'q_1', label: 'Q1' }];
-    const sampleData = (
-      students.length > 0
-        ? students
-        : [
-            { registration_number: 'UWU/CST/21/001', index_number: 'CST21001' },
-            { registration_number: 'UWU/CST/21/002', index_number: 'CST21002' },
-          ]
-    ).map((s: any) => {
+  const handleSecondMarkerDownloadTemplate = async () => {
+    const students = await getCourseEnrolledStudents();
+    if (!students || students.length === 0) {
+      toast.warning('No enrolled students found for this course.');
+      return;
+    }
+
+    const questionCols =
+      firstMarkerQuestions.length > 0
+        ? firstMarkerQuestions.map((q: any) => q.label || q.name)
+        : ['Q1', 'Q2', 'Q3', 'Q4'];
+
+    const sortedStudents = [...students].sort((a: any, b: any) =>
+      (a.index_number || a.registration_number || '').localeCompare(
+        b.index_number || b.registration_number || '',
+      ),
+    );
+
+    const dataRows = sortedStudents.map((s: any, idx: number) => {
       const row1st = firstMarkerMarks[s.student_id] || {};
+      const row2nd = secondMarkerMarks[s.student_id] || {};
+      const isRepeat =
+        s.registrations?.[0]?.attempt_type === 'REPEAT' ||
+        s.attempt_type === 'REPEAT' ||
+        s.attempt_number > 1;
+
       const rowObj: any = {
+        '#': idx + 1,
         'Registration Number': s.registration_number || '',
         'Index Number': s.index_number || '',
-        'P/R Status': s.attempt_type === 'REPEAT' ? 'R' : 'P',
+        'Student Name': s.user?.full_name || s.full_name || '',
+        'Proper/Repeat (P/R) Status': isRepeat ? 'R' : 'P',
       };
-      let tot = 0;
-      questions.forEach((q: any) => {
-        const val = row1st[q.key] !== undefined ? row1st[q.key] : 15;
-        rowObj[q.label] = val;
-        tot += Number(val || 0);
+
+      let total = 0;
+      let hasAnyMark = false;
+
+      questionCols.forEach((colName: string, qIdx: number) => {
+        const qKey = firstMarkerQuestions[qIdx]?.key || `q_${qIdx + 1}`;
+        const val = row2nd[qKey] !== undefined ? row2nd[qKey] : row1st[qKey];
+        if (typeof val === 'number' && !isNaN(val)) {
+          rowObj[colName] = Number(val);
+          total += Number(val);
+          hasAnyMark = true;
+        } else {
+          rowObj[colName] = '';
+        }
       });
-      rowObj['Total'] = tot;
-      rowObj['Final (100)'] = (tot / (questions.length * 20 || 100)) * 100;
+
+      rowObj['Total'] = hasAnyMark ? total : '';
+      rowObj['Final (100)'] = hasAnyMark
+        ? Math.round((total / (questionCols.length * 20 || 100)) * 100 * 10) / 10
+        : '';
+
       return rowObj;
     });
 
-    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const ws = XLSX.utils.json_to_sheet(dataRows);
+    ws['!cols'] = [
+      { wch: 6 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 30 },
+      { wch: 15 },
+      ...questionCols.map(() => ({ wch: 10 })),
+      { wch: 10 },
+      { wch: 14 },
+    ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '2nd_Marking');
-    XLSX.writeFile(wb, `${gridData?.course?.course_code || 'Course'}_2nd_Marking_Evaluation.xlsx`);
+    const courseCode = gridData?.course?.course_code || 'Course';
+    XLSX.writeFile(wb, `${courseCode}_2nd_Marking_Student_List.xlsx`);
+    toast.success(
+      `Downloaded 2nd marking student list for ${dataRows.length} registered student(s).`,
+    );
   };
 
   const handleCaExcelProcess = async (file: File) => {
@@ -1414,13 +1536,21 @@ export default function MarksRegistryPage() {
             });
 
             if (st) {
-              matchedCount++;
-              const val = parseFloat(r[caIdx]) || 0;
-              if (selectedCaUploadExam.exam_id && selectedCaUploadExam.exam_id !== 'ca1') {
-                newDraft[st.student_id] = newDraft[st.student_id] || {};
-                newDraft[st.student_id][selectedCaUploadExam.exam_id] = val.toString();
+              const rawVal = r[caIdx];
+              if (rawVal !== undefined && rawVal !== null && String(rawVal).trim() !== '') {
+                const val = parseFloat(rawVal);
+                if (!isNaN(val)) {
+                  matchedCount++;
+                  if (
+                    selectedCaUploadExam.exam_id &&
+                    String(selectedCaUploadExam.exam_id) !== 'ca1'
+                  ) {
+                    newDraft[st.student_id] = newDraft[st.student_id] || {};
+                    newDraft[st.student_id][selectedCaUploadExam.exam_id] = val.toString();
+                  }
+                  newCaData[st.student_id] = val;
+                }
               }
-              newCaData[st.student_id] = val;
             }
           }
 
@@ -1440,26 +1570,53 @@ export default function MarksRegistryPage() {
     });
   };
 
-  const handleDownloadCaTemplate = () => {
-    const students = gridData?.students || [];
-    const examTitle = selectedCaUploadExam?.exam_title || 'CA';
-    const sampleData = (
-      students.length > 0
-        ? students
-        : [
-            { registration_number: 'UWU/CST/21/001', index_number: 'CST21001' },
-            { registration_number: 'UWU/CST/21/002', index_number: 'CST21002' },
-          ]
-    ).map((s: any) => ({
-      'Registration Number': s.registration_number || '',
-      'Index Number': s.index_number || '',
-      Total: 75,
-    }));
+  const handleDownloadCaTemplate = async () => {
+    const students = await getCourseEnrolledStudents();
+    if (!students || students.length === 0) {
+      toast.warning('No enrolled students found for this course.');
+      return;
+    }
 
-    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const examTitle = selectedCaUploadExam?.exam_title || 'CA';
+    const sortedStudents = [...students].sort((a: any, b: any) =>
+      (a.index_number || a.registration_number || '').localeCompare(
+        b.index_number || b.registration_number || '',
+      ),
+    );
+
+    const dataRows = sortedStudents.map((s: any, idx: number) => {
+      const draft = gridMarksDraft[s.student_id] || {};
+      const examId = selectedCaUploadExam?.exam_id;
+      const existingVal =
+        examId && String(examId) !== 'ca1' ? draft[examId] : caMarksData[s.student_id];
+      const isRepeat =
+        s.registrations?.[0]?.attempt_type === 'REPEAT' ||
+        s.attempt_type === 'REPEAT' ||
+        s.attempt_number > 1;
+
+      return {
+        '#': idx + 1,
+        'Registration Number': s.registration_number || '',
+        'Index Number': s.index_number || '',
+        'Student Name': s.user?.full_name || s.full_name || '',
+        'Proper/Repeat (P/R) Status': isRepeat ? 'R' : 'P',
+        Total:
+          existingVal !== undefined && existingVal !== null && existingVal !== ''
+            ? Number(existingVal)
+            : '',
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(dataRows);
+    ws['!cols'] = [{ wch: 6 }, { wch: 22 }, { wch: 18 }, { wch: 30 }, { wch: 15 }, { wch: 12 }];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'CA_Marks');
-    XLSX.writeFile(wb, `${gridData?.course?.course_code || 'Course'}_${examTitle}_Template.xlsx`);
+    const sheetName = examTitle.replace(/[\\/?*:[\]]/g, '_').slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    const courseCode = gridData?.course?.course_code || 'Course';
+    XLSX.writeFile(wb, `${courseCode}_${sheetName}_Student_List.xlsx`);
+    toast.success(
+      `Downloaded CA student list template for ${dataRows.length} registered student(s).`,
+    );
   };
 
   const [isSavingCaMarks, setIsSavingCaMarks] = useState<boolean>(false);

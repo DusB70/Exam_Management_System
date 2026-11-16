@@ -19,7 +19,7 @@ export interface ExcelUploadDialogProps {
   instructions?: string;
   expectedHeaders: string[];
   notes?: string;
-  onDownloadTemplate?: () => void;
+  onDownloadTemplate?: () => Promise<void> | void;
   onUpload: (file: File) => Promise<void> | void;
   isLoading?: boolean;
 }
@@ -39,8 +39,19 @@ export default function ExcelUploadDialog({
   const [file, setFile] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const handleDownloadTemplateClick = async () => {
+    if (!onDownloadTemplate || isDownloadingTemplate) return;
+    try {
+      setIsDownloadingTemplate(true);
+      await onDownloadTemplate();
+    } finally {
+      setIsDownloadingTemplate(false);
+    }
+  };
 
   if (!open) return null;
 
@@ -181,11 +192,16 @@ export default function ExcelUploadDialog({
               {onDownloadTemplate && (
                 <button
                   type="button"
-                  onClick={onDownloadTemplate}
-                  className="text-[11px] text-primary hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                  onClick={handleDownloadTemplateClick}
+                  disabled={isDownloadingTemplate}
+                  className="text-[11px] text-primary hover:underline font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
                 >
-                  <Download className="h-3.5 w-3.5" />
-                  Download Template
+                  {isDownloadingTemplate ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5" />
+                  )}
+                  Download Student List Template
                 </button>
               )}
             </div>

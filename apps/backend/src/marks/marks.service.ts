@@ -855,6 +855,13 @@ export class MarksService {
             email: true,
           },
         },
+        registrations: {
+          where: { course_id: courseId },
+          select: {
+            attempt_type: true,
+            attempt_number: true,
+          },
+        },
       },
       orderBy: { index_number: 'asc' },
     });
