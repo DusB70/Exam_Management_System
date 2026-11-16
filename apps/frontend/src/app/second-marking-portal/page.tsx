@@ -15,7 +15,6 @@ import {
   Upload,
   Download,
   Search,
-  Check,
   Award,
   Users,
   ShieldCheck,
@@ -26,6 +25,7 @@ import {
   Menu,
   X,
   User as UserIcon,
+  Send,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ExcelUploadDialog from '../../components/marks/excel-upload-dialog';
@@ -48,6 +48,9 @@ export default function SecondMarkingPortalPage() {
   const [tokenEmail, setTokenEmail] = useState<string>('');
 
   const [questions, setQuestions] = useState<any[]>([]);
+  const [firstMarkerMarks, setFirstMarkerMarks] = useState<{
+    [studentId: number]: { [qKey: string]: number };
+  }>({});
   const [secondMarks, setSecondMarks] = useState<{
     [studentId: number]: { [qKey: string]: number };
   }>({});
@@ -56,7 +59,8 @@ export default function SecondMarkingPortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
-  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [_lastSaved, setLastSaved] = useState<Date | null>(null);
+  void _lastSaved;
   const [hasExcelAdded, setHasExcelAdded] = useState(false);
 
   // Authentication Dialog Form States
@@ -109,6 +113,8 @@ export default function SecondMarkingPortalPage() {
         setQuestions(qList);
 
         const firstMarks = config.firstMarkerSheet?.marks || {};
+        setFirstMarkerMarks(firstMarks);
+
         const saved2nd = config.secondMarkerSheet?.marks || {};
         const sub = Boolean(
           config.secondMarkerSheet?.submitted ||
@@ -180,6 +186,16 @@ export default function SecondMarkingPortalPage() {
     if (totalMax === 0) return 0;
     return Math.round((rowTotal / totalMax) * 100 * 10) / 10;
   };
+
+  // Derive Batch of students being evaluated
+  const evaluatedBatch = useMemo(() => {
+    const batches = Array.from(new Set(students.map((s: any) => s.batch).filter(Boolean)));
+    if (batches.length === 1) return `Batch ${batches[0]}`;
+    if (batches.length > 1) return batches.map((b) => `Batch ${b}`).join(', ');
+    const regBatch = students[0]?.registration_number?.match(/\/(\d{4})\//)?.[1];
+    if (regBatch) return `Batch ${regBatch}`;
+    return courseData?.batch ? `Batch ${courseData.batch}` : 'Batch 21/22';
+  }, [students, courseData]);
 
   // 3. Process 2nd Marking Excel Upload
   const handleProcessSecondMarkingExcel = async (file: File) => {
@@ -309,24 +325,41 @@ export default function SecondMarkingPortalPage() {
     });
   };
 
-  // 4. Download Student List Template
+  // 4. Download Student List Template with 1st Marker's Evaluated Marks
   const handleDownloadExcel = () => {
     const dataRows = students.map((st, index) => {
+      const row1st = firstMarkerMarks[st.student_id] || {};
+      const row2nd = secondMarks[st.student_id] || {};
+      const isRepeat =
+        st.registrations?.[0]?.attempt_type === 'REPEAT' ||
+        st.attempt_type === 'REPEAT' ||
+        st.attempt_number > 1;
+
       const row: any = {
         '#': index + 1,
         'Registration Number': st.registration_number || '',
         'Index Number': st.index_number || '',
         'Student Name': st.user?.full_name || st.full_name || '',
-        'Proper/Repeat (P/R) Status': st.registrations?.[0]?.attempt_type === 'REPEAT' ? 'R' : 'P',
+        'Proper/Repeat (P/R) Status': isRepeat ? 'R' : 'P',
       };
+
+      // Populate each question with the 1st marker's evaluated marks (or 2nd marker's if already edited)
       questions.forEach((q) => {
-        row[q.label] =
-          secondMarks[st.student_id]?.[q.key] !== undefined
-            ? secondMarks[st.student_id]?.[q.key]
-            : '';
+        const val =
+          row2nd[q.key] !== undefined && row2nd[q.key] !== null
+            ? row2nd[q.key]
+            : row1st[q.key] !== undefined && row1st[q.key] !== null
+              ? row1st[q.key]
+              : '';
+        row[q.label] = val;
       });
-      row['Total'] = calculateRowTotal(st.student_id);
-      row['Final (Out of 100)'] = calculateRowFinal(st.student_id);
+
+      const total = questions.reduce((sum, q) => sum + (Number(row[q.label]) || 0), 0);
+      const totalMax = questions.reduce((sum, q) => sum + (Number(q.maxMarks) || 20), 0);
+      const final100 = totalMax > 0 ? Math.round((total / totalMax) * 100 * 10) / 10 : 0;
+
+      row['Total'] = total;
+      row['Final (Out of 100)'] = `${final100}%`;
       return row;
     });
 
@@ -347,7 +380,9 @@ export default function SecondMarkingPortalPage() {
       workbook,
       `${courseData?.course_code || 'Course'}_2nd_Marking_Student_List.xlsx`,
     );
-    toast.success(`Downloaded student list for ${dataRows.length} registered student(s).`);
+    toast.success(
+      `Downloaded student list with 1st marker evaluations for ${dataRows.length} registered student(s).`,
+    );
   };
 
   // 5. Submit 2nd Marking to Course In-Charge
@@ -357,7 +392,7 @@ export default function SecondMarkingPortalPage() {
       title: 'Submit 2nd Marking Results?',
       message:
         'Are you sure you want to submit your 2nd marking results to the Course In-Charge? Once submitted, further editing will be permanently prohibited.',
-      confirmText: 'Submit Results',
+      confirmText: 'Submit to In-Charge',
       variant: 'primary',
     });
     if (!confirmed) return;
@@ -572,139 +607,148 @@ export default function SecondMarkingPortalPage() {
   }
 
   // =========================================================================
-  // MAIN SECOND MARKING PORTAL WITH SYSTEM SIDEBAR LAYOUT
+  // MAIN SECOND MARKING PORTAL WITH EXACT SYSTEM SIDEBAR LAYOUT
   // =========================================================================
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
-      {/* Mobile Sidebar Overlay */}
+    <div className="min-h-screen flex bg-background text-foreground">
+      {/* Desktop Sidebar - Exact System Layout from DashboardLayout */}
+      <aside className="sticky top-0 h-screen hidden md:flex flex-col w-64 bg-card/30 border-r border-border/80 p-5 backdrop-blur-md shrink-0 z-30">
+        <div className="flex items-center gap-3 px-2 mb-6 shrink-0">
+          <div className="p-2 bg-primary/10 text-primary rounded-xl shrink-0">
+            <GraduationCap className="h-6 w-6" />
+          </div>
+          <span className="font-bold text-lg tracking-tight truncate">University EMS</span>
+        </div>
+
+        <nav className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors bg-primary text-primary-foreground shadow-lg shadow-primary/15 cursor-pointer">
+            <FileSpreadsheet className="h-4 w-4 shrink-0" />
+            <span className="truncate">Marks Registry</span>
+          </div>
+        </nav>
+
+        <div className="border-t border-border/80 pt-4 mt-auto shrink-0">
+          <div className="flex items-center gap-3 px-2 mb-4">
+            <div className="p-2 bg-secondary rounded-full shrink-0">
+              <UserIcon className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold truncate leading-none mb-1">
+                {user?.fullName || 'Second Marker'}
+              </p>
+              <p className="text-xs text-muted-foreground truncate leading-none">Second Marker</p>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-xl transition-colors cursor-pointer"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* Mobile Drawer Backdrop */}
       {mobileSidebarOpen && (
         <div
-          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 md:hidden"
           onClick={() => setMobileSidebarOpen(false)}
         />
       )}
 
-      {/* Left Sidebar - Dedicated Single Nav Item (Marks Registry) */}
+      {/* Mobile Drawer Menu */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-card/60 border-r border-border/60 backdrop-blur-xl flex flex-col justify-between transition-transform duration-300 ${
-          mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-card border-r border-border p-5 flex flex-col transition-transform duration-300 md:hidden ${
+          mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div>
-          {/* Brand Header */}
-          <div className="h-20 border-b border-border/60 flex items-center justify-between px-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-primary/10 border border-primary/20 rounded-2xl text-primary shadow-sm">
-                <GraduationCap className="h-6 w-6" />
-              </div>
-              <div>
-                <span className="text-base font-extrabold tracking-tight text-foreground block leading-tight">
-                  EMS Portal
-                </span>
-                <span className="text-[10px] font-mono text-muted-foreground block">
-                  Evaluation Division
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={() => setMobileSidebarOpen(false)}
-              className="lg:hidden p-1.5 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          {/* Navigation Items (Only Marks Registry) */}
-          <div className="p-4 space-y-1.5">
-            <div className="px-3 py-2 text-[10px] font-mono font-bold text-muted-foreground tracking-wider uppercase">
-              Evaluator Navigation
-            </div>
-            <div className="flex items-center gap-3 px-4 py-3 bg-primary text-primary-foreground font-bold rounded-2xl text-xs shadow-md transition">
-              <FileSpreadsheet className="h-4 w-4" />
-              Marks Registry
-            </div>
-          </div>
+        <div className="flex items-center justify-between mb-6 shrink-0">
+          <span className="font-bold text-lg">University EMS</span>
+          <button
+            onClick={() => setMobileSidebarOpen(false)}
+            className="p-1 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-6 w-6" />
+          </button>
         </div>
 
-        {/* User Card & Sign Out */}
-        <div className="p-4 border-t border-border/60 space-y-3">
-          <div className="p-3 bg-secondary/30 border border-border/60 rounded-2xl flex items-center gap-3">
-            <div className="p-2 bg-secondary rounded-xl text-primary shrink-0">
-              <UserIcon className="h-4 w-4" />
+        <nav
+          className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 custom-scrollbar"
+          onClick={() => setMobileSidebarOpen(false)}
+        >
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors bg-primary text-primary-foreground shadow-lg">
+            <FileSpreadsheet className="h-4 w-4 shrink-0" />
+            <span className="truncate">Marks Registry</span>
+          </div>
+        </nav>
+
+        <div className="border-t border-border pt-4 mt-auto shrink-0">
+          <div className="flex items-center gap-3 px-2 mb-4">
+            <div className="p-2 bg-secondary rounded-full shrink-0">
+              <UserIcon className="h-4 w-4 text-muted-foreground" />
             </div>
-            <div className="overflow-hidden">
-              <div className="text-xs font-bold text-foreground truncate">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold truncate leading-none mb-1">
                 {user?.fullName || 'Second Marker'}
-              </div>
-              <div className="text-[10px] text-muted-foreground font-mono truncate">
-                {tokenEmail}
-              </div>
+              </p>
+              <p className="text-xs text-muted-foreground truncate leading-none">Second Marker</p>
             </div>
           </div>
-
           <button
-            type="button"
             onClick={handleLogout}
-            className="w-full py-2 bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2 cursor-pointer"
+            className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-xl transition-colors cursor-pointer"
           >
-            <LogOut className="h-3.5 w-3.5" />
+            <LogOut className="h-4 w-4 shrink-0" />
             Sign Out
           </button>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
-        {/* Top Navbar */}
-        <header className="h-16 border-b border-border/60 bg-card/20 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setMobileSidebarOpen(true)}
-              className="lg:hidden p-2 text-muted-foreground hover:text-foreground rounded-xl border border-border/60"
-            >
-              <Menu className="h-4 w-4" />
-            </button>
-            <div className="text-xs font-mono text-muted-foreground flex items-center gap-1.5">
-              <span>Exam Management System</span>
-              <span>/</span>
-              <span className="text-foreground font-bold">2nd Marker Evaluation Portal</span>
-            </div>
+      <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+        {/* Mobile Header */}
+        <header className="flex items-center justify-between px-6 py-4 bg-card/20 border-b border-border/60 md:hidden">
+          <span className="font-bold text-lg">University EMS</span>
+          <button
+            onClick={() => setMobileSidebarOpen(true)}
+            className="p-2 text-muted-foreground hover:text-foreground"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
+        </header>
+
+        {/* Desktop Top Header Bar with Breadcrumb and Status Badge */}
+        <div className="h-16 border-b border-border/60 bg-card/20 backdrop-blur-md px-6 hidden md:flex items-center justify-between sticky top-0 z-20">
+          <div className="text-xs font-mono text-muted-foreground flex items-center gap-1.5">
+            <span>Exam Management System</span>
+            <span>/</span>
+            <span className="text-foreground font-bold">2nd Marker Evaluation Portal</span>
           </div>
 
           <div className="flex items-center gap-3">
-            {isAutoSaving && (
+            {isAutoSaving ? (
               <span className="text-[11px] font-mono text-amber-500 flex items-center gap-1.5 bg-amber-500/10 px-3 py-1 rounded-xl border border-amber-500/20">
                 <Loader2 className="h-3 w-3 animate-spin" /> Auto-saving draft...
               </span>
-            )}
-            {!isAutoSaving && lastSaved && (
-              <span className="text-[11px] font-mono text-emerald-500 flex items-center gap-1.5 bg-emerald-500/10 px-3 py-1 rounded-xl border border-emerald-500/20">
-                <Check className="h-3 w-3" /> All changes auto-saved
+            ) : isSubmitted ? (
+              <span className="px-3 py-1 text-[10px] font-bold rounded-xl uppercase border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 tracking-wider">
+                SUBMITTED TO IN-CHARGE
+              </span>
+            ) : (
+              <span className="px-3 py-1 text-[10px] font-bold rounded-xl uppercase border bg-amber-500/10 text-amber-400 border-amber-500/20 tracking-wider">
+                DRAFT (UNSUBMITTED)
               </span>
             )}
           </div>
-        </header>
+        </div>
 
-        {/* Page Content */}
-        <main className="p-6 md:p-8 space-y-6 flex-1 max-w-7xl w-full mx-auto">
-          {/* Top Course Information Banner */}
+        {/* Page Content Area */}
+        <main className="flex-1 p-6 md:p-8 space-y-6 relative overflow-y-auto max-w-7xl w-full mx-auto">
+          {/* Top Course Information Card */}
           <div className="bg-card/40 border border-border/60 rounded-3xl p-6 backdrop-blur-md shadow-sm space-y-5">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-border/60 pb-5">
               <div>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="px-2.5 py-0.5 bg-primary/10 border border-primary/20 text-primary text-[11px] font-mono font-bold rounded-lg uppercase">
-                    Second Marker Marksheet
-                  </span>
-                  {isSubmitted ? (
-                    <span className="px-2.5 py-0.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-500 text-[11px] font-mono font-bold rounded-lg">
-                      Submitted to In-Charge (Locked / View-Only)
-                    </span>
-                  ) : (
-                    <span className="px-2.5 py-0.5 bg-amber-500/15 border border-amber-500/30 text-amber-500 text-[11px] font-mono font-bold rounded-lg">
-                      Evaluation In Progress
-                    </span>
-                  )}
-                </div>
                 <h1 className="text-xl md:text-2xl font-extrabold text-foreground tracking-tight">
                   {courseData.course_code} &mdash; {courseData.course_name}
                 </h1>
@@ -714,46 +758,37 @@ export default function SecondMarkingPortalPage() {
                 </p>
               </div>
 
-              {/* Action Buttons in Top Banner */}
-              <div className="flex flex-wrap items-center gap-2.5">
+              {/* Right Aligned Action Buttons (Exact layout & styling matching submit to 2nd marker) */}
+              <div className="flex flex-wrap items-center gap-2.5 justify-end shrink-0">
                 <button
                   type="button"
                   onClick={handleDownloadExcel}
-                  className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-foreground border border-border/80 rounded-xl font-bold text-xs flex items-center gap-2 transition cursor-pointer"
+                  className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-foreground border border-border/80 font-bold rounded-xl transition text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
                 >
                   <Download className="h-3.5 w-3.5 text-primary" />
                   Download Student List
                 </button>
 
-                {!isSubmitted && (
-                  <button
-                    type="button"
-                    onClick={() => setIsUploadModalOpen(true)}
-                    className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-foreground border border-border/80 rounded-xl font-bold text-xs flex items-center gap-2 transition cursor-pointer"
-                  >
-                    <Upload className="h-3.5 w-3.5 text-primary" />
-                    Upload 2nd Marking Excel
-                  </button>
-                )}
-
                 <button
                   type="button"
                   onClick={handleSubmit}
                   disabled={isSubmitted || isSubmitting}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition shadow-md disabled:opacity-40 cursor-pointer"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition text-xs flex items-center gap-1.5 shadow-md disabled:opacity-40 cursor-pointer"
                 >
                   {isSubmitting ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
+                  ) : isSubmitted ? (
                     <CheckCircle className="h-3.5 w-3.5" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5" />
                   )}
                   {isSubmitted ? 'Submitted to In-Charge' : 'Submit to In-Charge'}
                 </button>
               </div>
             </div>
 
-            {/* Course & Exam Metadata Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-1">
+            {/* 5 Course & Exam Metadata Cards (2nd Marker Status card removed) */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 pt-1">
               <div className="p-3 bg-secondary/20 border border-border/40 rounded-2xl">
                 <span className="text-[10px] font-mono text-muted-foreground uppercase block">
                   Examination
@@ -791,19 +826,7 @@ export default function SecondMarkingPortalPage() {
                   Batch
                 </span>
                 <span className="text-xs font-bold text-foreground block mt-0.5">
-                  {courseData.batch || 'All Batches'}
-                </span>
-              </div>
-              <div className="p-3 bg-secondary/20 border border-border/40 rounded-2xl">
-                <span className="text-[10px] font-mono text-muted-foreground uppercase block">
-                  2nd Marker Status
-                </span>
-                <span
-                  className={`text-xs font-bold block mt-0.5 ${
-                    isSubmitted ? 'text-emerald-500' : 'text-amber-500'
-                  }`}
-                >
-                  {isSubmitted ? 'Submitted' : 'Pending'}
+                  {evaluatedBatch}
                 </span>
               </div>
             </div>
@@ -824,9 +847,9 @@ export default function SecondMarkingPortalPage() {
             </div>
           )}
 
-          {/* Student Marks Registry Grid (Matching Screenshot UI) */}
+          {/* Student Marks Registry Grid */}
           <div className="bg-card/25 border border-border/60 rounded-3xl p-6 backdrop-blur-sm space-y-5 animate-fadeIn shadow-sm">
-            {/* Top Grid Title & Search Bar */}
+            {/* Top Grid Title & Subtitle (No Tabs) */}
             <div className="border-b border-border/60 pb-5">
               <h3 className="text-base font-bold text-foreground flex items-center gap-2">
                 <Award className="h-5 w-5 text-primary" />
@@ -837,7 +860,7 @@ export default function SecondMarkingPortalPage() {
               </p>
             </div>
 
-            {/* Search & Records Counter Bar */}
+            {/* Search & Records Counter Bar & Upload 2nd Marking Excel Button */}
             <div className="flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
                 {/* Search Bar */}
@@ -852,14 +875,14 @@ export default function SecondMarkingPortalPage() {
                   />
                 </div>
 
-                {/* Count Badge matching exact styling */}
+                {/* Count Badge */}
                 <div className="px-3 py-1.5 bg-background border border-border/80 rounded-xl text-xs font-mono font-bold text-foreground flex items-center gap-1.5 shrink-0">
                   <Users className="h-3.5 w-3.5 text-primary" />
                   Showing {visibleStudentsCount} of {totalFilteredStudents} Records
                 </div>
               </div>
 
-              {/* Action buttons on Right */}
+              {/* Upload 2nd Marking Excel Button in Grid Toolbar */}
               <div className="flex items-center gap-2 w-full md:w-auto justify-end">
                 {!isSubmitted && (
                   <button
