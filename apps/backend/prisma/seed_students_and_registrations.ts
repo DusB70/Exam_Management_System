@@ -14,14 +14,18 @@ async function main() {
   const SALT_ROUNDS = 10;
   const passwordHash = await bcrypt.hash('StudentPassword123', SALT_ROUNDS);
 
-  // 1. Get BICT Degree ID (Degree ID 3)
-  const bictDegree = await prisma.degree.findFirst({
-    where: { degree_code: 'BICT' },
+  // 1. Get the degree records used by the bulk-assignment test students.
+  const degrees = await prisma.degree.findMany({
+    where: { degree_code: { in: ['BICT', 'BET', 'BBST'] } },
   });
+  const degreeByCode = new Map(degrees.map((degree) => [degree.degree_code, degree]));
 
-  if (!bictDegree) {
-    throw new Error('BICT degree not found in database');
+  for (const degreeCode of ['BICT', 'BET', 'BBST']) {
+    if (!degreeByCode.has(degreeCode)) {
+      throw new Error(`${degreeCode} degree not found in database`);
+    }
   }
+  const bictDegree = degreeByCode.get('BICT')!;
 
   // 2. Define Student Accounts to Create
   const studentData = [
@@ -33,6 +37,7 @@ async function main() {
       reg_no: 'STU-2026-101',
       index_no: 'IDX-2026-101',
       phone: '0711111101',
+      degreeCode: 'BICT',
     },
     {
       full_name: 'Nimali Silva',
@@ -42,6 +47,7 @@ async function main() {
       reg_no: 'STU-2026-102',
       index_no: 'IDX-2026-102',
       phone: '0711111102',
+      degreeCode: 'BICT',
     },
     {
       full_name: 'Kamal Fernando',
@@ -51,6 +57,7 @@ async function main() {
       reg_no: 'STU-2026-103',
       index_no: 'IDX-2026-103',
       phone: '0711111103',
+      degreeCode: 'BICT',
     },
     {
       full_name: 'Nuwan Bandara',
@@ -60,6 +67,7 @@ async function main() {
       reg_no: 'STU-2026-104',
       index_no: 'IDX-2026-104',
       phone: '0711111104',
+      degreeCode: 'BICT',
     },
     {
       full_name: 'Dilani Jayasinghe',
@@ -69,6 +77,7 @@ async function main() {
       reg_no: 'STU-2026-105',
       index_no: 'IDX-2026-105',
       phone: '0711111105',
+      degreeCode: 'BICT',
     },
     {
       full_name: 'Sahan Gunawardena',
@@ -78,6 +87,7 @@ async function main() {
       reg_no: 'STU-2026-106',
       index_no: 'IDX-2026-106',
       phone: '0711111106',
+      degreeCode: 'BICT',
     },
     {
       full_name: 'Thilini Disanayake',
@@ -87,6 +97,7 @@ async function main() {
       reg_no: 'STU-2026-107',
       index_no: 'IDX-2026-107',
       phone: '0711111107',
+      degreeCode: 'BICT',
     },
     {
       full_name: 'Ruwan Wickramasinghe',
@@ -96,6 +107,27 @@ async function main() {
       reg_no: 'STU-2026-108',
       index_no: 'IDX-2026-108',
       phone: '0711111108',
+      degreeCode: 'BICT',
+    },
+    {
+      full_name: 'Kavindu Perera',
+      name_with_initials: 'K. Perera',
+      email: 'student9@ems.com',
+      nic_no: '200200000109',
+      reg_no: 'STU-2026-109',
+      index_no: 'IDX-2026-109',
+      phone: '0711111109',
+      degreeCode: 'BET',
+    },
+    {
+      full_name: 'Shenali Fernando',
+      name_with_initials: 'S. Fernando',
+      email: 'student10@ems.com',
+      nic_no: '200200000110',
+      reg_no: 'STU-2026-110',
+      index_no: 'IDX-2026-110',
+      phone: '0711111110',
+      degreeCode: 'BBST',
     },
   ];
 
@@ -126,10 +158,15 @@ async function main() {
     });
 
     // Upsert Student profile
+    const degree = degreeByCode.get(st.degreeCode);
+    if (!degree) {
+      throw new Error(`${st.degreeCode} degree not found in database`);
+    }
+
     const student = await prisma.student.upsert({
       where: { user_id: user.user_id },
       update: {
-        degree_id: bictDegree.degree_id,
+        degree_id: degree.degree_id,
         batch: '21/22',
         status: 'ACTIVE',
       },
@@ -137,7 +174,7 @@ async function main() {
         user_id: user.user_id,
         registration_number: st.reg_no,
         index_number: st.index_no,
-        degree_id: bictDegree.degree_id,
+        degree_id: degree.degree_id,
         batch: '21/22',
         status: 'ACTIVE',
       },

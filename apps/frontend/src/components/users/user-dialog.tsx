@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../lib/api-client';
 import { useToast } from '../../hooks/use-toast';
+import { ACADEMIC_BATCH_OPTIONS } from '../../lib/academic-batches';
 import { AxiosError } from 'axios';
 import { ApiResponse, UserRole } from '@ems/shared';
 import { useAuthStore } from '../../store/authStore';
@@ -35,14 +36,6 @@ const BaseUserFormSchema = z.object({
 });
 
 // Conditionally validate profiles using superRefine
-const BATCH_OPTIONS = Array.from({ length: 25 }, (_, i) => {
-  const startYr = 15 + i;
-  const endYr = startYr + 1;
-  const formattedStartYr = startYr.toString().padStart(2, '0');
-  const formattedEndYr = endYr.toString().padStart(2, '0');
-  return `${formattedStartYr}/${formattedEndYr}`;
-});
-
 const UserFormSchema = BaseUserFormSchema.extend({
   studentProfile: z
     .object({
@@ -588,7 +581,7 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
                       {...register('studentProfile.batch')}
                       className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground max-h-48 overflow-y-auto"
                     >
-                      {BATCH_OPTIONS.map((b) => (
+                      {ACADEMIC_BATCH_OPTIONS.map((b) => (
                         <option key={b} value={b} className="bg-card text-foreground">
                           {b}
                         </option>

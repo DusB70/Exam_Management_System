@@ -51,7 +51,7 @@ export class SpecializationsController {
         user: true,
         specialization: true,
       },
-      orderBy: { registration_number: 'asc' },
+      orderBy: [{ specialization_id: 'asc' }, { registration_number: 'asc' }],
     });
 
     return {
@@ -80,6 +80,7 @@ export class SpecializationsController {
     const updateResult = await this.prisma.student.updateMany({
       where: {
         student_id: { in: studentIds },
+        specialization_id: null,
       },
       data: {
         specialization_id: specializationId,
