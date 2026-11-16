@@ -1943,11 +1943,16 @@ export class MarksService {
       }
 
       const registeredEmail =
-        course.second_marker_type === 'EXTERNAL'
+        (course.second_marker_type === 'EXTERNAL'
           ? course.second_marker_email
-          : course.second_marker_lecturer?.user?.email;
+          : course.second_marker_lecturer?.user?.email) ||
+        course.second_marker_email ||
+        course.second_marker_lecturer?.user?.email;
 
-      if (!registeredEmail || registeredEmail.toLowerCase() !== payload.email?.toLowerCase()) {
+      if (
+        !registeredEmail ||
+        registeredEmail.trim().toLowerCase() !== payload.email?.trim().toLowerCase()
+      ) {
         throw new UnauthorizedException(
           'Magic link authentication failed: Token email does not match the registered 2nd marker for this course.',
         );

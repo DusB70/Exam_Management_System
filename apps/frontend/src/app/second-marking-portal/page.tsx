@@ -26,6 +26,7 @@ import {
   X,
   User as UserIcon,
   Send,
+  RefreshCw,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ExcelUploadDialog from '../../components/marks/excel-upload-dialog';
@@ -70,6 +71,8 @@ export default function SecondMarkingPortalPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const isInitialLoad = useRef(true);
+
+  const [retryCount, setRetryCount] = useState(0);
 
   // 1. Verify Magic Link Token with Backend
   useEffect(() => {
@@ -146,7 +149,7 @@ export default function SecondMarkingPortalPage() {
     };
 
     verifyToken();
-  }, [token]);
+  }, [token, retryCount]);
 
   // 2. Auto-save 2nd marker draft changes automatically to backend
   useEffect(() => {
@@ -485,20 +488,39 @@ export default function SecondMarkingPortalPage() {
 
   // Error / Expired Link Barrier
   if (error || !courseData) {
+    const isNetworkError =
+      error?.toLowerCase().includes('network error') ||
+      error?.toLowerCase().includes('connection refused') ||
+      error?.toLowerCase().includes('refused');
+
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
         <div className="max-w-md w-full bg-card/60 border border-border/80 rounded-3xl p-8 text-center space-y-4 shadow-2xl backdrop-blur-md">
           <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-2xl w-fit mx-auto text-destructive">
             <AlertTriangle className="h-10 w-10" />
           </div>
-          <h2 className="text-xl font-bold text-foreground">Access Restricted</h2>
+          <h2 className="text-xl font-bold text-foreground">
+            {isNetworkError ? 'Backend Server Offline' : 'Access Restricted'}
+          </h2>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            {error || 'Unable to access 2nd marking evaluation sheet.'}
+            {isNetworkError
+              ? 'Unable to connect to the EMS API backend (net::ERR_CONNECTION_REFUSED on port 4000). Please start the backend server with `npm run dev:backend` or `npm run dev`.'
+              : error || 'Unable to access 2nd marking evaluation sheet.'}
           </p>
-          <div className="pt-2">
+          <div className="pt-2 flex items-center justify-center gap-2.5">
+            {isNetworkError && (
+              <button
+                type="button"
+                onClick={() => setRetryCount((prev) => prev + 1)}
+                className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Retry Connection
+              </button>
+            )}
             <button
               onClick={() => router.push('/login')}
-              className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-foreground text-xs font-bold rounded-xl transition"
+              className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-foreground text-xs font-bold rounded-xl transition cursor-pointer"
             >
               Return to EMS Login
             </button>
