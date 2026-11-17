@@ -3,13 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbo",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@ems/shared": "*",
+    "@heroicons/react": "^2.2.0",
     "@hookform/resolvers": "^3.3.4",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",
@@ -23,6 +24,7 @@
     "react-hook-form": "^7.51.1",
     "recharts": "^2.12.3",
     "tailwind-merge": "^2.2.2",
+    "swiper": "^14.0.6",
     "xlsx": "^0.18.5",
     "zod": "^3.22.4",
     "zustand": "^4.5.2"
