@@ -78,6 +78,14 @@ export class UsersService {
                   department: true,
                 },
               },
+              registrations: {
+                include: {
+                  course: true,
+                },
+                orderBy: {
+                  registration_date: 'desc',
+                },
+              },
             },
           },
           lecturer: {
@@ -567,6 +575,14 @@ export class UsersService {
               specialization: {
                 include: {
                   department: true,
+                },
+              },
+              registrations: {
+                include: {
+                  course: true,
+                },
+                orderBy: {
+                  registration_date: 'desc',
                 },
               },
             },

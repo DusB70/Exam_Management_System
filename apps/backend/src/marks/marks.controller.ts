@@ -373,6 +373,106 @@ export class MarksController {
     res.end(buffer);
   }
 
+  @Post('courses/:courseId/detailed-marksheet/pdf')
+  @Roles(UserRole.LECTURER, UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  async downloadDetailedMarksheetPdf(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+    @Body() body: any,
+    @Res() res: Response,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const { buffer, filename } = await this.marksPdfService.generateDetailedMarksheetPdf(
+      courseId,
+      executorUserId,
+      isLecturer,
+      body,
+    );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=${filename}`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
+
+  @Get('courses/:courseId/detailed-marksheet/pdf')
+  @Roles(UserRole.LECTURER, UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  async downloadDetailedMarksheetPdfGet(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+    @Res() res: Response,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const { buffer, filename } = await this.marksPdfService.generateDetailedMarksheetPdf(
+      courseId,
+      executorUserId,
+      isLecturer,
+    );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=${filename}`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
+
+  @Post('courses/:courseId/final-marksheet/pdf')
+  @Roles(UserRole.LECTURER, UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  async downloadFinalMarksheetPdf(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+    @Body() body: any,
+    @Res() res: Response,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const { buffer, filename } = await this.marksPdfService.generateFinalMarksheetPdf(
+      courseId,
+      executorUserId,
+      isLecturer,
+      body,
+    );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=${filename}`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
+
+  @Get('courses/:courseId/final-marksheet/pdf')
+  @Roles(UserRole.LECTURER, UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)
+  async downloadFinalMarksheetPdfGet(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @GetUser('id') executorUserId: number,
+    @GetUser('role') role: string,
+    @Res() res: Response,
+  ) {
+    const isLecturer = role === UserRole.LECTURER;
+    const { buffer, filename } = await this.marksPdfService.generateFinalMarksheetPdf(
+      courseId,
+      executorUserId,
+      isLecturer,
+    );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=${filename}`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
+
   // ==========================================
   // DEPARTMENT HEAD & DEAN ENDPOINTS
   // ==========================================

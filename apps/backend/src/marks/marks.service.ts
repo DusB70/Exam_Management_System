@@ -299,42 +299,6 @@ export class MarksService {
       throw new NotFoundException(`Course with ID ${courseId} not found`);
     }
 
-    // Ensure default CA exam exists
-    const caExam = await this.prisma.exam.findFirst({
-      where: { course_id: courseId, exam_type: 'CA' },
-    });
-    if (!caExam) {
-      await this.prisma.exam.create({
-        data: {
-          course_id: courseId,
-          exam_type: 'CA',
-          exam_title: 'Continuous Assessment (CA)',
-          total_marks: 100,
-          exam_date: new Date(),
-          start_time: new Date(1970, 0, 1, 9, 0, 0),
-          end_time: new Date(1970, 0, 1, 12, 0, 0),
-        },
-      });
-    }
-
-    // Ensure default FINAL exam exists
-    const finalExam = await this.prisma.exam.findFirst({
-      where: { course_id: courseId, exam_type: 'FINAL' },
-    });
-    if (!finalExam) {
-      await this.prisma.exam.create({
-        data: {
-          course_id: courseId,
-          exam_type: 'FINAL',
-          exam_title: 'Final Examination',
-          total_marks: 100,
-          exam_date: new Date(),
-          start_time: new Date(1970, 0, 1, 9, 0, 0),
-          end_time: new Date(1970, 0, 1, 12, 0, 0),
-        },
-      });
-    }
-
     return this.prisma.exam.findMany({
       where: { course_id: courseId },
       orderBy: { exam_date: 'asc' },
@@ -878,8 +842,47 @@ export class MarksService {
       orderBy: { exam_id: 'asc' },
     });
 
-    // Default End Semester Examination: Every course has a default FINAL exam with 100% weight
-    if (exams.length === 0) {
+    let currentConfig: any = course.marks_config || {};
+    if (typeof currentConfig === 'string') {
+      try {
+        currentConfig = JSON.parse(currentConfig);
+      } catch {
+        currentConfig = {};
+      }
+    }
+    const isCaOnly = Boolean(
+      currentConfig.is_ca_only || currentConfig.evaluation_type === 'CA_ONLY',
+    );
+
+    // If CA-only course, ensure no FINAL exams exist (clean up any legacy default End Semester Examination)
+    if (isCaOnly) {
+      const finalExams = exams.filter((e) => e.exam_type?.toUpperCase() === 'FINAL');
+      if (finalExams.length > 0) {
+        const finalExamIds = finalExams.map((fe) => fe.exam_id);
+        await this.prisma.exam.deleteMany({
+          where: { exam_id: { in: finalExamIds } },
+        });
+        exams = exams.filter((e) => e.exam_type?.toUpperCase() !== 'FINAL');
+        if (currentConfig.weights) {
+          finalExamIds.forEach((id) => {
+            delete currentConfig.weights[id];
+            delete currentConfig.weights[id.toString()];
+          });
+        }
+        if (currentConfig.contributes) {
+          finalExamIds.forEach((id) => {
+            delete currentConfig.contributes[id];
+            delete currentConfig.contributes[id.toString()];
+          });
+        }
+        await this.prisma.course.update({
+          where: { course_id: courseId },
+          data: { marks_config: currentConfig },
+        });
+        (course as any).marks_config = currentConfig;
+      }
+    } else if (exams.length === 0) {
+      // Default End Semester Examination: only for courses with final exams (not CA-only)
       const defaultExam = await this.prisma.exam.create({
         data: {
           course_id: courseId,
@@ -893,14 +896,6 @@ export class MarksService {
       });
       exams = [defaultExam];
 
-      let currentConfig: any = course.marks_config || {};
-      if (typeof currentConfig === 'string') {
-        try {
-          currentConfig = JSON.parse(currentConfig);
-        } catch {
-          currentConfig = {};
-        }
-      }
       currentConfig.weights = { ...(currentConfig.weights || {}), [defaultExam.exam_id]: 100 };
       currentConfig.contributes = {
         ...(currentConfig.contributes || {}),
@@ -982,10 +977,17 @@ export class MarksService {
       where: { course_id: courseId },
       select: { marks_config: true },
     });
-    const existingConfig =
+    let existingConfig: any =
       existingCourse?.marks_config && typeof existingCourse.marks_config === 'object'
         ? (existingCourse.marks_config as Record<string, any>)
         : {};
+    if (typeof existingCourse?.marks_config === 'string') {
+      try {
+        existingConfig = JSON.parse(existingCourse.marks_config);
+      } catch {
+        existingConfig = {};
+      }
+    }
 
     const newConfig = {
       ...existingConfig,
@@ -1001,6 +1003,75 @@ export class MarksService {
 
     if (config?.questions === null || (config?.questions === undefined && 'questions' in config)) {
       delete newConfig.questions;
+    }
+
+    const isCaOnly = Boolean(
+      newConfig.is_ca_only !== undefined
+        ? newConfig.is_ca_only
+        : newConfig.evaluation_type === 'CA_ONLY',
+    );
+    newConfig.is_ca_only = isCaOnly;
+    newConfig.evaluation_type = isCaOnly ? 'CA_ONLY' : newConfig.evaluation_type || 'CA_AND_FINAL';
+
+    if (isCaOnly) {
+      // If course is CA-only, remove all FINAL exam components from database and config
+      const finalExams = await this.prisma.exam.findMany({
+        where: { course_id: courseId, exam_type: 'FINAL' },
+      });
+      if (finalExams.length > 0) {
+        const finalExamIds = finalExams.map((fe) => fe.exam_id);
+        await this.prisma.exam.deleteMany({
+          where: { exam_id: { in: finalExamIds } },
+        });
+        if (newConfig.weights) {
+          finalExamIds.forEach((id) => {
+            delete newConfig.weights[id];
+            delete newConfig.weights[id.toString()];
+          });
+        }
+        if (newConfig.contributes) {
+          finalExamIds.forEach((id) => {
+            delete newConfig.contributes[id];
+            delete newConfig.contributes[id.toString()];
+          });
+        }
+      }
+    } else {
+      // If switching back to Continuous Assessment & Final Exam and no FINAL exam exists, restore End Semester Examination
+      const finalExams = await this.prisma.exam.findMany({
+        where: { course_id: courseId, exam_type: 'FINAL' },
+      });
+      if (finalExams.length === 0) {
+        const caExams = await this.prisma.exam.findMany({
+          where: { course_id: courseId, exam_type: 'CA' },
+        });
+        const weights = newConfig.weights || {};
+        const contributes = newConfig.contributes || {};
+        let totalCaWeight = 0;
+        caExams.forEach((ce) => {
+          const isContrib =
+            contributes[ce.exam_id] !== undefined ? !!contributes[ce.exam_id] : true;
+          if (isContrib) {
+            totalCaWeight += Number(weights[ce.exam_id] || 0);
+          }
+        });
+        const remainingFinalWeight = Math.max(0, parseFloat((100 - totalCaWeight).toFixed(1)));
+        const defaultExam = await this.prisma.exam.create({
+          data: {
+            course_id: courseId,
+            exam_type: 'FINAL',
+            exam_title: 'End Semester Examination',
+            total_marks: 100,
+            exam_date: new Date(),
+            start_time: new Date(1970, 0, 1, 9, 0, 0),
+            end_time: new Date(1970, 0, 1, 12, 0, 0),
+          },
+        });
+        if (!newConfig.weights) newConfig.weights = {};
+        if (!newConfig.contributes) newConfig.contributes = {};
+        newConfig.weights[defaultExam.exam_id] = remainingFinalWeight;
+        newConfig.contributes[defaultExam.exam_id] = true;
+      }
     }
 
     return this.prisma.course.update({
@@ -1020,6 +1091,8 @@ export class MarksService {
       total_marks: number;
       weight?: number;
       contributes?: boolean;
+      is_ca_only?: boolean;
+      evaluation_type?: string;
     },
     lecturerUserId: number,
     isLecturer: boolean,
@@ -1044,23 +1117,32 @@ export class MarksService {
       },
     });
 
-    if (data.weight !== undefined || data.contributes !== undefined) {
-      const course = await this.prisma.course.findUnique({ where: { course_id: courseId } });
-      let currentConfig: any = course?.marks_config || {};
-      if (typeof currentConfig === 'string') {
-        try {
-          currentConfig = JSON.parse(currentConfig);
-        } catch {
-          currentConfig = {};
-        }
+    const course = await this.prisma.course.findUnique({ where: { course_id: courseId } });
+    let currentConfig: any = course?.marks_config || {};
+    if (typeof currentConfig === 'string') {
+      try {
+        currentConfig = JSON.parse(currentConfig);
+      } catch {
+        currentConfig = {};
       }
-      const weights = currentConfig.weights || {};
-      const contributes = currentConfig.contributes || {};
+    }
 
-      if (data.weight !== undefined) weights[exam.exam_id] = data.weight;
-      if (data.contributes !== undefined) contributes[exam.exam_id] = data.contributes;
+    const isCaOnly = Boolean(
+      data.is_ca_only !== undefined
+        ? data.is_ca_only
+        : data.evaluation_type === 'CA_ONLY' ||
+            currentConfig.is_ca_only ||
+            currentConfig.evaluation_type === 'CA_ONLY',
+    );
 
-      // Automatically reduce End Semester Examination weight according to added CA weights!
+    const weights = currentConfig.weights || {};
+    const contributes = currentConfig.contributes || {};
+
+    if (data.weight !== undefined) weights[exam.exam_id] = data.weight;
+    if (data.contributes !== undefined) contributes[exam.exam_id] = data.contributes;
+
+    if (!isCaOnly) {
+      // Automatically reduce End Semester Examination weight according to added CA weights for standard scheme
       const allCourseExams = await this.prisma.exam.findMany({ where: { course_id: courseId } });
       const caExams = allCourseExams.filter((e) => e.exam_type?.toUpperCase() === 'CA');
       const finalExams = allCourseExams.filter((e) => e.exam_type?.toUpperCase() === 'FINAL');
@@ -1078,18 +1160,20 @@ export class MarksService {
         weights[finalExams[0].exam_id] = remainingFinalWeight;
         contributes[finalExams[0].exam_id] = true;
       }
-
-      await this.prisma.course.update({
-        where: { course_id: courseId },
-        data: {
-          marks_config: {
-            ...currentConfig,
-            weights,
-            contributes,
-          },
-        },
-      });
     }
+
+    await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        marks_config: {
+          ...currentConfig,
+          is_ca_only: isCaOnly,
+          evaluation_type: isCaOnly ? 'CA_ONLY' : currentConfig.evaluation_type || 'CA_AND_FINAL',
+          weights,
+          contributes,
+        },
+      },
+    });
 
     return exam;
   }
@@ -1138,7 +1222,7 @@ export class MarksService {
       where: { exam_id: examId },
     });
 
-    // Rebalance End Semester Examination weight after deleting an assessment
+    // Rebalance End Semester Examination weight after deleting an assessment (for non-CA-only courses)
     const course = await this.prisma.course.findUnique({ where: { course_id: courseId } });
     let currentConfig: any = course?.marks_config || {};
     if (typeof currentConfig === 'string') {
@@ -1148,26 +1232,32 @@ export class MarksService {
         currentConfig = {};
       }
     }
+    const isCaOnly = Boolean(
+      currentConfig.is_ca_only || currentConfig.evaluation_type === 'CA_ONLY',
+    );
+
     const weights = currentConfig.weights || {};
     const contributes = currentConfig.contributes || {};
     delete weights[examId];
     delete contributes[examId];
 
-    const allRemainingExams = await this.prisma.exam.findMany({ where: { course_id: courseId } });
-    const caExams = allRemainingExams.filter((e) => e.exam_type?.toUpperCase() === 'CA');
-    const finalExams = allRemainingExams.filter((e) => e.exam_type?.toUpperCase() === 'FINAL');
+    if (!isCaOnly) {
+      const allRemainingExams = await this.prisma.exam.findMany({ where: { course_id: courseId } });
+      const caExams = allRemainingExams.filter((e) => e.exam_type?.toUpperCase() === 'CA');
+      const finalExams = allRemainingExams.filter((e) => e.exam_type?.toUpperCase() === 'FINAL');
 
-    let totalCaWeight = 0;
-    caExams.forEach((ce) => {
-      const isContrib = contributes[ce.exam_id] !== undefined ? !!contributes[ce.exam_id] : true;
-      if (isContrib) {
-        totalCaWeight += Number(weights[ce.exam_id] || 0);
+      let totalCaWeight = 0;
+      caExams.forEach((ce) => {
+        const isContrib = contributes[ce.exam_id] !== undefined ? !!contributes[ce.exam_id] : true;
+        if (isContrib) {
+          totalCaWeight += Number(weights[ce.exam_id] || 0);
+        }
+      });
+
+      const remainingFinalWeight = Math.max(0, parseFloat((100 - totalCaWeight).toFixed(1)));
+      if (finalExams.length > 0) {
+        weights[finalExams[0].exam_id] = remainingFinalWeight;
       }
-    });
-
-    const remainingFinalWeight = Math.max(0, parseFloat((100 - totalCaWeight).toFixed(1)));
-    if (finalExams.length > 0) {
-      weights[finalExams[0].exam_id] = remainingFinalWeight;
     }
 
     await this.prisma.course.update({
@@ -1175,6 +1265,8 @@ export class MarksService {
       data: {
         marks_config: {
           ...currentConfig,
+          is_ca_only: isCaOnly,
+          evaluation_type: isCaOnly ? 'CA_ONLY' : currentConfig.evaluation_type || 'CA_AND_FINAL',
           weights,
           contributes,
         },

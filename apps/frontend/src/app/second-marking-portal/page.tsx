@@ -233,20 +233,44 @@ export default function SecondMarkingPortalPage() {
     return questions.reduce((sum, q) => sum + (Number(row[q.key]) || 0), 0);
   };
 
+  const parsedMarksConfig = useMemo(() => {
+    const cfg = courseData?.marks_config;
+    if (typeof cfg === 'string') {
+      try {
+        return JSON.parse(cfg);
+      } catch {
+        return {};
+      }
+    }
+    return cfg || {};
+  }, [courseData]);
+
+  const expectedTotal = useMemo(() => {
+    const saved =
+      parsedMarksConfig?.expected_total ||
+      parsedMarksConfig?.firstMarkerSheet?.expectedTotal ||
+      parsedMarksConfig?.expectedTotal;
+    if (saved && !isNaN(Number(saved)) && Number(saved) > 0) {
+      return Number(saved);
+    }
+    return (
+      questions.reduce(
+        (sum: number, q: any) =>
+          sum + (Number(q.maxMarks) || (questions.length > 0 ? 100 / questions.length : 20)),
+        0,
+      ) || 100
+    );
+  }, [parsedMarksConfig, questions]);
+
   const calculateRowFinal = (studentId: number) => {
     const row = secondMarks[studentId] || {};
     const normFinal100 = normalizeFinalMark(row.final100);
     if (normFinal100 !== undefined) return normFinal100;
     const normFinal = normalizeFinalMark(row.final);
     if (normFinal !== undefined) return normFinal;
-    const totalMax = questions.reduce(
-      (sum, q) =>
-        sum + (Number(q.maxMarks) || (questions.length > 0 ? 100 / questions.length : 20)),
-      0,
-    );
     const rowTotal = calculateRowTotal(studentId);
-    if (totalMax === 0) return 0;
-    return Math.round((rowTotal / totalMax) * 100 * 10) / 10;
+    if (expectedTotal === 0) return 0;
+    return Math.round((rowTotal / expectedTotal) * 100 * 10) / 10;
   };
 
   // Derive Batch of students being evaluated
@@ -470,13 +494,8 @@ export default function SecondMarkingPortalPage() {
             ? norm1stTot
             : computedTotal;
 
-      const totalMax = questions.reduce(
-        (sum, q) =>
-          sum + (Number(q.maxMarks) || (questions.length > 0 ? 100 / questions.length : 20)),
-        0,
-      );
       const computedFinal =
-        totalMax > 0 ? Math.round((computedTotal / totalMax) * 100 * 10) / 10 : 0;
+        expectedTotal > 0 ? Math.round((computedTotal / expectedTotal) * 100 * 10) / 10 : 0;
       const norm2ndFin = normalizeFinalMark(row2nd.final100) ?? normalizeFinalMark(row2nd.final);
       const norm1stFin = normalizeFinalMark(row1st.final100) ?? normalizeFinalMark(row1st.final);
       const final100 =
@@ -982,8 +1001,11 @@ export default function SecondMarkingPortalPage() {
                       </th>
                     ))}
 
-                    <th className="px-5 py-4 min-w-28 text-center border-l border-border/40 bg-secondary/10 text-foreground font-bold font-mono">
-                      Total
+                    <th className="px-5 py-3 min-w-32 text-center border-l border-border/40 bg-secondary/10 text-foreground font-bold font-mono">
+                      <div>Total</div>
+                      <span className="text-[10px] text-muted-foreground font-normal">
+                        (Expected: {expectedTotal})
+                      </span>
                     </th>
                     <th className="px-5 py-4 min-w-36 text-center border-l border-border/40 bg-rose-500/10 text-rose-600 font-bold font-mono">
                       Final (100)

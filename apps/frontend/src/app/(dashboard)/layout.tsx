@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../store/authStore';
 import { apiClient } from '../../lib/api-client';
 import { useToast } from '../../hooks/use-toast';
@@ -33,6 +34,38 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const toast = useToast();
   const confirm = useConfirm();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Queries for registration indicators (Students only)
+  const isStudent = user?.role === UserRole.STUDENT;
+
+  const { data: activePeriod } = useQuery({
+    queryKey: ['active-period-nav'],
+    queryFn: async () => {
+      const response = await apiClient.get('/registrations/active-period');
+      return response.data?.data;
+    },
+    enabled: isStudent,
+    staleTime: 60000,
+  });
+
+  const { data: repeatEligibleData } = useQuery({
+    queryKey: ['repeat-eligible-nav'],
+    queryFn: async () => {
+      const response = await apiClient.get('/registrations/repeat-eligible');
+      return response.data?.data;
+    },
+    enabled: isStudent,
+    staleTime: 60000,
+  });
+
+  const isCourseRegOpen = isStudent && Boolean(activePeriod);
+  const isExamRegOpen =
+    isStudent &&
+    Boolean(
+      repeatEligibleData?.activePeriod &&
+      repeatEligibleData?.eligibleCourses &&
+      repeatEligibleData.eligibleCourses.length > 0,
+    );
 
   const handleLogout = async () => {
     const confirmed = await confirm({
@@ -136,6 +169,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   <span className="truncate">{item.name}</span>
+                  {item.name === 'Course Registration' && isCourseRegOpen && (
+                    <span
+                      className="inline-block w-2 h-2 ml-1.5 rounded-full bg-white animate-pulse shrink-0 shadow-sm"
+                      title="Course Registration Window is Open"
+                    />
+                  )}
+                  {item.name === 'Exam Registration' && isExamRegOpen && (
+                    <span
+                      className="inline-block w-2 h-2 ml-1.5 rounded-full bg-white animate-pulse shrink-0 shadow-sm"
+                      title="Repeat / Medical Exam Window is Open"
+                    />
+                  )}
                 </Link>
               );
             })}
@@ -221,6 +266,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   <span className="truncate">{item.name}</span>
+                  {item.name === 'Course Registration' && isCourseRegOpen && (
+                    <span
+                      className="inline-block w-2 h-2 ml-1.5 rounded-full bg-white animate-pulse shrink-0 shadow-sm"
+                      title="Course Registration Window is Open"
+                    />
+                  )}
+                  {item.name === 'Exam Registration' && isExamRegOpen && (
+                    <span
+                      className="inline-block w-2 h-2 ml-1.5 rounded-full bg-white animate-pulse shrink-0 shadow-sm"
+                      title="Repeat / Medical Exam Window is Open"
+                    />
+                  )}
                 </Link>
               );
             })}

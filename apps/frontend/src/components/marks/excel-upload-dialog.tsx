@@ -201,7 +201,7 @@ export default function ExcelUploadDialog({
                   ) : (
                     <Download className="h-3.5 w-3.5" />
                   )}
-                  Download Student List Template
+                  Download Student List
                 </button>
               )}
             </div>

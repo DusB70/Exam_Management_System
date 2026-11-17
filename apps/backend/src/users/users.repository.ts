@@ -28,6 +28,14 @@ export class UsersRepository {
                 department: true,
               },
             },
+            registrations: {
+              include: {
+                course: true,
+              },
+              orderBy: {
+                registration_date: 'desc',
+              },
+            },
           },
         },
         lecturer: {
@@ -59,6 +67,14 @@ export class UsersRepository {
             specialization: {
               include: {
                 department: true,
+              },
+            },
+            registrations: {
+              include: {
+                course: true,
+              },
+              orderBy: {
+                registration_date: 'desc',
               },
             },
           },

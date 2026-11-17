@@ -5,8 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
 import { useToast } from '../../../hooks/use-toast';
-import { useProgressiveList } from '../../../hooks/use-progressive-load';
-import { ProgressiveLoadFooter } from '../../../components/ui/progressive-load-footer';
 import {
   AlertTriangle,
   Loader2,
@@ -15,6 +13,9 @@ import {
   Activity,
   X,
   Search,
+  BookOpen,
+  CheckCircle2,
+  GraduationCap,
 } from 'lucide-react';
 import { UserRole } from '@ems/shared';
 
@@ -30,10 +31,7 @@ export default function ResultsAndImportsPage() {
   // Modal State for Progress Tracker Popup
   const [selectedProgressCourse, setSelectedProgressCourse] = useState<any | null>(null);
 
-  // Filters for results
-  const [semesterFilter, setSemesterFilter] = useState('active');
-  const [yearFilter, setYearFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
+  // Search query filter for results
   const [searchQuery, setSearchQuery] = useState('');
 
   // Exam Violation Modal State (Staff/Admin)
@@ -116,46 +114,119 @@ export default function ResultsAndImportsPage() {
 
   // Resolve Student Metrics
   const grades = reportCard?.grades || [];
-  const semesters = Array.from(new Set(grades.map((g: any) => g.course?.semester)))
-    .filter(Boolean)
-    .sort() as string[];
-  const activeSemester = semesters.length > 0 ? semesters[semesters.length - 1] : '';
 
-  const filteredGrades = useMemo(
+  // Summary Metrics:
+  // 1. Total Registered Credits
+  const totalRegisteredCredits = useMemo(
     () =>
-      grades.filter((g: any) => {
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase().trim();
-          const code = (g.course?.course_code || '').toLowerCase();
-          const name = (g.course?.course_name || '').toLowerCase();
-          if (!code.includes(q) && !name.includes(q)) return false;
-        }
-        if (semesterFilter === 'active') {
-          if (activeSemester && g.course?.semester !== activeSemester) return false;
-        } else if (semesterFilter !== 'all') {
-          if (g.course?.semester !== semesterFilter) return false;
-        }
-        if (yearFilter !== 'all') {
-          if (!g.course?.semester?.startsWith(yearFilter)) return false;
-        }
-        if (typeFilter === 'compulsory') {
-          if (g.type !== 'COMPULSORY') return false;
-        } else if (typeFilter === 'optional') {
-          if (g.type !== 'OPTIONAL') return false;
-        }
-        return true;
-      }),
-    [grades, searchQuery, semesterFilter, activeSemester, yearFilter, typeFilter],
+      grades.reduce((sum: number, g: any) => sum + (parseFloat(g.course?.credit_value) || 0), 0),
+    [grades],
+  );
+  const registeredCompulsoryCredits = useMemo(
+    () =>
+      grades
+        .filter((g: any) => g.type === 'COMPULSORY')
+        .reduce((sum: number, g: any) => sum + (parseFloat(g.course?.credit_value) || 0), 0),
+    [grades],
+  );
+  const registeredOptionalCredits = useMemo(
+    () =>
+      grades
+        .filter((g: any) => g.type !== 'COMPULSORY')
+        .reduce((sum: number, g: any) => sum + (parseFloat(g.course?.credit_value) || 0), 0),
+    [grades],
   );
 
-  const {
-    visibleItems: visibleGrades,
-    visibleCount: visibleGradesCount,
-    totalCount: totalGradesCount,
-    hasMore: hasMoreGrades,
-  } = useProgressiveList<any>(filteredGrades, {
-    resetKey: `${searchQuery}|${semesterFilter}|${yearFilter}|${typeFilter}`,
-  });
+  // 2. Total Completed Credits (updates once results are published)
+  const isPassedGrade = (g: any) =>
+    Boolean(g.is_published) &&
+    !g.is_violated &&
+    !g.is_held &&
+    g.grade &&
+    g.grade !== 'F' &&
+    g.grade !== 'E' &&
+    g.grade !== 'AB' &&
+    g.grade !== 'Pending';
+
+  const totalCompletedCredits = useMemo(
+    () =>
+      grades
+        .filter(isPassedGrade)
+        .reduce((sum: number, g: any) => sum + (parseFloat(g.course?.credit_value) || 0), 0),
+    [grades],
+  );
+  const completedCompulsoryCredits = useMemo(
+    () =>
+      grades
+        .filter((g: any) => isPassedGrade(g) && g.type === 'COMPULSORY')
+        .reduce((sum: number, g: any) => sum + (parseFloat(g.course?.credit_value) || 0), 0),
+    [grades],
+  );
+  const completedOptionalCredits = useMemo(
+    () =>
+      grades
+        .filter((g: any) => isPassedGrade(g) && g.type !== 'COMPULSORY')
+        .reduce((sum: number, g: any) => sum + (parseFloat(g.course?.credit_value) || 0), 0),
+    [grades],
+  );
+
+  // 3. CGPA
+  const cgpaDisplay = useMemo(() => {
+    const publishedGpas = (reportCard?.gpas || []).filter((gpa: any) => gpa.is_published);
+    if (publishedGpas.length > 0) {
+      const latestGpa = publishedGpas[publishedGpas.length - 1];
+      return Number(latestGpa.cumulative_gpa).toFixed(2);
+    }
+    let totalGpProduct = 0;
+    let totalCredits = 0;
+    grades.forEach((g: any) => {
+      if (g.is_published && !g.is_violated && !g.is_held) {
+        const cred = parseFloat(g.course?.credit_value) || 0;
+        const gp = Number(g.grade_point) || 0;
+        totalGpProduct += gp * cred;
+        totalCredits += cred;
+      }
+    });
+    return totalCredits > 0 ? (totalGpProduct / totalCredits).toFixed(2) : '0.00';
+  }, [reportCard?.gpas, grades]);
+
+  // Semester ordering: 1.1 to 4.2
+  const ORDERED_SEMESTERS = ['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2'];
+
+  const studentSemesters = useMemo(() => {
+    const present = new Set(grades.map((g: any) => g.course?.semester).filter(Boolean));
+    const sorted = ORDERED_SEMESTERS.filter((s) => present.has(s));
+    present.forEach((s: any) => {
+      if (!ORDERED_SEMESTERS.includes(s) && !sorted.includes(s)) {
+        sorted.push(s);
+      }
+    });
+    return sorted;
+  }, [grades]);
+
+  const getSemesterGpa = (sem: string, semGrades: any[]) => {
+    const semGpaRecord = (reportCard?.gpas || []).find(
+      (gpa: any) => gpa.semester === sem && gpa.is_published,
+    );
+    if (semGpaRecord) {
+      return Number(semGpaRecord.semester_gpa).toFixed(2);
+    }
+    const publishedInSem = semGrades.filter(
+      (g: any) => g.is_published && !g.is_violated && !g.is_held,
+    );
+    if (publishedInSem.length > 0) {
+      let gpProduct = 0;
+      let creds = 0;
+      publishedInSem.forEach((g: any) => {
+        const c = parseFloat(g.course?.credit_value) || 0;
+        const gp = Number(g.grade_point) || 0;
+        gpProduct += gp * c;
+        creds += c;
+      });
+      if (creds > 0) return (gpProduct / creds).toFixed(2);
+    }
+    return null;
+  };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fadeIn">
@@ -210,9 +281,91 @@ export default function ResultsAndImportsPage() {
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="bg-card border border-border/80 p-5 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Search Input */}
+      {/* 3 Summary Cards */}
+      {isStudent && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {/* Card 1: Total Registered Credits */}
+          <div className="bg-card/30 border border-border/80 p-5 rounded-3xl shadow-sm backdrop-blur-md flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                Total Registered Credits
+              </span>
+              <div className="text-2xl font-extrabold font-mono text-foreground">
+                {totalRegisteredCredits.toFixed(1)}{' '}
+                <span className="text-xs font-semibold text-muted-foreground">Credits</span>
+              </div>
+              <div className="text-[11px] text-muted-foreground flex items-center gap-2 pt-0.5">
+                <span className="flex items-center gap-1">
+                  <span className="px-1 py-0.2 bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 rounded text-[9px] font-bold">
+                    C
+                  </span>
+                  <span>{registeredCompulsoryCredits.toFixed(1)}</span>
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <span className="px-1 py-0.2 bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-500/20 rounded text-[9px] font-bold">
+                    O
+                  </span>
+                  <span>{registeredOptionalCredits.toFixed(1)}</span>
+                </span>
+              </div>
+            </div>
+            <div className="p-3.5 bg-primary/10 text-primary rounded-2xl shrink-0">
+              <BookOpen className="h-6 w-6" />
+            </div>
+          </div>
+
+          {/* Card 2: Total Completed Credits */}
+          <div className="bg-card/30 border border-border/80 p-5 rounded-3xl shadow-sm backdrop-blur-md flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                Total Completed Credits
+              </span>
+              <div className="text-2xl font-extrabold font-mono text-foreground">
+                {totalCompletedCredits.toFixed(1)}{' '}
+                <span className="text-xs font-semibold text-muted-foreground">Credits</span>
+              </div>
+              <div className="text-[11px] text-muted-foreground flex items-center gap-2 pt-0.5">
+                <span className="flex items-center gap-1">
+                  <span className="px-1 py-0.2 bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 rounded text-[9px] font-bold">
+                    C
+                  </span>
+                  <span>{completedCompulsoryCredits.toFixed(1)}</span>
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <span className="px-1 py-0.2 bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-500/20 rounded text-[9px] font-bold">
+                    O
+                  </span>
+                  <span>{completedOptionalCredits.toFixed(1)}</span>
+                </span>
+              </div>
+            </div>
+            <div className="p-3.5 bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 rounded-2xl shrink-0">
+              <CheckCircle2 className="h-6 w-6" />
+            </div>
+          </div>
+
+          {/* Card 3: CGPA */}
+          <div className="bg-card/30 border border-border/80 p-5 rounded-3xl shadow-sm backdrop-blur-md flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                Cumulative GPA (CGPA)
+              </span>
+              <div className="text-2xl font-extrabold font-mono text-primary">{cgpaDisplay}</div>
+              <p className="text-[11px] text-muted-foreground pt-0.5">
+                Overall academic performance index
+              </p>
+            </div>
+            <div className="p-3.5 bg-primary/10 text-primary rounded-2xl shrink-0">
+              <GraduationCap className="h-6 w-6" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Search Input Bar */}
+      <div className="bg-card border border-border/80 p-4 rounded-3xl shadow-sm flex items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -220,7 +373,7 @@ export default function ResultsAndImportsPage() {
             placeholder="Search course code or module name..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-8 py-2.5 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
+            className="w-full pl-10 pr-8 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
           />
           {searchQuery && (
             <button
@@ -231,130 +384,103 @@ export default function ResultsAndImportsPage() {
             </button>
           )}
         </div>
-
-        {/* Filter Dropdowns Row */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Year Filter */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-bold text-muted-foreground uppercase">Year:</span>
-            <select
-              value={yearFilter}
-              onChange={(e) => setYearFilter(e.target.value)}
-              className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
-            >
-              <option value="all">All Years</option>
-              <option value="1">Year 1</option>
-              <option value="2">Year 2</option>
-              <option value="3">Year 3</option>
-              <option value="4">Year 4</option>
-            </select>
-          </div>
-
-          {/* Semester Filter */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-bold text-muted-foreground uppercase">Semester:</span>
-            <select
-              value={semesterFilter}
-              onChange={(e) => setSemesterFilter(e.target.value)}
-              className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
-            >
-              <option value="all">All Semesters</option>
-              <option value="active">Active Semester ({activeSemester || 'N/A'})</option>
-              {semesters.map((sem: string) => (
-                <option key={sem} value={sem}>
-                  Semester {sem}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Course Type Filter */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-bold text-muted-foreground uppercase">Type:</span>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
-            >
-              <option value="all">All Types</option>
-              <option value="compulsory">Compulsory Only</option>
-              <option value="optional">Optional Only</option>
-            </select>
-          </div>
-
-          {(yearFilter !== 'all' ||
-            semesterFilter !== 'active' ||
-            typeFilter !== 'all' ||
-            searchQuery) && (
-            <button
-              onClick={() => {
-                setYearFilter('all');
-                setSemesterFilter('active');
-                setTypeFilter('all');
-                setSearchQuery('');
-              }}
-              className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
-            >
-              Reset
-            </button>
-          )}
-        </div>
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
+          >
+            Clear Search
+          </button>
+        )}
       </div>
 
-      {/* Results Table */}
-      {(() => {
-        const hasAnyMultipleAttempts = filteredGrades.some(
-          (g: any) => g.hasMultipleAttempts || g.attempts?.repeat_1 || g.attempts?.repeat_2,
-        );
+      {/* Semester Results Cards (Ordered 1.1 to 4.2) */}
+      {isReportLoading ? (
+        <div className="p-16 text-center text-muted-foreground flex flex-col items-center justify-center gap-3 bg-card/25 border border-border/80 rounded-3xl">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm font-medium">Loading academic records...</p>
+        </div>
+      ) : studentSemesters.length === 0 ? (
+        <div className="p-12 text-center text-muted-foreground bg-card/25 border border-border/80 rounded-3xl flex flex-col items-center justify-center">
+          <BookOpen className="h-10 w-10 text-muted-foreground/40 mb-3" />
+          <h4 className="text-sm font-bold text-foreground">No Academic Records Found</h4>
+          <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+            There are no registered course records or published examination results for your
+            profile.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {studentSemesters.map((sem) => {
+            const rawSemGrades = grades.filter((g: any) => g.course?.semester === sem);
+            const semGrades = rawSemGrades.filter((g: any) => {
+              if (!searchQuery.trim()) return true;
+              const q = searchQuery.toLowerCase().trim();
+              const code = (g.course?.course_code || '').toLowerCase();
+              const name = (g.course?.course_name || '').toLowerCase();
+              return code.includes(q) || name.includes(q);
+            });
 
-        return (
-          <div className="bg-card border border-border/80 rounded-3xl shadow-sm overflow-hidden">
-            {isReportLoading ? (
-              <div className="p-12 text-center text-muted-foreground flex flex-col items-center gap-2">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="text-sm font-medium">Loading report card data...</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/20">
-                      <th className="px-4 py-4 w-12 text-center">#</th>
-                      <th className="px-6 py-4">Semester</th>
-                      <th className="px-6 py-4">Course Code</th>
-                      <th className="px-6 py-4">Module Name</th>
-                      <th className="px-6 py-4">Credits</th>
-                      {hasAnyMultipleAttempts ? (
-                        <>
-                          <th className="px-6 py-4 text-center bg-indigo-500/5 text-indigo-400">
-                            Proper
-                          </th>
-                          <th className="px-6 py-4 text-center bg-amber-500/5 text-amber-400">
-                            Repeat 1
-                          </th>
-                          <th className="px-6 py-4 text-center bg-rose-500/5 text-rose-400">
-                            Repeat 2
-                          </th>
-                        </>
-                      ) : (
-                        <th className="px-6 py-4 text-center">CA Marks</th>
-                      )}
-                      <th className="px-6 py-4 text-center">Publishing Progress</th>
-                      <th className="px-6 py-4 text-right">Overall Grade</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60 text-sm font-medium">
-                    {filteredGrades.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={hasAnyMultipleAttempts ? 10 : 8}
-                          className="text-center py-12 text-muted-foreground text-xs"
-                        >
-                          No results match the current filters.
-                        </td>
-                      </tr>
+            if (searchQuery.trim() && semGrades.length === 0) {
+              return null;
+            }
+
+            const semGpa = getSemesterGpa(sem, rawSemGrades);
+
+            return (
+              <div
+                key={sem}
+                className="bg-card/25 border border-border/80 rounded-3xl shadow-xl overflow-hidden backdrop-blur-md space-y-0"
+              >
+                {/* Semester Card Header */}
+                <div className="p-5 border-b border-border/80 bg-secondary/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <h3 className="text-base font-bold text-foreground">Semester {sem}</h3>
+                      <span className="px-2 py-0.5 bg-secondary border border-border/60 rounded-md text-[10px] font-mono font-semibold text-muted-foreground">
+                        {rawSemGrades.length} Modules
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Top Right: Semester GPA */}
+                  <div>
+                    {semGpa ? (
+                      <div className="flex items-center gap-2 bg-primary/10 border border-primary/25 px-3 py-1.5 rounded-xl">
+                        <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                          SGPA:
+                        </span>
+                        <span className="font-mono text-sm font-extrabold text-primary">
+                          {semGpa}
+                        </span>
+                      </div>
                     ) : (
-                      visibleGrades.map((grade: any, idx: number) => {
+                      <div className="flex items-center gap-1.5 bg-secondary/30 border border-border/60 px-3 py-1.5 rounded-xl text-xs font-medium text-muted-foreground">
+                        <span>SGPA: Results Pending</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Semester Courses Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-border/80 text-[11px] font-bold text-muted-foreground uppercase tracking-wider bg-secondary/10">
+                        <th className="px-3.5 py-3 w-10 text-center">#</th>
+                        <th className="px-4 py-3 whitespace-nowrap">Course Code</th>
+                        <th className="px-4 py-3">Module Name</th>
+                        <th className="px-4 py-3 whitespace-nowrap text-center">Credits</th>
+                        <th className="px-4 py-3 whitespace-nowrap text-center">Status</th>
+                        <th className="px-4 py-3 whitespace-nowrap text-center">CA Marks</th>
+                        <th className="px-4 py-3 whitespace-nowrap text-center">Final Grade</th>
+                        <th className="px-4 py-3 whitespace-nowrap text-right">
+                          Publishing Progress
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/60 text-xs font-medium">
+                      {semGrades.map((grade: any, idx: number) => {
                         const prog = myProgress.find(
                           (p: any) => p.course_id === grade.course?.course_id,
                         );
@@ -364,81 +490,75 @@ export default function ResultsAndImportsPage() {
                         const caWeight = grade.max_ca_weight || 40;
                         const formattedScore =
                           caObtained % 1 === 0 ? caObtained : Number(caObtained.toFixed(1));
-                        const formattedCa = isCaPublished
-                          ? `${formattedScore} out of ${caWeight}`
+                        const displayCa = isCaPublished
+                          ? `${formattedScore}/${caWeight}`
                           : 'Pending';
+
+                        const isComp = grade.type === 'COMPULSORY';
 
                         return (
                           <tr
                             key={grade.grade_id}
                             className="hover:bg-secondary/15 transition-colors"
                           >
-                            <td className="px-4 py-4 text-center font-mono text-muted-foreground font-bold text-xs">
+                            <td className="px-3.5 py-3 text-center font-mono text-muted-foreground font-bold text-xs">
                               {idx + 1}
                             </td>
-                            <td className="px-6 py-4 text-muted-foreground font-semibold">
-                              Sem {grade.course?.semester}
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md uppercase">
+                                {grade.course?.course_code}
+                              </span>
                             </td>
-                            <td className="px-6 py-4 font-bold font-mono text-primary text-xs uppercase">
-                              {grade.course?.course_code}
-                            </td>
-                            <td className="px-6 py-4 font-semibold text-foreground">
+                            <td className="px-4 py-3 font-bold text-foreground">
                               {grade.course?.course_name}
                             </td>
-                            <td className="px-6 py-4 font-mono text-muted-foreground">
+                            <td className="px-4 py-3 whitespace-nowrap text-center font-mono font-semibold text-foreground">
                               {parseFloat(grade.course?.credit_value)}
                             </td>
-
-                            {hasAnyMultipleAttempts ? (
-                              <>
-                                <td className="px-6 py-4 text-center font-mono font-bold">
-                                  {grade.attempts?.proper?.is_published ? (
-                                    <span className="px-2.5 py-1 bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 rounded-lg text-xs">
-                                      {grade.attempts.proper.grade}
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted-foreground text-xs">—</span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 text-center font-mono font-bold">
-                                  {grade.attempts?.repeat_1?.is_published ? (
-                                    <span className="px-2.5 py-1 bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded-lg text-xs">
-                                      {grade.attempts.repeat_1.grade}
-                                    </span>
-                                  ) : grade.attempts?.repeat_1 ? (
-                                    <span className="text-amber-400 text-xs italic">Pending</span>
-                                  ) : (
-                                    <span className="text-muted-foreground text-xs">—</span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 text-center font-mono font-bold">
-                                  {grade.attempts?.repeat_2?.is_published ? (
-                                    <span className="px-2.5 py-1 bg-rose-500/10 text-rose-300 border border-rose-500/20 rounded-lg text-xs">
-                                      {grade.attempts.repeat_2.grade}
-                                    </span>
-                                  ) : grade.attempts?.repeat_2 ? (
-                                    <span className="text-rose-400 text-xs italic">Pending</span>
-                                  ) : (
-                                    <span className="text-muted-foreground text-xs">—</span>
-                                  )}
-                                </td>
-                              </>
-                            ) : (
-                              <td className="px-6 py-4 text-center font-mono font-extrabold text-foreground">
+                            <td className="px-4 py-3 whitespace-nowrap text-center">
+                              {isComp ? (
                                 <span
-                                  className={`px-3 py-1 rounded-xl text-xs font-bold ${
-                                    isCaPublished
-                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                      : 'bg-secondary text-muted-foreground border border-border'
-                                  }`}
+                                  className="px-2 py-0.5 rounded text-[10px] font-bold border bg-amber-500/10 text-amber-500 dark:text-amber-400 border-amber-500/25"
+                                  title="Compulsory"
                                 >
-                                  {formattedCa}
+                                  C
                                 </span>
-                              </td>
-                            )}
-
-                            {/* View Progress Button Action */}
-                            <td className="px-6 py-4 text-center">
+                              ) : (
+                                <span
+                                  className="px-2 py-0.5 rounded text-[10px] font-bold border bg-blue-500/10 text-blue-500 dark:text-blue-400 border-blue-500/25"
+                                  title="Optional"
+                                >
+                                  O
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-center font-mono font-bold">
+                              {isCaPublished ? (
+                                <span className="px-2.5 py-1 rounded-xl text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  {displayCa}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-1 text-xs text-muted-foreground font-medium italic">
+                                  Pending
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-center">
+                              {grade.is_violated ? (
+                                <span className="px-2.5 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl font-extrabold text-xs">
+                                  VIOLATED (Held)
+                                </span>
+                              ) : grade.is_published ? (
+                                <span className="px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-xl font-extrabold text-xs">
+                                  {grade.grade}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground italic font-medium">
+                                  Processing
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-right">
                               <button
                                 onClick={() =>
                                   setSelectedProgressCourse({
@@ -452,40 +572,17 @@ export default function ResultsAndImportsPage() {
                                 View Progress
                               </button>
                             </td>
-
-                            <td className="px-6 py-4 text-right">
-                              {grade.is_violated ? (
-                                <span className="px-3 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl font-extrabold text-xs">
-                                  VIOLATED (Held)
-                                </span>
-                              ) : grade.is_published ? (
-                                <span className="px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded-xl font-extrabold text-xs">
-                                  {grade.grade}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-muted-foreground italic font-medium">
-                                  Processing
-                                </span>
-                              )}
-                            </td>
                           </tr>
                         );
-                      })
-                    )}
-                  </tbody>
-                </table>
-                <ProgressiveLoadFooter
-                  loadedCount={visibleGradesCount}
-                  totalCount={totalGradesCount}
-                  isLoadingMore={hasMoreGrades}
-                  hasMore={hasMoreGrades}
-                  entityLabel="result records"
-                />
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            )}
-          </div>
-        );
-      })()}
+            );
+          })}
+        </div>
+      )}
 
       {/* STAFF EXAM VIOLATION MODAL */}
       {violationModalOpen && (
@@ -725,9 +822,9 @@ export default function ResultsAndImportsPage() {
               </div>
 
               {/* Step 4: Final Release */}
-              <div className="p-4 bg-primary/10 border border-primary/30 rounded-2xl flex items-center justify-between">
+              <div className="p-4 bg-secondary/20 border border-border/60 rounded-2xl flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-bold text-primary uppercase">
+                  <div className="text-xs font-bold text-muted-foreground uppercase">
                     4. Final Results Release
                   </div>
                   <div className="text-sm font-extrabold text-foreground mt-0.5">
