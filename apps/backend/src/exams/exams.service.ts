@@ -1197,6 +1197,46 @@ export class ExamsService {
 
         const effectiveExamHeld = prog?.exam_held || 'PENDING';
 
+        const toIso = (d: any) => {
+          if (!d) return null;
+          try {
+            return new Date(d).toISOString();
+          } catch {
+            return null;
+          }
+        };
+
+        const isFinalSubmitted = Boolean(
+          prog?.final_submitted ||
+          [
+            'SUBMITTED_FINAL',
+            'SUBMITTED_TO_STAFF',
+            'RECEIVED_BY_STAFF',
+            'APPROVED',
+            'PUBLISHED',
+          ].includes(course.result_submission_status || ''),
+        );
+        const isHeadApproved = Boolean(
+          prog?.head_approved ||
+          ['SUBMITTED_TO_STAFF', 'RECEIVED_BY_STAFF', 'APPROVED', 'PUBLISHED'].includes(
+            course.result_submission_status || '',
+          ),
+        );
+        const isResultsPublished = Boolean(
+          prog?.results_published ||
+          ['APPROVED', 'PUBLISHED'].includes(course.result_submission_status || ''),
+        );
+
+        const finalSubmittedDate =
+          cfg.finalSubmission?.submittedAt || (isFinalSubmitted ? toIso(prog?.updated_at) : null);
+
+        const headApprovedDate =
+          cfg.headApproval?.approvedAt || (isHeadApproved ? toIso(prog?.updated_at) : null);
+
+        const resultsPublishedDate =
+          cfg.resultsPublished?.publishedAt ||
+          (isResultsPublished ? toIso(prog?.updated_at) : null);
+
         return {
           course_id: course.course_id,
           course_code: course.course_code,
@@ -1227,11 +1267,16 @@ export class ExamsService {
             submitted_date: cfg.secondMarkerSheet?.submittedAt || null,
           },
           final_submission: {
-            submitted: prog?.final_submitted || false,
-            head_approved: prog?.head_approved || false,
+            submitted: isFinalSubmitted,
+            head_approved: isHeadApproved,
+            submitted_date: finalSubmittedDate,
+            head_approved_date: headApprovedDate,
           },
           exam_board: prog?.exam_board || false,
-          results_published: prog?.results_published || false,
+          results_published: isResultsPublished,
+          results_published_date: resultsPublishedDate,
+          final_submitted_date: finalSubmittedDate,
+          head_approved_date: headApprovedDate,
         };
       }),
     );
@@ -1508,6 +1553,11 @@ export class ExamsService {
 
     return student.registrations.map((reg) => {
       const prog = reg.course.publishing_progress;
+      const isSubmittedToStaff =
+        ['SUBMITTED_TO_STAFF', 'RECEIVED_BY_STAFF', 'APPROVED', 'PUBLISHED'].includes(
+          reg.course.result_submission_status,
+        ) || !!prog?.head_approved;
+
       return {
         course_id: reg.course.course_id,
         course_code: reg.course.course_code,
@@ -1519,12 +1569,16 @@ export class ExamsService {
           : prog?.first_marking_collected
             ? 'IN_PROGRESS'
             : 'PENDING',
-        second_marking: prog?.second_marking_submitted
+        second_marking: isSubmittedToStaff
           ? 'COMPLETED'
-          : prog?.second_marking_collected
+          : prog?.second_marking_submitted || prog?.second_marking_collected
             ? 'IN_PROGRESS'
             : 'PENDING',
-        published: prog?.results_published ? 'PUBLISHED' : 'PENDING',
+        published:
+          prog?.results_published ||
+          ['APPROVED', 'PUBLISHED'].includes(reg.course.result_submission_status)
+            ? 'PUBLISHED'
+            : 'PENDING',
       };
     });
   }

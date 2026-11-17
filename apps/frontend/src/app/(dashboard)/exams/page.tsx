@@ -2648,9 +2648,29 @@ export default function ExamsManagementPage() {
                                         {/* FINAL SUBMISSION SUBMITTED */}
                                         <td className="py-3 px-2 border-r border-border/40 text-center">
                                           {item.final_submission.submitted ? (
-                                            <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
-                                              <CheckCircle2 className="h-4 w-4" />
-                                            </span>
+                                            <div className="flex flex-col items-center justify-center gap-0.5">
+                                              <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
+                                                <CheckCircle2 className="h-4 w-4" />
+                                              </span>
+                                              {(item.final_submission.submitted_date ||
+                                                item.final_submitted_date) && (
+                                                <span
+                                                  className="text-[9px] font-mono text-emerald-400 font-semibold whitespace-nowrap"
+                                                  title={new Date(
+                                                    item.final_submission.submitted_date ||
+                                                      item.final_submitted_date,
+                                                  ).toLocaleString()}
+                                                >
+                                                  {new Date(
+                                                    item.final_submission.submitted_date ||
+                                                      item.final_submitted_date,
+                                                  ).toLocaleDateString(undefined, {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                  })}
+                                                </span>
+                                              )}
+                                            </div>
                                           ) : (
                                             <span className="text-muted-foreground/40 font-mono">
                                               —
@@ -2661,9 +2681,29 @@ export default function ExamsManagementPage() {
                                         {/* HEAD APPROVED */}
                                         <td className="py-3 px-2 border-r border-border/40 text-center">
                                           {item.final_submission.head_approved ? (
-                                            <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
-                                              <CheckCircle2 className="h-4 w-4" />
-                                            </span>
+                                            <div className="flex flex-col items-center justify-center gap-0.5">
+                                              <span className="inline-flex items-center justify-center p-1 bg-emerald-500/10 text-emerald-400 rounded-md font-bold text-[10px]">
+                                                <CheckCircle2 className="h-4 w-4" />
+                                              </span>
+                                              {(item.final_submission.head_approved_date ||
+                                                item.head_approved_date) && (
+                                                <span
+                                                  className="text-[9px] font-mono text-emerald-400 font-semibold whitespace-nowrap"
+                                                  title={new Date(
+                                                    item.final_submission.head_approved_date ||
+                                                      item.head_approved_date,
+                                                  ).toLocaleString()}
+                                                >
+                                                  {new Date(
+                                                    item.final_submission.head_approved_date ||
+                                                      item.head_approved_date,
+                                                  ).toLocaleDateString(undefined, {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                  })}
+                                                </span>
+                                              )}
+                                            </div>
                                           ) : (
                                             <span className="text-muted-foreground/40 font-mono">
                                               —
@@ -2695,10 +2735,30 @@ export default function ExamsManagementPage() {
                                         {/* RESULTS PUBLISHED */}
                                         <td className="py-3 px-3 text-center">
                                           {item.results_published ? (
-                                            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-bold rounded-lg border border-emerald-500/20 text-[10px] inline-flex items-center gap-1">
-                                              <CheckCircle2 className="h-3 w-3" />
-                                              Published
-                                            </span>
+                                            <div className="flex flex-col items-center justify-center gap-0.5">
+                                              <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-bold rounded-lg border border-emerald-500/20 text-[10px] inline-flex items-center gap-1">
+                                                <CheckCircle2 className="h-3 w-3" />
+                                                Published
+                                              </span>
+                                              {(item.results_published_date ||
+                                                item.published_date) && (
+                                                <span
+                                                  className="text-[9px] font-mono text-emerald-400 font-semibold whitespace-nowrap"
+                                                  title={new Date(
+                                                    item.results_published_date ||
+                                                      item.published_date,
+                                                  ).toLocaleString()}
+                                                >
+                                                  {new Date(
+                                                    item.results_published_date ||
+                                                      item.published_date,
+                                                  ).toLocaleDateString(undefined, {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                  })}
+                                                </span>
+                                              )}
+                                            </div>
                                           ) : (
                                             <span className="px-2.5 py-1 bg-secondary text-muted-foreground font-bold rounded-lg text-[10px]">
                                               In Progress

@@ -234,8 +234,27 @@ export class ResultsService {
       } catch (e) {
         // ignore
       }
+      if ((course as any).ca_weight) {
+        maxCaWeight = Number((course as any).ca_weight);
+      }
 
-      const caObtained = latestGrade ? latestGrade.continuous_assessment_marks : 0;
+      let caObtained = latestGrade ? Number(latestGrade.continuous_assessment_marks || 0) : 0;
+      if (!caObtained && course.marks_config) {
+        try {
+          const cfg =
+            typeof course.marks_config === 'string'
+              ? JSON.parse(course.marks_config)
+              : course.marks_config;
+          if (cfg?.caMarks?.[student.student_id] !== undefined) {
+            const raw = Number(cfg.caMarks[student.student_id]);
+            if (!isNaN(raw)) {
+              caObtained = Math.round(((raw * maxCaWeight) / 100) * 10) / 10;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
 
       return {
         grade_id: latestGrade?.grade_id || `reg-${course.course_id}`,
@@ -243,10 +262,10 @@ export class ResultsService {
         course_id: course.course_id,
         continuous_assessment_marks: caObtained,
         max_ca_weight: maxCaWeight,
-        formatted_ca: `${caObtained.toFixed(1)} / ${maxCaWeight}`,
-        total_marks: latestGrade ? latestGrade.total_marks : 0,
-        grade: latestGrade ? latestGrade.grade : 'Pending',
-        grade_point: latestGrade ? latestGrade.grade_point : 0,
+        formatted_ca: `${Number(caObtained.toFixed(1))} out of ${maxCaWeight}`,
+        total_marks: isPublished && latestGrade ? latestGrade.total_marks : 0,
+        grade: isPublished && latestGrade ? latestGrade.grade : 'Pending',
+        grade_point: isPublished && latestGrade ? latestGrade.grade_point : 0,
         is_published: isPublished,
         result_status: resultStatus,
         is_violated: latestGrade ? latestGrade.is_violated : false,
