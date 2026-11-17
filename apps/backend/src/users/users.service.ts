@@ -210,6 +210,51 @@ export class UsersService {
           throw new BadRequestException('Lecturer employee number already exists');
         }
 
+        if (lecturerProfile.isHead) {
+          const existingHeads = await tx.lecturer.findMany({
+            where: {
+              department_id: lecturerProfile.departmentId,
+              is_head: true,
+            },
+            include: { user: true, department: true },
+          });
+
+          if (existingHeads.length > 0) {
+            await tx.lecturer.updateMany({
+              where: {
+                department_id: lecturerProfile.departmentId,
+                is_head: true,
+              },
+              data: { is_head: false },
+            });
+
+            for (const prevHead of existingHeads) {
+              await this.auditService.logAction(
+                executorId,
+                'DEPARTMENT_HEAD_TRANSFER',
+                'lecturers',
+                prevHead.lecturer_id.toString(),
+                {
+                  department_id: lecturerProfile.departmentId,
+                  department_name: prevHead.department?.department_name,
+                  previous_head_id: prevHead.lecturer_id,
+                  previous_head_user_id: prevHead.user_id,
+                  previous_head_name: prevHead.user?.full_name,
+                  is_head: true,
+                },
+                {
+                  department_id: lecturerProfile.departmentId,
+                  department_name: prevHead.department?.department_name,
+                  new_head_user_id: user.user_id,
+                  new_head_name: fullName,
+                  is_head: false,
+                  reason: 'Department head replaced by new lecturer creation',
+                },
+              );
+            }
+          }
+        }
+
         await tx.lecturer.create({
           data: {
             user_id: user.user_id,
@@ -380,6 +425,53 @@ export class UsersService {
         });
         if (empExists) {
           throw new BadRequestException('Lecturer employee number already allocated');
+        }
+
+        if (lecturerProfile.isHead) {
+          const existingHeads = await tx.lecturer.findMany({
+            where: {
+              department_id: lecturerProfile.departmentId,
+              is_head: true,
+              user_id: { not: userId },
+            },
+            include: { user: true, department: true },
+          });
+
+          if (existingHeads.length > 0) {
+            await tx.lecturer.updateMany({
+              where: {
+                department_id: lecturerProfile.departmentId,
+                is_head: true,
+                user_id: { not: userId },
+              },
+              data: { is_head: false },
+            });
+
+            for (const prevHead of existingHeads) {
+              await this.auditService.logAction(
+                executorId,
+                'DEPARTMENT_HEAD_TRANSFER',
+                'lecturers',
+                prevHead.lecturer_id.toString(),
+                {
+                  department_id: lecturerProfile.departmentId,
+                  department_name: prevHead.department?.department_name,
+                  previous_head_id: prevHead.lecturer_id,
+                  previous_head_user_id: prevHead.user_id,
+                  previous_head_name: prevHead.user?.full_name,
+                  is_head: true,
+                },
+                {
+                  department_id: lecturerProfile.departmentId,
+                  department_name: prevHead.department?.department_name,
+                  new_head_user_id: userId,
+                  new_head_name: fullName || existingUser.full_name,
+                  is_head: false,
+                  reason: 'Department head replaced by lecturer update',
+                },
+              );
+            }
+          }
         }
 
         await tx.lecturer.upsert({

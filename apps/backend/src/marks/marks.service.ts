@@ -140,6 +140,8 @@ export class MarksService {
       'SUBMITTED_FINAL',
       'SUBMITTED_PROVISIONAL',
       'SUBMITTED',
+      'SUBMITTED_TO_STAFF',
+      'RECEIVED_BY_STAFF',
       'APPROVED',
       'PUBLISHED',
       'PUBLISHED_PROVISIONAL',
@@ -985,13 +987,26 @@ export class MarksService {
         ? (existingCourse.marks_config as Record<string, any>)
         : {};
 
+    const newConfig = {
+      ...existingConfig,
+      ...(config || {}),
+    };
+
+    if (
+      config?.firstMarkerSheet === null ||
+      (config?.firstMarkerSheet === undefined && 'firstMarkerSheet' in config)
+    ) {
+      delete newConfig.firstMarkerSheet;
+    }
+
+    if (config?.questions === null || (config?.questions === undefined && 'questions' in config)) {
+      delete newConfig.questions;
+    }
+
     return this.prisma.course.update({
       where: { course_id: courseId },
       data: {
-        marks_config: {
-          ...existingConfig,
-          ...(config || {}),
-        },
+        marks_config: newConfig,
       },
     });
   }
@@ -1192,6 +1207,26 @@ export class MarksService {
       if (!isAssigned) {
         throw new BadRequestException('You are not authorized to grade this course.');
       }
+
+      const lockedStatuses = [
+        'SUBMITTED_FINAL',
+        'SUBMITTED_PROVISIONAL',
+        'SUBMITTED',
+        'SUBMITTED_TO_STAFF',
+        'RECEIVED_BY_STAFF',
+        'APPROVED',
+        'PUBLISHED',
+        'PUBLISHED_PROVISIONAL',
+      ];
+      if (
+        lockedStatuses.includes(course.result_submission_status) &&
+        course.result_submission_status !== 'REJECTED_BY_HEAD' &&
+        course.result_submission_status !== 'REJECTED_BY_STAFF'
+      ) {
+        throw new BadRequestException(
+          'Marksheet is currently submitted and locked. Modifications are not allowed unless rejected by the Department Head.',
+        );
+      }
     }
 
     // Save/upsert marks for each student & exam
@@ -1260,11 +1295,28 @@ export class MarksService {
         dbStatus = 'DRAFT';
       }
 
+      const courseForCfg = await this.prisma.course.findUnique({ where: { course_id: courseId } });
+      let currentConfig: any = courseForCfg?.marks_config || {};
+      if (typeof currentConfig === 'string') {
+        try {
+          currentConfig = JSON.parse(currentConfig);
+        } catch {
+          currentConfig = {};
+        }
+      }
+      if (data.submissionType === 'FINAL') {
+        currentConfig.finalSubmission = {
+          submitted: true,
+          submittedAt: new Date().toISOString(),
+        };
+      }
+
       await this.prisma.course.update({
         where: { course_id: courseId },
         data: {
           result_submission_status: dbStatus,
           rejection_reason: null,
+          marks_config: currentConfig,
         },
       });
 
@@ -1313,12 +1365,29 @@ export class MarksService {
       throw new BadRequestException('Result sheet is not submitted yet.');
     }
 
+    const courseForCfg = await this.prisma.course.findUnique({ where: { course_id: courseId } });
+    let currentConfig: any = courseForCfg?.marks_config || {};
+    if (typeof currentConfig === 'string') {
+      try {
+        currentConfig = JSON.parse(currentConfig);
+      } catch {
+        currentConfig = {};
+      }
+    }
+    if (currentConfig.finalSubmission) {
+      currentConfig.finalSubmission = {
+        submitted: false,
+        submittedAt: null,
+      };
+    }
+
     await this.prisma.$transaction([
       this.prisma.course.update({
         where: { course_id: courseId },
         data: {
           result_submission_status: 'DRAFT',
           rejection_reason: null,
+          marks_config: currentConfig,
         },
       }),
       this.prisma.studentCourseGrade.updateMany({
@@ -1338,6 +1407,12 @@ export class MarksService {
         },
       }),
     ]);
+
+    await this.prisma.coursePublishingProgress.upsert({
+      where: { course_id: courseId },
+      update: { final_submitted: false },
+      create: { course_id: courseId, final_submitted: false },
+    });
 
     return {
       success: true,
@@ -1630,6 +1705,21 @@ export class MarksService {
       throw new ForbiddenException('You can only approve courses from your department.');
     }
 
+    const nowIso = new Date().toISOString();
+    let currentConfig: any = course.marks_config || {};
+    if (typeof currentConfig === 'string') {
+      try {
+        currentConfig = JSON.parse(currentConfig);
+      } catch {
+        currentConfig = {};
+      }
+    }
+    currentConfig.headApproval = {
+      approved: true,
+      approvedAt: nowIso,
+      approvedBy: lecturerUserId,
+    };
+
     if (course.result_submission_status === 'SUBMITTED_PROVISIONAL') {
       await this.prisma.$transaction([
         this.prisma.course.update({
@@ -1637,6 +1727,7 @@ export class MarksService {
           data: {
             result_submission_status: 'PUBLISHED_PROVISIONAL',
             rejection_reason: null,
+            marks_config: currentConfig,
           },
         }),
         this.prisma.studentCourseGrade.updateMany({
@@ -1654,6 +1745,7 @@ export class MarksService {
         data: {
           result_submission_status: 'SUBMITTED_TO_STAFF',
           rejection_reason: null,
+          marks_config: currentConfig,
         },
       });
     } else {
@@ -1692,12 +1784,40 @@ export class MarksService {
       throw new BadRequestException('A reason for rejection must be provided.');
     }
 
+    let currentConfig: any = course.marks_config || {};
+    if (typeof currentConfig === 'string') {
+      try {
+        currentConfig = JSON.parse(currentConfig);
+      } catch {
+        currentConfig = {};
+      }
+    }
+    if (currentConfig.headApproval) {
+      currentConfig.headApproval = {
+        approved: false,
+        approvedAt: null,
+      };
+    }
+    if (currentConfig.finalSubmission) {
+      currentConfig.finalSubmission = {
+        submitted: false,
+        submittedAt: null,
+      };
+    }
+
     await this.prisma.course.update({
       where: { course_id: courseId },
       data: {
         result_submission_status: 'REJECTED_BY_HEAD',
         rejection_reason: reason.trim(),
+        marks_config: currentConfig,
       },
+    });
+
+    await this.prisma.coursePublishingProgress.upsert({
+      where: { course_id: courseId },
+      update: { head_approved: false, final_submitted: false },
+      create: { course_id: courseId, head_approved: false, final_submitted: false },
     });
 
     return { success: true };
@@ -1710,12 +1830,134 @@ export class MarksService {
       throw new ForbiddenException('You are not assigned to teach or manage this course.');
     }
 
+    const course = await this.prisma.course.findUnique({
+      where: { course_id: courseId },
+      include: {
+        exams: true,
+        registrations: {
+          include: {
+            student: true,
+          },
+        },
+      },
+    });
+
+    if (!course) {
+      throw new NotFoundException(`Course ${courseId} not found`);
+    }
+
     await this.prisma.course.update({
       where: { course_id: courseId },
       data: {
         ca_published: true,
       },
     });
+
+    // Calculate & persist CA marks for each registered student
+    const cfg: any =
+      typeof course.marks_config === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(course.marks_config as string);
+            } catch {
+              return {};
+            }
+          })()
+        : course.marks_config || {};
+
+    const weights = cfg.weights || {};
+    const contributes = cfg.contributes || {};
+    const caMarksConfig = cfg.caMarks || {};
+
+    const caExams = course.exams.filter((e) => e.exam_type?.toUpperCase() === 'CA');
+    const caExamIds = caExams.map((e) => e.exam_id);
+    const caExamMarks =
+      caExamIds.length > 0
+        ? await this.prisma.examMark.findMany({
+            where: { exam_id: { in: caExamIds } },
+          })
+        : [];
+
+    const contributingCaExams = caExams.filter((e) =>
+      contributes[e.exam_id] !== undefined ? !!contributes[e.exam_id] : true,
+    );
+
+    const totalCaWeightAllocated =
+      contributingCaExams.reduce((sum, e) => {
+        const w = weights[e.exam_id] !== undefined ? Number(weights[e.exam_id]) : 0;
+        return sum + (isNaN(w) ? 0 : w);
+      }, 0) ||
+      Number(cfg.caWeight) ||
+      Number((course as any).ca_weight) ||
+      40;
+
+    for (const reg of course.registrations) {
+      let caMarksVal: number | null = null;
+      const studentCaMarks = caExamMarks.filter((m) => m.student_id === reg.student_id);
+
+      if (studentCaMarks.length > 0 && contributingCaExams.length > 0) {
+        let weightedScore = 0;
+        let hasMark = false;
+
+        for (const caExam of contributingCaExams) {
+          const markObj = studentCaMarks.find((m) => m.exam_id === caExam.exam_id);
+          const weight =
+            weights[caExam.exam_id] !== undefined
+              ? Number(weights[caExam.exam_id])
+              : contributingCaExams.length > 0
+                ? totalCaWeightAllocated / contributingCaExams.length
+                : 0;
+          const maxMarks = caExam.total_marks || 100;
+
+          if (markObj && markObj.marks_obtained !== null && markObj.marks_obtained !== undefined) {
+            hasMark = true;
+            const score = Number(markObj.marks_obtained);
+            if (maxMarks > 0 && weight > 0) {
+              weightedScore += (score / maxMarks) * weight;
+            }
+          }
+        }
+
+        if (hasMark) {
+          caMarksVal = Math.round(weightedScore * 10) / 10;
+        }
+      } else if (caMarksConfig[reg.student_id] !== undefined) {
+        const rawCa = Number(caMarksConfig[reg.student_id]);
+        if (!isNaN(rawCa)) {
+          caMarksVal = Math.round(((rawCa * totalCaWeightAllocated) / 100) * 10) / 10;
+        }
+      }
+
+      if (caMarksVal !== null) {
+        const attemptNum = reg.attempt_number || 1;
+        const attemptTyp = reg.attempt_type || 'PROPER';
+
+        await this.prisma.studentCourseGrade.upsert({
+          where: {
+            unique_student_course_grade_attempt: {
+              student_id: reg.student_id,
+              course_id: courseId,
+              attempt_number: attemptNum,
+            },
+          },
+          update: {
+            continuous_assessment_marks: caMarksVal,
+          },
+          create: {
+            student_id: reg.student_id,
+            course_id: courseId,
+            attempt_number: attemptNum,
+            attempt_type: attemptTyp,
+            continuous_assessment_marks: caMarksVal,
+            final_exam_marks: 0,
+            total_marks: caMarksVal,
+            grade: 'Pending',
+            grade_point: 0,
+            is_published: false,
+          },
+        });
+      }
+    }
 
     return { success: true };
   }
@@ -1841,12 +2083,34 @@ export class MarksService {
       throw new BadRequestException('A reason for rejection must be provided.');
     }
 
+    let currentConfig: any = course.marks_config || {};
+    if (typeof currentConfig === 'string') {
+      try {
+        currentConfig = JSON.parse(currentConfig);
+      } catch {
+        currentConfig = {};
+      }
+    }
+    if (currentConfig.resultsPublished) {
+      currentConfig.resultsPublished = {
+        published: false,
+        publishedAt: null,
+      };
+    }
+
     await this.prisma.course.update({
       where: { course_id: courseId },
       data: {
         result_submission_status: 'REJECTED_BY_STAFF',
         rejection_reason: reason.trim(),
+        marks_config: currentConfig,
       },
+    });
+
+    await this.prisma.coursePublishingProgress.upsert({
+      where: { course_id: courseId },
+      update: { results_published: false },
+      create: { course_id: courseId, results_published: false },
     });
 
     return { success: true };
@@ -1863,12 +2127,27 @@ export class MarksService {
       throw new BadRequestException('Course must be marked as received before final approval.');
     }
 
+    const nowIso = new Date().toISOString();
+    let currentConfig: any = course.marks_config || {};
+    if (typeof currentConfig === 'string') {
+      try {
+        currentConfig = JSON.parse(currentConfig);
+      } catch {
+        currentConfig = {};
+      }
+    }
+    currentConfig.resultsPublished = {
+      published: true,
+      publishedAt: nowIso,
+    };
+
     await this.prisma.$transaction([
       this.prisma.course.update({
         where: { course_id: courseId },
         data: {
           result_submission_status: 'APPROVED',
           rejection_reason: null,
+          marks_config: currentConfig,
         },
       }),
       this.prisma.studentCourseGrade.updateMany({

@@ -337,7 +337,7 @@ export default function ResultsAndImportsPage() {
                           </th>
                         </>
                       ) : (
-                        <th className="px-6 py-4 text-center">CA Marks (Obtained / Weight)</th>
+                        <th className="px-6 py-4 text-center">CA Marks</th>
                       )}
                       <th className="px-6 py-4 text-center">Publishing Progress</th>
                       <th className="px-6 py-4 text-right">Overall Grade</th>
@@ -359,9 +359,14 @@ export default function ResultsAndImportsPage() {
                           (p: any) => p.course_id === grade.course?.course_id,
                         );
 
-                        const caObtained = grade.continuous_assessment_marks ?? 0;
+                        const isCaPublished = Boolean(grade.course?.ca_published);
+                        const caObtained = Number(grade.continuous_assessment_marks ?? 0);
                         const caWeight = grade.max_ca_weight || 40;
-                        const formattedCa = `${caObtained.toFixed(1)} / ${caWeight}`;
+                        const formattedScore =
+                          caObtained % 1 === 0 ? caObtained : Number(caObtained.toFixed(1));
+                        const formattedCa = isCaPublished
+                          ? `${formattedScore} out of ${caWeight}`
+                          : 'Pending';
 
                         return (
                           <tr
@@ -420,7 +425,13 @@ export default function ResultsAndImportsPage() {
                               </>
                             ) : (
                               <td className="px-6 py-4 text-center font-mono font-extrabold text-foreground">
-                                <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-xs">
+                                <span
+                                  className={`px-3 py-1 rounded-xl text-xs font-bold ${
+                                    isCaPublished
+                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                      : 'bg-secondary text-muted-foreground border border-border'
+                                  }`}
+                                >
                                   {formattedCa}
                                 </span>
                               </td>

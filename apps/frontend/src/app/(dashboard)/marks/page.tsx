@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
@@ -41,6 +41,51 @@ import { useConfirm } from '../../../hooks/use-confirm';
 import ExcelUploadDialog from '../../../components/marks/excel-upload-dialog';
 
 const STABLE_EMPTY_ARRAY: any[] = [];
+
+// Normalization helper for marks (ensures Excel percentage fractions like 0.6 are scaled to 60)
+const normalizeFinalMark = (val: any): number | undefined => {
+  if (val === undefined || val === null || val === '') return undefined;
+  const num = Number(val);
+  if (isNaN(num)) return undefined;
+  if (num > 0 && num <= 1) {
+    return Math.round(num * 100 * 10) / 10;
+  }
+  return num;
+};
+
+const parseExcelMarkValue = (rawVal: any, cellObj?: XLSX.CellObject): number | undefined => {
+  if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') {
+    return undefined;
+  }
+
+  // 1. Check formatted text on cell (e.g., "60%", "60.0%", "50%")
+  if (cellObj && typeof cellObj.w === 'string' && cellObj.w.includes('%')) {
+    const parsed = parseFloat(cellObj.w.replace('%', '').trim());
+    if (!isNaN(parsed)) return parsed;
+  }
+
+  // 2. Check string representation of raw value (e.g., "60%")
+  const strVal = String(rawVal).trim();
+  if (strVal.includes('%')) {
+    const parsed = parseFloat(strVal.replace('%', '').trim());
+    if (!isNaN(parsed)) return parsed;
+  }
+
+  const num = parseFloat(strVal);
+  if (isNaN(num)) return undefined;
+
+  // 3. Check format code on cell (e.g., "0%", "0.00%")
+  if (cellObj && typeof cellObj.z === 'string' && cellObj.z.includes('%')) {
+    return Math.round(num * 100 * 10) / 10;
+  }
+
+  // 4. In Final (100) or Total percentage context, a decimal <= 1 represents percentage
+  if (num > 0 && num <= 1) {
+    return Math.round(num * 100 * 10) / 10;
+  }
+
+  return num;
+};
 
 export default function MarksRegistryPage() {
   const toast = useToast();
@@ -88,6 +133,12 @@ export default function MarksRegistryPage() {
   const [isFirstMarkerUploadOpen, setIsFirstMarkerUploadOpen] = useState<boolean>(false);
   const [isSecondMarkerUploadOpen, setIsSecondMarkerUploadOpen] = useState<boolean>(false);
   const [selectedCaUploadExam, setSelectedCaUploadExam] = useState<any | null>(null);
+  const [isClearingFirstMarking, setIsClearingFirstMarking] = useState<boolean>(false);
+  const lastSavedGridPayloadRef = useRef<string>('');
+
+  useEffect(() => {
+    lastSavedGridPayloadRef.current = '';
+  }, [selectedCourseId]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -338,7 +389,16 @@ export default function MarksRegistryPage() {
       }
 
       if (subConfig.questions && subConfig.questions.length > 0) {
-        setFirstMarkerQuestions(subConfig.questions);
+        // If questions were imported with legacy default where N!=5 questions had maxMarks: 20 (causing 4*20=80)
+        const allTwenty = subConfig.questions.every((q: any) => Number(q.maxMarks) === 20);
+        if (allTwenty && subConfig.questions.length !== 5) {
+          const fixedMarks = Math.round((100 / subConfig.questions.length) * 10) / 10;
+          setFirstMarkerQuestions(
+            subConfig.questions.map((q: any) => ({ ...q, maxMarks: fixedMarks })),
+          );
+        } else {
+          setFirstMarkerQuestions(subConfig.questions);
+        }
       }
 
       const is1stSub = Boolean(
@@ -434,19 +494,26 @@ export default function MarksRegistryPage() {
         }
       }
 
-      if (payload.length > 0) {
-        submitGridMutation.mutate({ marks: payload, submissionType: null });
+      const hasCa = Object.keys(caMarksData).length > 0;
+      if (payload.length > 0 || hasCa) {
+        const serialized = JSON.stringify({ payload, caMarksData });
+        if (serialized === lastSavedGridPayloadRef.current) {
+          return;
+        }
+        lastSavedGridPayloadRef.current = serialized;
+        submitGridMutation.mutate({ marks: payload, submissionType: null, caMarks: caMarksData });
       }
     }, 1200);
 
     return () => clearTimeout(timer);
-  }, [gridMarksDraft, selectedCourseId]);
+  }, [gridMarksDraft, caMarksData, selectedCourseId]);
 
   // Lecturer Mutations
   const submitGridMutation = useMutation({
     mutationFn: async (payload: {
       marks: { studentId: number; examMarks: { [examId: string]: number } }[];
       submissionType?: 'PROVISIONAL' | 'FINAL' | 'UPDATED' | null;
+      caMarks?: { [studentId: number]: number };
     }) => {
       await apiClient.post(`/marks/courses/${selectedCourseId}/submit-grid`, payload);
     },
@@ -454,8 +521,8 @@ export default function MarksRegistryPage() {
       const type = variables.submissionType;
       if (type) {
         toast.success(`Grades submitted as ${type} successfully!`);
+        refetchGrid();
       }
-      refetchGrid();
     },
     onError: (err: AxiosError<ApiResponse>) => {
       const msg = err.response?.data?.message || 'Failed to save marks grid.';
@@ -795,6 +862,128 @@ export default function MarksRegistryPage() {
     }));
   };
 
+  // Helper to resolve reconciled questions, total, and final (100) marks
+  const getStudentReconciledMarks = (studentId: number) => {
+    const row1st = firstMarkerMarks[studentId] || {};
+    const row2nd = secondMarkerMarks[studentId] || row1st;
+    const decision = reconciliationDecisions[studentId] || 'MAX';
+
+    const qVals: { [key: string]: number } = {};
+    let sumQ1 = 0;
+    let sumQ2 = 0;
+    let sumReconciledQ = 0;
+
+    firstMarkerQuestions.forEach((q) => {
+      const m1 = Number(row1st[q.key]) || 0;
+      const m2 = Number(row2nd[q.key]) || 0;
+      sumQ1 += m1;
+      sumQ2 += m2;
+      let res = m1;
+      if (decision === 'MAX') res = Math.max(m1, m2);
+      else if (decision === 'MIN') res = Math.min(m1, m2);
+      else res = Math.round(((m1 + m2) / 2) * 10) / 10;
+      qVals[q.key] = res;
+      sumReconciledQ += res;
+    });
+
+    const totalMax = firstMarkerQuestions.reduce(
+      (sum, q) =>
+        sum +
+        (Number(q.maxMarks) ||
+          (firstMarkerQuestions.length > 0 ? 100 / firstMarkerQuestions.length : 20)),
+      0,
+    );
+
+    const normTot1 = normalizeFinalMark(row1st.total);
+    const tot1 = normTot1 !== undefined ? normTot1 : sumQ1;
+
+    const normTot2 = normalizeFinalMark(row2nd.total);
+    const tot2 = normTot2 !== undefined ? normTot2 : sumQ2;
+
+    const reconciledTotal =
+      normTot1 !== undefined || normTot2 !== undefined
+        ? decision === 'MAX'
+          ? Math.max(tot1, tot2)
+          : decision === 'MIN'
+            ? Math.min(tot1, tot2)
+            : Math.round(((tot1 + tot2) / 2) * 10) / 10
+        : sumReconciledQ;
+
+    const normFin1 = normalizeFinalMark(row1st.final100) ?? normalizeFinalMark(row1st.final);
+    const fin1 =
+      normFin1 !== undefined
+        ? normFin1
+        : totalMax > 0
+          ? Math.round((tot1 / totalMax) * 100 * 10) / 10
+          : 0;
+
+    const normFin2 = normalizeFinalMark(row2nd.final100) ?? normalizeFinalMark(row2nd.final);
+    const fin2 =
+      normFin2 !== undefined
+        ? normFin2
+        : totalMax > 0
+          ? Math.round((tot2 / totalMax) * 100 * 10) / 10
+          : fin1;
+
+    const reconciledFinal100 =
+      decision === 'MAX'
+        ? Math.max(fin1, fin2)
+        : decision === 'MIN'
+          ? Math.min(fin1, fin2)
+          : Math.round(((fin1 + fin2) / 2) * 10) / 10;
+
+    return {
+      qVals,
+      tot1,
+      tot2,
+      fin1,
+      fin2,
+      totalFinal: reconciledTotal,
+      final100: reconciledFinal100,
+      decision,
+    };
+  };
+
+  // Helper to resolve dynamically allocated CA and SA weights
+  const getEffectiveWeights = () => {
+    const examsList = gridData?.exams || [];
+    const weightsMap = customConfig?.weights || {};
+    const contribsMap = customConfig?.contributes || {};
+
+    const totalCAWeightAllocated = examsList.reduce((acc: number, e: any) => {
+      if (e.exam_type?.toUpperCase() !== 'CA') return acc;
+      const isContrib = contribsMap[e.exam_id] !== undefined ? !!contribsMap[e.exam_id] : true;
+      if (!isContrib) return acc;
+      const w =
+        weightsMap[e.exam_id] !== undefined
+          ? parseFloat(weightsMap[e.exam_id])
+          : parseFloat(e.weight) || 0;
+      return acc + (isNaN(w) ? 0 : w);
+    }, 0);
+
+    const totalSAWeightAllocated = examsList.reduce((acc: number, e: any) => {
+      if (e.exam_type?.toUpperCase() === 'CA') return acc;
+      const isContrib = contribsMap[e.exam_id] !== undefined ? !!contribsMap[e.exam_id] : true;
+      if (!isContrib) return acc;
+      const w =
+        weightsMap[e.exam_id] !== undefined
+          ? parseFloat(weightsMap[e.exam_id])
+          : parseFloat(e.weight) || 0;
+      return acc + (isNaN(w) ? 0 : w);
+    }, 0);
+
+    const caWeight =
+      totalCAWeightAllocated > 0
+        ? totalCAWeightAllocated
+        : Number(gridData?.course?.ca_weight) || 40;
+    const saWeight =
+      totalSAWeightAllocated > 0
+        ? totalSAWeightAllocated
+        : Number(gridData?.course?.final_weight) || 100 - caWeight;
+
+    return { caWeight, saWeight };
+  };
+
   const validateAndBuildGridPayload = () => {
     const payload: { studentId: number; examMarks: { [examId: string]: number } }[] = [];
     const students = gridData?.students || [];
@@ -805,21 +994,62 @@ export default function MarksRegistryPage() {
       const draft = gridMarksDraft[student.student_id] || {};
 
       for (const exam of exams) {
-        const rawVal = draft[exam.exam_id] || '';
-        if (rawVal === '') {
-          toast.error(
-            `Every student must have a score for all assessments before submission. Missing entry for Student Index ${student.index_number} under "${exam.exam_title}".`,
-          );
-          return null;
+        const isCA = exam.exam_type?.toUpperCase() === 'CA';
+        if (!isCA) {
+          let score: number | undefined;
+          const rawVal = draft[exam.exam_id];
+          if (rawVal !== undefined && rawVal !== '') {
+            const parsed = parseFloat(rawVal);
+            if (!isNaN(parsed)) score = parsed;
+          }
+          if (score === undefined) {
+            const rec = getStudentReconciledMarks(student.student_id);
+            if (rec && rec.final100 !== undefined && !isNaN(rec.final100)) {
+              score =
+                exam.total_marks === 100 || !exam.total_marks
+                  ? rec.final100
+                  : Math.round((rec.final100 / 100) * exam.total_marks * 10) / 10;
+            }
+          }
+
+          if (score === undefined) {
+            toast.error(
+              `Every student must have a score for all assessments before submission. Missing entry for Student Index ${student.index_number} under "${exam.exam_title}".`,
+            );
+            return null;
+          }
+          if (score < 0 || score > (exam.total_marks || 100)) {
+            toast.error(
+              `Invalid score for student index ${student.index_number} on assessment "${exam.exam_title}". Must be between 0 and ${exam.total_marks || 100}`,
+            );
+            return null;
+          }
+          studentMarks[exam.exam_id.toString()] = score;
+        } else {
+          let score: number | undefined;
+          const rawVal = draft[exam.exam_id];
+          if (rawVal !== undefined && rawVal !== '') {
+            const parsed = parseFloat(rawVal);
+            if (!isNaN(parsed)) score = parsed;
+          }
+          if (score === undefined && caMarksData[student.student_id] !== undefined) {
+            score = caMarksData[student.student_id];
+          }
+
+          if (score === undefined) {
+            toast.error(
+              `Every student must have a score for all assessments before submission. Missing entry for Student Index ${student.index_number} under "${exam.exam_title}".`,
+            );
+            return null;
+          }
+          if (score < 0 || score > (exam.total_marks || 100)) {
+            toast.error(
+              `Invalid score for student index ${student.index_number} on assessment "${exam.exam_title}". Must be between 0 and ${exam.total_marks || 100}`,
+            );
+            return null;
+          }
+          studentMarks[exam.exam_id.toString()] = score;
         }
-        const val = parseFloat(rawVal);
-        if (isNaN(val) || val < 0 || val > exam.total_marks) {
-          toast.error(
-            `Invalid score for student index ${student.index_number} on assessment "${exam.exam_title}". Must be between 0 and ${exam.total_marks}`,
-          );
-          return null;
-        }
-        studentMarks[exam.exam_id.toString()] = val;
       }
       payload.push({
         studentId: student.student_id,
@@ -861,7 +1091,7 @@ export default function MarksRegistryPage() {
       confirmText: 'Submit Final Results',
     });
     if (isConfirmed) {
-      submitGridMutation.mutate({ marks: payload, submissionType: 'FINAL' });
+      submitGridMutation.mutate({ marks: payload, submissionType: 'FINAL', caMarks: caMarksData });
     }
   };
 
@@ -1120,7 +1350,7 @@ export default function MarksRegistryPage() {
       reader.onload = async (evt) => {
         try {
           const bstr = evt.target?.result;
-          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wb = XLSX.read(bstr, { type: 'binary', cellNF: true, cellText: true });
           const wsName = wb.SheetNames[0];
           const ws = wb.Sheets[wsName];
           const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
@@ -1148,8 +1378,20 @@ export default function MarksRegistryPage() {
 
           const regIdx = lowerHeaders.findIndex((h: string) => h.includes('reg'));
           const indexIdx = lowerHeaders.findIndex((h: string) => h.includes('index'));
+
+          // Detect Final (100) column
+          const finalIdx = lowerHeaders.findIndex(
+            (h: string) =>
+              h.includes('final') ||
+              h.includes('(100)') ||
+              h.includes('out of 100') ||
+              h === '100%' ||
+              h === '100',
+          );
+
+          // Detect Total column (excluding final column)
           const totalIdx = lowerHeaders.findIndex(
-            (h: string) => h === 'total' || h.includes('total'),
+            (h: string, idx: number) => idx !== finalIdx && (h === 'total' || h.includes('total')),
           );
 
           if (regIdx < 0 && indexIdx < 0) {
@@ -1157,8 +1399,9 @@ export default function MarksRegistryPage() {
           }
 
           const qCols: { key: string; colIdx: number; name: string }[] = [];
-          const startIdx = indexIdx >= 0 ? indexIdx + 1 : 2;
-          const endIdx = totalIdx >= 0 ? totalIdx : headers.length;
+          const startIdx = indexIdx >= 0 ? indexIdx + 1 : regIdx >= 0 ? regIdx + 1 : 2;
+          const boundaryIdxs = [totalIdx, finalIdx].filter((idx) => idx >= 0);
+          const endIdx = boundaryIdxs.length > 0 ? Math.min(...boundaryIdxs) : headers.length;
 
           for (let c = startIdx; c < endIdx; c++) {
             const hName = headers[c];
@@ -1169,23 +1412,36 @@ export default function MarksRegistryPage() {
               !lowerHeaders[c].includes('status') &&
               !lowerHeaders[c].includes('name') &&
               !lowerHeaders[c].includes('student') &&
-              !lowerHeaders[c].includes('#')
+              !lowerHeaders[c].includes('#') &&
+              !lowerHeaders[c].includes('total') &&
+              !lowerHeaders[c].includes('final')
             ) {
               qCols.push({ key: `q_${c}`, colIdx: c, name: hName });
             }
           }
 
-          if (qCols.length > 0) {
-            setFirstMarkerQuestions(
-              qCols.map((q) => ({
-                key: q.key,
-                label: q.name,
-                maxMarks: 20,
-              })),
-            );
+          const parsedQuestions =
+            qCols.length > 0
+              ? qCols.map((q) => {
+                  const match = q.name.match(/(?:\(|\[|\/)\s*(\d+(?:\.\d+)?)\s*(?:\)|\])?/);
+                  let maxMarks = match ? parseFloat(match[1]) : undefined;
+                  if (!maxMarks || isNaN(maxMarks)) {
+                    maxMarks = qCols.length > 0 ? Math.round((100 / qCols.length) * 10) / 10 : 20;
+                  }
+                  return {
+                    key: q.key,
+                    label: q.name,
+                    maxMarks,
+                  };
+                })
+              : [];
+
+          if (parsedQuestions.length > 0) {
+            setFirstMarkerQuestions(parsedQuestions);
           }
 
-          const new1st = { ...firstMarkerMarks };
+          // Build fresh 1st marker marks map from the newly uploaded spreadsheet
+          const new1st: { [studentId: number]: { [qKey: string]: number } } = {};
           const stList = gridData?.students || [];
           let matchedCount = 0;
 
@@ -1213,6 +1469,27 @@ export default function MarksRegistryPage() {
                   }
                 }
               });
+
+              // Read Total from column if present
+              if (totalIdx >= 0) {
+                const rawTot = r[totalIdx];
+                const cellTot = ws[XLSX.utils.encode_cell({ r: i, c: totalIdx })];
+                const parsedTot = parseExcelMarkValue(rawTot, cellTot);
+                if (parsedTot !== undefined) {
+                  new1st[st.student_id]['total'] = parsedTot;
+                }
+              }
+
+              // Read Final (100) from column if present
+              if (finalIdx >= 0) {
+                const rawFin = r[finalIdx];
+                const cellFin = ws[XLSX.utils.encode_cell({ r: i, c: finalIdx })];
+                const parsedFin = parseExcelMarkValue(rawFin, cellFin);
+                if (parsedFin !== undefined) {
+                  new1st[st.student_id]['final100'] = parsedFin;
+                  new1st[st.student_id]['final'] = parsedFin;
+                }
+              }
             }
           }
 
@@ -1225,8 +1502,9 @@ export default function MarksRegistryPage() {
                 excelUploaded: true,
                 marks: new1st,
               },
-              questions: firstMarkerQuestions,
+              questions: parsedQuestions.length > 0 ? parsedQuestions : firstMarkerQuestions,
             });
+            refetchGrid();
           } catch {
             // Silently fallback if background config save encounters error
           }
@@ -1240,6 +1518,38 @@ export default function MarksRegistryPage() {
       reader.onerror = () => reject(new Error('Failed to read file from disk.'));
       reader.readAsBinaryString(file);
     });
+  };
+
+  const handleClearFirstMarkerExcel = async () => {
+    if (!selectedCourseId || isClearingFirstMarking) return;
+    const isConfirmed = await confirm({
+      title: 'Remove Uploaded Excel & Reset First Marking',
+      message:
+        'Are you sure you want to remove the uploaded Excel file and reset the 1st marking sheet? All imported question columns and marks from the spreadsheet will be removed, and the table will be unlocked.',
+      variant: 'destructive',
+      confirmText: 'Remove & Reset',
+    });
+
+    if (!isConfirmed) return;
+
+    try {
+      setIsClearingFirstMarking(true);
+      await apiClient.post(`/marks/courses/${selectedCourseId}/config`, {
+        firstMarkerSheet: null,
+        questions: null,
+      });
+
+      setFirstMarkerMarks({});
+      setFirstMarkerQuestions([]);
+      toast.success('Uploaded 1st marking Excel file and table columns removed successfully.');
+      refetchGrid();
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.message || err.message || 'Failed to remove uploaded Excel file.';
+      toast.error(msg);
+    } finally {
+      setIsClearingFirstMarking(false);
+    }
   };
 
   const handleFirstMarkerDownloadTemplate = async () => {
@@ -1290,10 +1600,34 @@ export default function MarksRegistryPage() {
         }
       });
 
-      rowObj['Total'] = hasAnyMark ? total : '';
-      rowObj['Final (100)'] = hasAnyMark
-        ? Math.round((total / (questionCols.length * 20 || 100)) * 100 * 10) / 10
-        : '';
+      const totalMax =
+        firstMarkerQuestions.length > 0
+          ? firstMarkerQuestions.reduce(
+              (sum: number, q: any) =>
+                sum + (Number(q.maxMarks) || 100 / firstMarkerQuestions.length),
+              0,
+            )
+          : questionCols.length > 0
+            ? questionCols.length === 4
+              ? 100
+              : questionCols.length * 20
+            : 100;
+
+      const computedFinal = totalMax > 0 ? Math.round((total / totalMax) * 100 * 10) / 10 : 0;
+      const normFinal100 = normalizeFinalMark(row1st.final100);
+      const normFinal = normalizeFinalMark(row1st.final);
+      const finalVal =
+        normFinal100 !== undefined
+          ? normFinal100
+          : normFinal !== undefined
+            ? normFinal
+            : computedFinal;
+
+      const normTotal = normalizeFinalMark(row1st.total);
+      rowObj['Total'] = normTotal !== undefined ? normTotal : hasAnyMark ? total : '';
+
+      rowObj['Final (100)'] =
+        hasAnyMark || normFinal100 !== undefined || normFinal !== undefined ? finalVal : '';
 
       return rowObj;
     });
@@ -1319,10 +1653,10 @@ export default function MarksRegistryPage() {
   const handleSecondMarkerExcelProcess = async (file: File) => {
     return new Promise<void>((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (evt) => {
+      reader.onload = async (evt) => {
         try {
           const bstr = evt.target?.result;
-          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wb = XLSX.read(bstr, { type: 'binary', cellNF: true, cellText: true });
           const wsName = wb.SheetNames[0];
           const ws = wb.Sheets[wsName];
           const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
@@ -1350,8 +1684,20 @@ export default function MarksRegistryPage() {
 
           const regIdx = lowerHeaders.findIndex((h: string) => h.includes('reg'));
           const indexIdx = lowerHeaders.findIndex((h: string) => h.includes('index'));
+
+          // Detect Final (100) column
+          const finalIdx = lowerHeaders.findIndex(
+            (h: string) =>
+              h.includes('final') ||
+              h.includes('(100)') ||
+              h.includes('out of 100') ||
+              h === '100%' ||
+              h === '100',
+          );
+
+          // Detect Total column (excluding final column)
           const totalIdx = lowerHeaders.findIndex(
-            (h: string) => h === 'total' || h.includes('total'),
+            (h: string, idx: number) => idx !== finalIdx && (h === 'total' || h.includes('total')),
           );
 
           if (regIdx < 0 && indexIdx < 0) {
@@ -1359,8 +1705,9 @@ export default function MarksRegistryPage() {
           }
 
           const qCols: { key: string; colIdx: number; name: string }[] = [];
-          const startIdx = indexIdx >= 0 ? indexIdx + 1 : 2;
-          const endIdx = totalIdx >= 0 ? totalIdx : headers.length;
+          const startIdx = indexIdx >= 0 ? indexIdx + 1 : regIdx >= 0 ? regIdx + 1 : 2;
+          const boundaryIdxs = [totalIdx, finalIdx].filter((idx) => idx >= 0);
+          const endIdx = boundaryIdxs.length > 0 ? Math.min(...boundaryIdxs) : headers.length;
 
           for (let c = startIdx; c < endIdx; c++) {
             const hName = headers[c];
@@ -1371,7 +1718,9 @@ export default function MarksRegistryPage() {
               !lowerHeaders[c].includes('status') &&
               !lowerHeaders[c].includes('name') &&
               !lowerHeaders[c].includes('student') &&
-              !lowerHeaders[c].includes('#')
+              !lowerHeaders[c].includes('#') &&
+              !lowerHeaders[c].includes('total') &&
+              !lowerHeaders[c].includes('final')
             ) {
               qCols.push({ key: `q_${c}`, colIdx: c, name: hName });
             }
@@ -1379,11 +1728,18 @@ export default function MarksRegistryPage() {
 
           if (qCols.length > 0 && firstMarkerQuestions.length === 0) {
             setFirstMarkerQuestions(
-              qCols.map((q) => ({
-                key: q.key,
-                label: q.name,
-                maxMarks: 20,
-              })),
+              qCols.map((q) => {
+                const match = q.name.match(/(?:\(|\[|\/)\s*(\d+(?:\.\d+)?)\s*(?:\)|\])?/);
+                let maxMarks = match ? parseFloat(match[1]) : undefined;
+                if (!maxMarks || isNaN(maxMarks)) {
+                  maxMarks = qCols.length > 0 ? Math.round((100 / qCols.length) * 10) / 10 : 20;
+                }
+                return {
+                  key: q.key,
+                  label: q.name,
+                  maxMarks,
+                };
+              }),
             );
           }
 
@@ -1415,6 +1771,27 @@ export default function MarksRegistryPage() {
                   }
                 }
               });
+
+              // Read Total from column if present
+              if (totalIdx >= 0) {
+                const rawTot = r[totalIdx];
+                const cellTot = ws[XLSX.utils.encode_cell({ r: i, c: totalIdx })];
+                const parsedTot = parseExcelMarkValue(rawTot, cellTot);
+                if (parsedTot !== undefined) {
+                  new2nd[st.student_id]['total'] = parsedTot;
+                }
+              }
+
+              // Read Final (100) from column if present
+              if (finalIdx >= 0) {
+                const rawFin = r[finalIdx];
+                const cellFin = ws[XLSX.utils.encode_cell({ r: i, c: finalIdx })];
+                const parsedFin = parseExcelMarkValue(rawFin, cellFin);
+                if (parsedFin !== undefined) {
+                  new2nd[st.student_id]['final100'] = parsedFin;
+                  new2nd[st.student_id]['final'] = parsedFin;
+                }
+              }
             }
           }
 
@@ -1480,10 +1857,54 @@ export default function MarksRegistryPage() {
         }
       });
 
-      rowObj['Total'] = hasAnyMark ? total : '';
-      rowObj['Final (100)'] = hasAnyMark
-        ? Math.round((total / (questionCols.length * 20 || 100)) * 100 * 10) / 10
-        : '';
+      const totalMax =
+        firstMarkerQuestions.length > 0
+          ? firstMarkerQuestions.reduce(
+              (sum: number, q: any) =>
+                sum + (Number(q.maxMarks) || 100 / firstMarkerQuestions.length),
+              0,
+            )
+          : questionCols.length > 0
+            ? questionCols.length === 4
+              ? 100
+              : questionCols.length * 20
+            : 100;
+
+      const computedFinal = totalMax > 0 ? Math.round((total / totalMax) * 100 * 10) / 10 : 0;
+      const norm2ndFinal100 = normalizeFinalMark(row2nd.final100);
+      const norm2ndFinal = normalizeFinalMark(row2nd.final);
+      const norm1stFinal100 = normalizeFinalMark(row1st.final100);
+      const norm1stFinal = normalizeFinalMark(row1st.final);
+      const finalVal =
+        norm2ndFinal100 !== undefined
+          ? norm2ndFinal100
+          : norm2ndFinal !== undefined
+            ? norm2ndFinal
+            : norm1stFinal100 !== undefined
+              ? norm1stFinal100
+              : norm1stFinal !== undefined
+                ? norm1stFinal
+                : computedFinal;
+
+      const norm2ndTotal = normalizeFinalMark(row2nd.total);
+      const norm1stTotal = normalizeFinalMark(row1st.total);
+      rowObj['Total'] =
+        norm2ndTotal !== undefined
+          ? norm2ndTotal
+          : norm1stTotal !== undefined
+            ? norm1stTotal
+            : hasAnyMark
+              ? total
+              : '';
+
+      rowObj['Final (100)'] =
+        hasAnyMark ||
+        norm2ndFinal100 !== undefined ||
+        norm2ndFinal !== undefined ||
+        norm1stFinal100 !== undefined ||
+        norm1stFinal !== undefined
+          ? finalVal
+          : '';
 
       return rowObj;
     });
@@ -1512,10 +1933,10 @@ export default function MarksRegistryPage() {
     if (!selectedCaUploadExam) return;
     return new Promise<void>((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (evt) => {
+      reader.onload = async (evt) => {
         try {
           const bstr = evt.target?.result;
-          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wb = XLSX.read(bstr, { type: 'binary', cellNF: true, cellText: true });
           const wsName = wb.SheetNames[0];
           const ws = wb.Sheets[wsName];
           const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
@@ -1593,6 +2014,36 @@ export default function MarksRegistryPage() {
 
           setGridMarksDraft(newDraft);
           setCaMarksData(newCaData);
+
+          // Automatically persist imported CA marks to backend
+          if (selectedCourseId) {
+            const caPayload: { studentId: number; examMarks: { [examId: string]: number } }[] = [];
+            for (const s of stList) {
+              const draft = newDraft[s.student_id] || {};
+              const stMarks: { [examId: string]: number } = {};
+              for (const [eId, vStr] of Object.entries(draft)) {
+                const num = parseFloat(vStr);
+                if (!isNaN(num)) stMarks[eId] = num;
+              }
+              if (Object.keys(stMarks).length > 0) {
+                caPayload.push({ studentId: s.student_id, examMarks: stMarks });
+              }
+            }
+            try {
+              await apiClient.post(`/marks/courses/${selectedCourseId}/submit-grid`, {
+                marks: caPayload,
+                submissionType: null,
+                caMarks: newCaData,
+              });
+              lastSavedGridPayloadRef.current = JSON.stringify({
+                payload: caPayload,
+                caMarksData: newCaData,
+              });
+            } catch {
+              // fallback auto-save will handle it
+            }
+          }
+
           toast.success(
             `Imported CA marks for ${matchedCount} student(s) into ${selectedCaUploadExam.exam_title || 'CA'}!`,
           );
@@ -1654,54 +2105,6 @@ export default function MarksRegistryPage() {
     toast.success(
       `Downloaded CA student list template for ${dataRows.length} registered student(s).`,
     );
-  };
-
-  const [isSavingCaMarks, setIsSavingCaMarks] = useState<boolean>(false);
-
-  const handleSaveDetailedMarks = async () => {
-    if (!selectedCourseId || !gridData) return;
-    setIsSavingCaMarks(true);
-    try {
-      const payload: { studentId: number; examMarks: { [examId: string]: number } }[] = [];
-      const students = gridData.students || [];
-      const caExams = (gridData.exams || []).filter(
-        (e: any) => e.exam_type?.toUpperCase() === 'CA',
-      );
-
-      for (const student of students) {
-        const studentMarks: { [examId: string]: number } = {};
-        const draft = gridMarksDraft[student.student_id] || {};
-
-        for (const exam of caExams) {
-          const rawVal = draft[exam.exam_id] || '';
-          if (rawVal !== '') {
-            const val = parseFloat(rawVal);
-            if (!isNaN(val) && val >= 0 && val <= (exam.total_marks || 100)) {
-              studentMarks[exam.exam_id.toString()] = val;
-            }
-          }
-        }
-        if (Object.keys(studentMarks).length > 0) {
-          payload.push({ studentId: student.student_id, examMarks: studentMarks });
-        }
-      }
-
-      await apiClient.post(`/marks/courses/${selectedCourseId}/submit-grid`, {
-        marks: payload,
-        submissionType: null,
-        caMarks: caMarksData,
-      });
-
-      toast.success('Continuous Assessment (CA) marks saved successfully!');
-      setSuccessMsg('Continuous Assessment (CA) marks saved successfully!');
-      refetchGrid();
-    } catch (err: any) {
-      const msg = err.response?.data?.message || 'Failed to save CA marks.';
-      toast.error(msg);
-      setErrorMsg(msg);
-    } finally {
-      setIsSavingCaMarks(false);
-    }
   };
 
   // Format Status Badge Helper
@@ -2084,17 +2487,6 @@ export default function MarksRegistryPage() {
                       <h3 className="text-base font-bold text-foreground flex items-center gap-2">
                         <Award className="h-5 w-5 text-primary" />
                         Student Marks Registry Grid
-                        {[
-                          'SUBMITTED_FINAL',
-                          'SUBMITTED_PROVISIONAL',
-                          'SUBMITTED',
-                          'APPROVED',
-                          'PUBLISHED',
-                        ].includes(gridData.course?.result_submission_status) && (
-                          <span className="px-2.5 py-0.5 text-[10px] font-bold rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase flex items-center gap-1">
-                            <Lock className="h-3 w-3" /> Grid Locked (Read-Only)
-                          </span>
-                        )}
                       </h3>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         Manage evaluations across different marksheets.
@@ -2113,7 +2505,7 @@ export default function MarksRegistryPage() {
                       >
                         1st Marker Evaluation
                         {isFirstMarkingSubmitted && (
-                          <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                          <Check className="h-3.5 w-3.5 text-emerald-400 stroke-[3]" />
                         )}
                       </button>
 
@@ -2127,7 +2519,7 @@ export default function MarksRegistryPage() {
                       >
                         2nd Marker Evaluation
                         {isSecondMarkingSubmitted && (
-                          <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                          <Check className="h-3.5 w-3.5 text-emerald-400 stroke-[3]" />
                         )}
                       </button>
 
@@ -2204,14 +2596,54 @@ export default function MarksRegistryPage() {
                               'APPROVED',
                               'PUBLISHED',
                             ].includes(gridData?.course?.result_submission_status) && (
-                              <button
-                                type="button"
-                                onClick={() => setIsFirstMarkerUploadOpen(true)}
-                                className="px-3.5 py-2 bg-secondary hover:bg-secondary/80 text-foreground font-bold rounded-xl transition text-xs border border-border/80 flex items-center gap-1.5 cursor-pointer"
-                              >
-                                <Upload className="h-3.5 w-3.5 text-primary" />
-                                Upload 1st Marking Excel
-                              </button>
+                              <>
+                                {Boolean(
+                                  (firstMarkerMarks && Object.keys(firstMarkerMarks).length > 0) ||
+                                  (typeof gridData?.course?.marks_config === 'string'
+                                    ? (() => {
+                                        try {
+                                          return JSON.parse(gridData.course.marks_config);
+                                        } catch {
+                                          return {};
+                                        }
+                                      })()
+                                    : gridData?.course?.marks_config || {}
+                                  )?.firstMarkerSheet?.excelUploaded ||
+                                  (typeof gridData?.course?.marks_config === 'string'
+                                    ? (() => {
+                                        try {
+                                          return JSON.parse(gridData.course.marks_config);
+                                        } catch {
+                                          return {};
+                                        }
+                                      })()
+                                    : gridData?.course?.marks_config || {}
+                                  )?.firstMarkerSheet?.marks,
+                                ) && (
+                                  <button
+                                    type="button"
+                                    onClick={handleClearFirstMarkerExcel}
+                                    disabled={isClearingFirstMarking}
+                                    className="px-3.5 py-2 bg-destructive/10 hover:bg-destructive/15 text-destructive font-bold rounded-xl transition text-xs border border-destructive/30 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                    title="Remove uploaded Excel file and reset 1st marking sheet"
+                                  >
+                                    {isClearingFirstMarking ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    )}
+                                    Remove Uploaded Excel
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setIsFirstMarkerUploadOpen(true)}
+                                  className="px-3.5 py-2 bg-secondary hover:bg-secondary/80 text-foreground font-bold rounded-xl transition text-xs border border-border/80 flex items-center gap-1.5 cursor-pointer"
+                                >
+                                  <Upload className="h-3.5 w-3.5 text-primary" />
+                                  Upload 1st Marking Excel
+                                </button>
+                              </>
                             )}
                         </>
                       )}
@@ -2278,39 +2710,16 @@ export default function MarksRegistryPage() {
 
                       {gridSubpart === 'detailed' && (
                         <div className="flex flex-wrap items-center gap-2">
-                          {![
-                            'SUBMITTED_FINAL',
-                            'SUBMITTED_PROVISIONAL',
-                            'SUBMITTED',
-                            'APPROVED',
-                            'PUBLISHED',
-                          ].includes(gridData?.course?.result_submission_status) && (
-                            <button
-                              onClick={handleSaveDetailedMarks}
-                              disabled={isSavingCaMarks}
-                              className="px-3.5 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl transition text-xs shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                            >
-                              {isSavingCaMarks ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Check className="h-3.5 w-3.5" />
-                              )}
-                              Save CA Marks
-                            </button>
-                          )}
                           <button
                             onClick={() => {
                               const caExams = (gridData?.exams || []).filter(
                                 (e: any) => e.exam_type?.toUpperCase() === 'CA',
                               );
-                              const caWeight = gridData?.course?.ca_weight || 40;
-                              const saWeight = gridData?.course?.final_weight || 100 - caWeight;
+                              const { caWeight, saWeight } = getEffectiveWeights();
 
                               const dataRows = (gridData.students || []).map(
                                 (st: any, i: number) => {
-                                  const row1st = firstMarkerMarks[st.student_id] || {};
-                                  const row2nd = secondMarkerMarks[st.student_id] || row1st;
-                                  const decision = reconciliationDecisions[st.student_id] || 'MAX';
+                                  const rec = getStudentReconciledMarks(st.student_id);
                                   const caPercentage = getStudentCaPercentage(st.student_id);
 
                                   const caDetails: any = {};
@@ -2328,31 +2737,14 @@ export default function MarksRegistryPage() {
                                   }
 
                                   const resolvedQuestions: any = {};
-                                  let totalFinal = 0;
                                   firstMarkerQuestions.forEach((q) => {
-                                    const m1 = Number(row1st[q.key]) || 0;
-                                    const m2 = Number(row2nd[q.key]) || 0;
-                                    let res = m1;
-                                    if (decision === 'MAX') res = Math.max(m1, m2);
-                                    else if (decision === 'MIN') res = Math.min(m1, m2);
-                                    else res = Math.round(((m1 + m2) / 2) * 10) / 10;
-                                    resolvedQuestions[q.label] = res;
-                                    totalFinal += res;
+                                    resolvedQuestions[q.label] = rec.qVals[q.key];
                                   });
-
-                                  const totalMax = firstMarkerQuestions.reduce(
-                                    (sum, q) => sum + (Number(q.maxMarks) || 20),
-                                    0,
-                                  );
-                                  const final100 =
-                                    totalMax > 0
-                                      ? Math.round((totalFinal / totalMax) * 100 * 10) / 10
-                                      : 0;
 
                                   const isRep = st.registrations?.[0]?.attempt_type === 'REPEAT';
                                   const evalRes = resolveStudentFinalEvaluation(
                                     caPercentage,
-                                    final100,
+                                    rec.final100,
                                     caWeight,
                                     saWeight,
                                     isRep,
@@ -2366,8 +2758,8 @@ export default function MarksRegistryPage() {
                                     ...caDetails,
                                     [`CA Total (${caWeight}%)`]: evalRes.caTotalVal,
                                     ...resolvedQuestions,
-                                    Total: totalFinal,
-                                    'Final (100)': final100,
+                                    Total: rec.totalFinal,
+                                    'Final (100)': rec.final100,
                                     [`SA Total (${saWeight}%)`]: evalRes.saTotalVal,
                                     'Total Combined (%)': evalRes.combined,
                                     'Final Grade': evalRes.grade,
@@ -2394,83 +2786,16 @@ export default function MarksRegistryPage() {
                       {gridSubpart === 'final' && (
                         <button
                           onClick={() => {
-                            const examsList = gridData?.exams || [];
-                            const weightsMap = customConfig?.weights || {};
-                            const contribsMap = customConfig?.contributes || {};
-
-                            const totalCAWeightAllocated = examsList.reduce(
-                              (acc: number, e: any) => {
-                                if (e.exam_type?.toUpperCase() !== 'CA') return acc;
-                                const isContrib =
-                                  contribsMap[e.exam_id] !== undefined
-                                    ? !!contribsMap[e.exam_id]
-                                    : true;
-                                if (!isContrib) return acc;
-                                const w =
-                                  weightsMap[e.exam_id] !== undefined
-                                    ? parseFloat(weightsMap[e.exam_id])
-                                    : parseFloat(e.weight) || 0;
-                                return acc + (isNaN(w) ? 0 : w);
-                              },
-                              0,
-                            );
-
-                            const totalSAWeightAllocated = examsList.reduce(
-                              (acc: number, e: any) => {
-                                if (e.exam_type?.toUpperCase() === 'CA') return acc;
-                                const isContrib =
-                                  contribsMap[e.exam_id] !== undefined
-                                    ? !!contribsMap[e.exam_id]
-                                    : true;
-                                if (!isContrib) return acc;
-                                const w =
-                                  weightsMap[e.exam_id] !== undefined
-                                    ? parseFloat(weightsMap[e.exam_id])
-                                    : parseFloat(e.weight) || 0;
-                                return acc + (isNaN(w) ? 0 : w);
-                              },
-                              0,
-                            );
-
-                            const effCAWeight =
-                              totalCAWeightAllocated > 0
-                                ? totalCAWeightAllocated
-                                : gridData?.course?.ca_weight || 40;
-                            const effSAWeight =
-                              totalSAWeightAllocated > 0
-                                ? totalSAWeightAllocated
-                                : gridData?.course?.final_weight || 100 - effCAWeight;
+                            const { caWeight: effCAWeight, saWeight: effSAWeight } =
+                              getEffectiveWeights();
 
                             const dataRows = (gridData.students || []).map((st: any, i: number) => {
-                              const row1st = firstMarkerMarks[st.student_id] || {};
-                              const row2nd = secondMarkerMarks[st.student_id] || row1st;
-                              const decision = reconciliationDecisions[st.student_id] || 'MAX';
+                              const rec = getStudentReconciledMarks(st.student_id);
                               const caPercentage = getStudentCaPercentage(st.student_id);
-
-                              let totFinal = 0;
-                              firstMarkerQuestions.forEach((q) => {
-                                const m1 = Number(row1st[q.key]) || 0;
-                                const m2 = Number(row2nd[q.key]) || 0;
-                                let res = m1;
-                                if (decision === 'MAX') res = Math.max(m1, m2);
-                                else if (decision === 'MIN') res = Math.min(m1, m2);
-                                else res = Math.round(((m1 + m2) / 2) * 10) / 10;
-                                totFinal += res;
-                              });
-
-                              const totalMax = firstMarkerQuestions.reduce(
-                                (sum, q) => sum + (Number(q.maxMarks) || 20),
-                                0,
-                              );
-                              const final100 =
-                                totalMax > 0
-                                  ? Math.round((totFinal / totalMax) * 100 * 10) / 10
-                                  : 0;
-
                               const isRep = st.registrations?.[0]?.attempt_type === 'REPEAT';
                               const evalRes = resolveStudentFinalEvaluation(
                                 caPercentage,
-                                final100,
+                                rec.final100,
                                 effCAWeight,
                                 effSAWeight,
                                 isRep,
@@ -2556,16 +2881,33 @@ export default function MarksRegistryPage() {
                               .slice(0, marksVisibleLimit)
                               .map((student: any, idx: number) => {
                                 const rowMarks = firstMarkerMarks[student.student_id] || {};
-                                const total = firstMarkerQuestions.reduce(
-                                  (sum, q) => sum + (Number(rowMarks[q.key]) || 0),
-                                  0,
-                                );
+                                const normTot = normalizeFinalMark(rowMarks.total);
+                                const total =
+                                  normTot !== undefined
+                                    ? normTot
+                                    : firstMarkerQuestions.reduce(
+                                        (sum, q) => sum + (Number(rowMarks[q.key]) || 0),
+                                        0,
+                                      );
                                 const totalMax = firstMarkerQuestions.reduce(
-                                  (sum, q) => sum + (Number(q.maxMarks) || 20),
+                                  (sum, q) =>
+                                    sum +
+                                    (Number(q.maxMarks) ||
+                                      (firstMarkerQuestions.length > 0
+                                        ? 100 / firstMarkerQuestions.length
+                                        : 20)),
                                   0,
                                 );
+                                const normFinal100 = normalizeFinalMark(rowMarks.final100);
+                                const normFinal = normalizeFinalMark(rowMarks.final);
                                 const final100 =
-                                  totalMax > 0 ? Math.round((total / totalMax) * 100 * 10) / 10 : 0;
+                                  normFinal100 !== undefined
+                                    ? normFinal100
+                                    : normFinal !== undefined
+                                      ? normFinal
+                                      : totalMax > 0
+                                        ? Math.round((total / totalMax) * 100 * 10) / 10
+                                        : 0;
                                 const isRepeat =
                                   student.registrations?.[0]?.attempt_type === 'REPEAT';
                                 const marksConfig =
@@ -2767,15 +3109,18 @@ export default function MarksRegistryPage() {
                                 .map((student: any, idx: number) => {
                                   const row1st = firstMarkerMarks[student.student_id] || {};
                                   const row2nd = secondMarkerMarks[student.student_id] || row1st;
-                                  const tot1 = firstMarkerQuestions.reduce(
-                                    (sum, q) => sum + (Number(row1st[q.key]) || 0),
-                                    0,
+                                  const rec = getStudentReconciledMarks(student.student_id);
+                                  const tot1 = rec.tot1;
+                                  const tot2 = rec.tot2;
+                                  const fin1 = rec.fin1;
+                                  const fin2 = rec.fin2;
+                                  const isTotalChanged = tot1 !== tot2;
+                                  const isFinalChanged = fin1 !== fin2;
+                                  const isAnyQChanged = firstMarkerQuestions.some(
+                                    (q) => (row1st[q.key] || 0) !== (row2nd[q.key] || 0),
                                   );
-                                  const tot2 = firstMarkerQuestions.reduce(
-                                    (sum, q) => sum + (Number(row2nd[q.key]) || 0),
-                                    0,
-                                  );
-                                  const isChanged = tot1 !== tot2;
+                                  const isChanged =
+                                    isTotalChanged || isFinalChanged || isAnyQChanged;
                                   const chosenOpt =
                                     reconciliationDecisions[student.student_id] || 'MAX';
                                   const isRepeat =
@@ -2786,6 +3131,8 @@ export default function MarksRegistryPage() {
                                       'SUBMITTED_FINAL',
                                       'SUBMITTED_PROVISIONAL',
                                       'SUBMITTED',
+                                      'SUBMITTED_TO_STAFF',
+                                      'RECEIVED_BY_STAFF',
                                       'APPROVED',
                                       'PUBLISHED',
                                     ].includes(gridData.course?.result_submission_status);
@@ -2845,13 +3192,23 @@ export default function MarksRegistryPage() {
                                         );
                                       })}
 
-                                      <td className="px-5 py-3 border-l border-border/30 text-center font-bold text-foreground bg-secondary/5">
-                                        {tot1}
-                                      </td>
                                       <td
-                                        className={`px-5 py-3 border-l border-border/30 text-center font-bold ${isChanged ? 'text-red-400 bg-red-500/10' : 'text-foreground bg-secondary/5'}`}
+                                        className={`px-5 py-3 border-l border-border/30 text-center font-bold ${
+                                          isTotalChanged && isSecondMarkingSubmitted
+                                            ? 'text-red-400 bg-red-500/15 font-bold border border-red-500/30'
+                                            : 'text-foreground bg-secondary/5'
+                                        }`}
                                       >
                                         {tot2}
+                                      </td>
+                                      <td
+                                        className={`px-5 py-3 border-l border-border/30 text-center font-bold ${
+                                          isFinalChanged && isSecondMarkingSubmitted
+                                            ? 'text-red-400 bg-red-500/15 font-bold border border-red-500/30'
+                                            : 'text-primary bg-primary/5'
+                                        }`}
+                                      >
+                                        {fin2}%
                                       </td>
 
                                       {isSecondMarkingSubmitted && (
@@ -2864,6 +3221,8 @@ export default function MarksRegistryPage() {
                                                     'SUBMITTED_FINAL',
                                                     'SUBMITTED_PROVISIONAL',
                                                     'SUBMITTED',
+                                                    'SUBMITTED_TO_STAFF',
+                                                    'RECEIVED_BY_STAFF',
                                                     'APPROVED',
                                                     'PUBLISHED',
                                                   ].includes(
@@ -2878,6 +3237,8 @@ export default function MarksRegistryPage() {
                                                   'SUBMITTED_FINAL',
                                                   'SUBMITTED_PROVISIONAL',
                                                   'SUBMITTED',
+                                                  'SUBMITTED_TO_STAFF',
+                                                  'RECEIVED_BY_STAFF',
                                                   'APPROVED',
                                                   'PUBLISHED',
                                                 ].includes(
@@ -2885,7 +3246,7 @@ export default function MarksRegistryPage() {
                                                 )}
                                                 className={`px-2 py-1 rounded-lg border transition cursor-pointer ${chosenOpt === 'MAX' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-sm' : 'bg-secondary text-muted-foreground border-border/60 hover:text-foreground'}`}
                                               >
-                                                Max ({Math.max(tot1, tot2)})
+                                                Max ({Math.max(fin1, fin2)}%)
                                               </button>
                                               <button
                                                 onClick={() =>
@@ -2893,6 +3254,8 @@ export default function MarksRegistryPage() {
                                                     'SUBMITTED_FINAL',
                                                     'SUBMITTED_PROVISIONAL',
                                                     'SUBMITTED',
+                                                    'SUBMITTED_TO_STAFF',
+                                                    'RECEIVED_BY_STAFF',
                                                     'APPROVED',
                                                     'PUBLISHED',
                                                   ].includes(
@@ -2907,6 +3270,8 @@ export default function MarksRegistryPage() {
                                                   'SUBMITTED_FINAL',
                                                   'SUBMITTED_PROVISIONAL',
                                                   'SUBMITTED',
+                                                  'SUBMITTED_TO_STAFF',
+                                                  'RECEIVED_BY_STAFF',
                                                   'APPROVED',
                                                   'PUBLISHED',
                                                 ].includes(
@@ -2914,7 +3279,7 @@ export default function MarksRegistryPage() {
                                                 )}
                                                 className={`px-2 py-1 rounded-lg border transition cursor-pointer ${chosenOpt === 'MIN' ? 'bg-blue-500/20 text-blue-400 border-blue-500/40 shadow-sm' : 'bg-secondary text-muted-foreground border-border/60 hover:text-foreground'}`}
                                               >
-                                                Min ({Math.min(tot1, tot2)})
+                                                Min ({Math.min(fin1, fin2)}%)
                                               </button>
                                               <button
                                                 onClick={() =>
@@ -2922,6 +3287,8 @@ export default function MarksRegistryPage() {
                                                     'SUBMITTED_FINAL',
                                                     'SUBMITTED_PROVISIONAL',
                                                     'SUBMITTED',
+                                                    'SUBMITTED_TO_STAFF',
+                                                    'RECEIVED_BY_STAFF',
                                                     'APPROVED',
                                                     'PUBLISHED',
                                                   ].includes(
@@ -2936,6 +3303,8 @@ export default function MarksRegistryPage() {
                                                   'SUBMITTED_FINAL',
                                                   'SUBMITTED_PROVISIONAL',
                                                   'SUBMITTED',
+                                                  'SUBMITTED_TO_STAFF',
+                                                  'RECEIVED_BY_STAFF',
                                                   'APPROVED',
                                                   'PUBLISHED',
                                                 ].includes(
@@ -2943,7 +3312,7 @@ export default function MarksRegistryPage() {
                                                 )}
                                                 className={`px-2 py-1 rounded-lg border transition cursor-pointer ${chosenOpt === 'AVG' ? 'bg-purple-500/20 text-purple-400 border-purple-500/40 shadow-sm' : 'bg-secondary text-muted-foreground border-border/60 hover:text-foreground'}`}
                                               >
-                                                Avg ({Math.round(((tot1 + tot2) / 2) * 10) / 10})
+                                                Avg ({Math.round(((fin1 + fin2) / 2) * 10) / 10}%)
                                               </button>
                                             </div>
                                           ) : (
@@ -3047,52 +3416,8 @@ export default function MarksRegistryPage() {
                               )}
 
                               {(() => {
-                                const examsList = gridData?.exams || [];
-                                const weightsMap = customConfig?.weights || {};
-                                const contribsMap = customConfig?.contributes || {};
-
-                                const totalCAWeightAllocated = examsList.reduce(
-                                  (acc: number, e: any) => {
-                                    if (e.exam_type?.toUpperCase() !== 'CA') return acc;
-                                    const isContrib =
-                                      contribsMap[e.exam_id] !== undefined
-                                        ? !!contribsMap[e.exam_id]
-                                        : true;
-                                    if (!isContrib) return acc;
-                                    const w =
-                                      weightsMap[e.exam_id] !== undefined
-                                        ? parseFloat(weightsMap[e.exam_id])
-                                        : parseFloat(e.weight) || 0;
-                                    return acc + (isNaN(w) ? 0 : w);
-                                  },
-                                  0,
-                                );
-
-                                const totalSAWeightAllocated = examsList.reduce(
-                                  (acc: number, e: any) => {
-                                    if (e.exam_type?.toUpperCase() === 'CA') return acc;
-                                    const isContrib =
-                                      contribsMap[e.exam_id] !== undefined
-                                        ? !!contribsMap[e.exam_id]
-                                        : true;
-                                    if (!isContrib) return acc;
-                                    const w =
-                                      weightsMap[e.exam_id] !== undefined
-                                        ? parseFloat(weightsMap[e.exam_id])
-                                        : parseFloat(e.weight) || 0;
-                                    return acc + (isNaN(w) ? 0 : w);
-                                  },
-                                  0,
-                                );
-
-                                const effectiveCAWeight =
-                                  totalCAWeightAllocated > 0
-                                    ? totalCAWeightAllocated
-                                    : gridData?.course?.ca_weight || 40;
-                                const effectiveSAWeight =
-                                  totalSAWeightAllocated > 0
-                                    ? totalSAWeightAllocated
-                                    : gridData?.course?.final_weight || 100 - effectiveCAWeight;
+                                const { caWeight: effectiveCAWeight, saWeight: effectiveSAWeight } =
+                                  getEffectiveWeights();
 
                                 return (
                                   <>
@@ -3141,10 +3466,6 @@ export default function MarksRegistryPage() {
                               })
                               .slice(0, marksVisibleLimit)
                               .map((student: any, idx: number) => {
-                                const row1st = firstMarkerMarks[student.student_id] || {};
-                                const row2nd = secondMarkerMarks[student.student_id] || row1st;
-                                const decision =
-                                  reconciliationDecisions[student.student_id] || 'MAX';
                                 const caExams = (gridData?.exams || []).filter(
                                   (e: any) => e.exam_type?.toUpperCase() === 'CA',
                                 );
@@ -3152,77 +3473,17 @@ export default function MarksRegistryPage() {
                                   'SUBMITTED_FINAL',
                                   'SUBMITTED_PROVISIONAL',
                                   'SUBMITTED',
+                                  'SUBMITTED_TO_STAFF',
+                                  'RECEIVED_BY_STAFF',
                                   'APPROVED',
                                   'PUBLISHED',
                                 ].includes(gridData.course?.result_submission_status);
-                                const examsList = gridData?.exams || [];
-                                const weightsMap = customConfig?.weights || {};
-                                const contribsMap = customConfig?.contributes || {};
+                                const { caWeight, saWeight } = getEffectiveWeights();
 
-                                const totalCAWeightAllocated = examsList.reduce(
-                                  (acc: number, e: any) => {
-                                    if (e.exam_type?.toUpperCase() !== 'CA') return acc;
-                                    const isContrib =
-                                      contribsMap[e.exam_id] !== undefined
-                                        ? !!contribsMap[e.exam_id]
-                                        : true;
-                                    if (!isContrib) return acc;
-                                    const w =
-                                      weightsMap[e.exam_id] !== undefined
-                                        ? parseFloat(weightsMap[e.exam_id])
-                                        : parseFloat(e.weight) || 0;
-                                    return acc + (isNaN(w) ? 0 : w);
-                                  },
-                                  0,
-                                );
-
-                                const totalSAWeightAllocated = examsList.reduce(
-                                  (acc: number, e: any) => {
-                                    if (e.exam_type?.toUpperCase() === 'CA') return acc;
-                                    const isContrib =
-                                      contribsMap[e.exam_id] !== undefined
-                                        ? !!contribsMap[e.exam_id]
-                                        : true;
-                                    if (!isContrib) return acc;
-                                    const w =
-                                      weightsMap[e.exam_id] !== undefined
-                                        ? parseFloat(weightsMap[e.exam_id])
-                                        : parseFloat(e.weight) || 0;
-                                    return acc + (isNaN(w) ? 0 : w);
-                                  },
-                                  0,
-                                );
-
-                                const caWeight =
-                                  totalCAWeightAllocated > 0
-                                    ? totalCAWeightAllocated
-                                    : gridData?.course?.ca_weight || 40;
-                                const saWeight =
-                                  totalSAWeightAllocated > 0
-                                    ? totalSAWeightAllocated
-                                    : gridData?.course?.final_weight || 100 - caWeight;
-
-                                let totalFinal = 0;
-                                const qVals: { [key: string]: number } = {};
-                                firstMarkerQuestions.forEach((q) => {
-                                  const m1 = Number(row1st[q.key]) || 0;
-                                  const m2 = Number(row2nd[q.key]) || 0;
-                                  let res = m1;
-                                  if (decision === 'MAX') res = Math.max(m1, m2);
-                                  else if (decision === 'MIN') res = Math.min(m1, m2);
-                                  else res = Math.round(((m1 + m2) / 2) * 10) / 10;
-                                  qVals[q.key] = res;
-                                  totalFinal += res;
-                                });
-
-                                const totalMax = firstMarkerQuestions.reduce(
-                                  (sum, q) => sum + (Number(q.maxMarks) || 20),
-                                  0,
-                                );
-                                const final100 =
-                                  totalMax > 0
-                                    ? Math.round((totalFinal / totalMax) * 100 * 10) / 10
-                                    : 0;
+                                const rec = getStudentReconciledMarks(student.student_id);
+                                const totalFinal = rec.totalFinal;
+                                const final100 = rec.final100;
+                                const qVals = rec.qVals;
 
                                 const isRepeat =
                                   student.registrations?.[0]?.attempt_type === 'REPEAT';
@@ -3396,52 +3657,8 @@ export default function MarksRegistryPage() {
                                 P/R
                               </th>
                               {(() => {
-                                const examsList = gridData?.exams || [];
-                                const weightsMap = customConfig?.weights || {};
-                                const contribsMap = customConfig?.contributes || {};
-
-                                const totalCAWeightAllocated = examsList.reduce(
-                                  (acc: number, e: any) => {
-                                    if (e.exam_type?.toUpperCase() !== 'CA') return acc;
-                                    const isContrib =
-                                      contribsMap[e.exam_id] !== undefined
-                                        ? !!contribsMap[e.exam_id]
-                                        : true;
-                                    if (!isContrib) return acc;
-                                    const w =
-                                      weightsMap[e.exam_id] !== undefined
-                                        ? parseFloat(weightsMap[e.exam_id])
-                                        : parseFloat(e.weight) || 0;
-                                    return acc + (isNaN(w) ? 0 : w);
-                                  },
-                                  0,
-                                );
-
-                                const totalSAWeightAllocated = examsList.reduce(
-                                  (acc: number, e: any) => {
-                                    if (e.exam_type?.toUpperCase() === 'CA') return acc;
-                                    const isContrib =
-                                      contribsMap[e.exam_id] !== undefined
-                                        ? !!contribsMap[e.exam_id]
-                                        : true;
-                                    if (!isContrib) return acc;
-                                    const w =
-                                      weightsMap[e.exam_id] !== undefined
-                                        ? parseFloat(weightsMap[e.exam_id])
-                                        : parseFloat(e.weight) || 0;
-                                    return acc + (isNaN(w) ? 0 : w);
-                                  },
-                                  0,
-                                );
-
-                                const effCAWeight =
-                                  totalCAWeightAllocated > 0
-                                    ? totalCAWeightAllocated
-                                    : gridData?.course?.ca_weight || 40;
-                                const effSAWeight =
-                                  totalSAWeightAllocated > 0
-                                    ? totalSAWeightAllocated
-                                    : gridData?.course?.final_weight || 100 - effCAWeight;
+                                const { caWeight: effCAWeight, saWeight: effSAWeight } =
+                                  getEffectiveWeights();
 
                                 return (
                                   <>
@@ -3474,86 +3691,18 @@ export default function MarksRegistryPage() {
                               })
                               .slice(0, marksVisibleLimit)
                               .map((student: any, idx: number) => {
-                                const row1st = firstMarkerMarks[student.student_id] || {};
-                                const row2nd = secondMarkerMarks[student.student_id] || row1st;
-                                const decision =
-                                  reconciliationDecisions[student.student_id] || 'MAX';
+                                const { caWeight: effCAWeight, saWeight: effSAWeight } =
+                                  getEffectiveWeights();
 
-                                let totalFinal = 0;
-                                firstMarkerQuestions.forEach((q) => {
-                                  const m1 = Number(row1st[q.key]) || 0;
-                                  const m2 = Number(row2nd[q.key]) || 0;
-                                  let res = m1;
-                                  if (decision === 'MAX') res = Math.max(m1, m2);
-                                  else if (decision === 'MIN') res = Math.min(m1, m2);
-                                  else res = Math.round(((m1 + m2) / 2) * 10) / 10;
-                                  totalFinal += res;
-                                });
-
-                                const examsList = gridData?.exams || [];
-                                const weightsMap = customConfig?.weights || {};
-                                const contribsMap = customConfig?.contributes || {};
-
-                                const totalCAWeightAllocated = examsList.reduce(
-                                  (acc: number, e: any) => {
-                                    if (e.exam_type?.toUpperCase() !== 'CA') return acc;
-                                    const isContrib =
-                                      contribsMap[e.exam_id] !== undefined
-                                        ? !!contribsMap[e.exam_id]
-                                        : true;
-                                    if (!isContrib) return acc;
-                                    const w =
-                                      weightsMap[e.exam_id] !== undefined
-                                        ? parseFloat(weightsMap[e.exam_id])
-                                        : parseFloat(e.weight) || 0;
-                                    return acc + (isNaN(w) ? 0 : w);
-                                  },
-                                  0,
-                                );
-
-                                const totalSAWeightAllocated = examsList.reduce(
-                                  (acc: number, e: any) => {
-                                    if (e.exam_type?.toUpperCase() === 'CA') return acc;
-                                    const isContrib =
-                                      contribsMap[e.exam_id] !== undefined
-                                        ? !!contribsMap[e.exam_id]
-                                        : true;
-                                    if (!isContrib) return acc;
-                                    const w =
-                                      weightsMap[e.exam_id] !== undefined
-                                        ? parseFloat(weightsMap[e.exam_id])
-                                        : parseFloat(e.weight) || 0;
-                                    return acc + (isNaN(w) ? 0 : w);
-                                  },
-                                  0,
-                                );
-
-                                const effCAWeight =
-                                  totalCAWeightAllocated > 0
-                                    ? totalCAWeightAllocated
-                                    : gridData?.course?.ca_weight || 40;
-                                const effSAWeight =
-                                  totalSAWeightAllocated > 0
-                                    ? totalSAWeightAllocated
-                                    : gridData?.course?.final_weight || 100 - effCAWeight;
-
+                                const rec = getStudentReconciledMarks(student.student_id);
                                 const isRepeat =
                                   student.registrations?.[0]?.attempt_type === 'REPEAT';
-
-                                const totalMax = firstMarkerQuestions.reduce(
-                                  (sum, q) => sum + (Number(q.maxMarks) || 20),
-                                  0,
-                                );
-                                const final100 =
-                                  totalMax > 0
-                                    ? Math.round((totalFinal / totalMax) * 100 * 10) / 10
-                                    : 0;
 
                                 const caPercentage = getStudentCaPercentage(student.student_id);
 
                                 const evalRes = resolveStudentFinalEvaluation(
                                   caPercentage,
-                                  final100,
+                                  rec.final100,
                                   effCAWeight,
                                   effSAWeight,
                                   isRepeat,

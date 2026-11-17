@@ -28,6 +28,20 @@ export class DepartmentsController {
   async getAll() {
     const departments = await this.prisma.department.findMany({
       orderBy: { department_name: 'asc' },
+      include: {
+        lecturers: {
+          where: { is_head: true },
+          include: {
+            user: {
+              select: {
+                user_id: true,
+                full_name: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
     });
     return {
       success: true,

@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../lib/api-client';
 import { useToast } from '../../hooks/use-toast';
+import { useConfirm } from '../../hooks/use-confirm';
 import { ACADEMIC_BATCH_OPTIONS } from '../../lib/academic-batches';
 import { AxiosError } from 'axios';
 import { ApiResponse, UserRole } from '@ems/shared';
@@ -128,6 +129,7 @@ const fetchDegrees = async () => {
 
 export default function UserDialog({ open, onClose, user, onSuccess }: UserDialogProps) {
   const toast = useToast();
+  const confirm = useConfirm();
   const { user: currentUser } = useAuthStore();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -261,6 +263,30 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
     // Convert empty specialization to null
     if (payload.studentProfile && !payload.studentProfile.specializationId) {
       payload.studentProfile.specializationId = null;
+    }
+
+    // Confirmation check before reassigning department head
+    if (Number(data.roleId) === 3 && payload.lecturerProfile?.isHead) {
+      const deptId = Number(payload.lecturerProfile.departmentId);
+      const selectedDept = departments.find((d: any) => d.department_id === deptId);
+      const existingHead = selectedDept?.lecturers?.find(
+        (l: any) => l.is_head && l.user_id !== user?.user_id,
+      );
+
+      if (existingHead) {
+        const confirmed = await confirm({
+          title: 'Confirm Department Head Reassignment',
+          message: `Department "${selectedDept?.department_name || 'Selected Department'}" currently has ${existingHead.user?.full_name || 'an assigned lecturer'} as Department Head.\n\nSetting this lecturer as Head will remove ${existingHead.user?.full_name || 'the existing head'} from the Department Head position and appoint this lecturer as the new Head of Department.\n\nAre you sure you want to proceed?`,
+          variant: 'warning',
+          confirmText: 'Confirm & Reassign',
+          cancelText: 'Cancel',
+        });
+
+        if (!confirmed) {
+          setIsSubmitting(false);
+          return;
+        }
+      }
     }
 
     try {
@@ -714,8 +740,48 @@ export default function UserDialog({ open, onClose, user, onSuccess }: UserDialo
                       <input
                         type="checkbox"
                         id="isHead"
-                        {...register('lecturerProfile.isHead')}
-                        className="h-4.5 w-4.5 rounded border-border bg-secondary text-primary focus:ring-2 focus:ring-primary/60"
+                        checked={Boolean(watch('lecturerProfile.isHead'))}
+                        onChange={async (e) => {
+                          const isChecked = e.target.checked;
+                          if (!isChecked) {
+                            setValue('lecturerProfile.isHead', false);
+                            return;
+                          }
+
+                          const deptId = Number(watch('lecturerProfile.departmentId'));
+                          if (!deptId) {
+                            toast.warning(
+                              'Please select a department first before setting as Department Head.',
+                            );
+                            setValue('lecturerProfile.isHead', false);
+                            return;
+                          }
+
+                          const selectedDept = departments.find(
+                            (d: any) => d.department_id === deptId,
+                          );
+                          const existingHead = selectedDept?.lecturers?.find(
+                            (l: any) => l.is_head && l.user_id !== user?.user_id,
+                          );
+
+                          if (existingHead) {
+                            const confirmed = await confirm({
+                              title: 'Confirm Department Head Reassignment',
+                              message: `Department "${selectedDept?.department_name || 'Selected Department'}" currently has ${existingHead.user?.full_name || 'an assigned lecturer'} as Department Head.\n\nSetting this lecturer as Head will remove ${existingHead.user?.full_name || 'the existing head'} from the Department Head position and appoint this lecturer as the new Head of Department.\n\nAre you sure you want to proceed?`,
+                              variant: 'warning',
+                              confirmText: 'Confirm & Reassign',
+                              cancelText: 'Cancel',
+                            });
+
+                            if (!confirmed) {
+                              setValue('lecturerProfile.isHead', false);
+                              return;
+                            }
+                          }
+
+                          setValue('lecturerProfile.isHead', true);
+                        }}
+                        className="h-4.5 w-4.5 rounded border-border bg-secondary text-primary focus:ring-2 focus:ring-primary/60 cursor-pointer"
                       />
                       <label
                         htmlFor="isHead"

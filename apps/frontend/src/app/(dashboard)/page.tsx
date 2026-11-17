@@ -111,7 +111,7 @@ export default function DashboardOverview() {
       const response = await apiClient.get('/marks/head/pending-approvals');
       return response.data?.data || [];
     },
-    enabled: user?.role === UserRole.LECTURER && (user?.isHead || user?.isDean),
+    enabled: user?.role === UserRole.LECTURER && Boolean(user?.isHead || user?.isDean),
   });
 
   // Review course grid data query
@@ -775,8 +775,8 @@ export default function DashboardOverview() {
             );
           })()}
 
-          {/* Head of Department / Dean pending approvals */}
-          {(user?.isHead || user?.isDean) && (
+          {/* Head of Department / Dean pending approvals (only visible to department heads/deans) */}
+          {Boolean(user?.isHead || user?.isDean) && (
             <div className="space-y-6">
               <div className="border-b border-border/60 pb-3">
                 <h3 className="text-lg font-bold text-foreground">Pending Marksheet Approvals</h3>

@@ -16,8 +16,6 @@ import {
   Download,
   Search,
   Users,
-  ShieldCheck,
-  ShieldAlert,
   LogOut,
   FileSpreadsheet,
   GraduationCap,
@@ -26,6 +24,7 @@ import {
   User as UserIcon,
   Send,
   RefreshCw,
+  Mail,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ExcelUploadDialog from '../../components/marks/excel-upload-dialog';
@@ -37,7 +36,7 @@ export default function SecondMarkingPortalPage() {
   const toast = useToast();
   const confirm = useConfirm();
 
-  const { user, setUser, logout } = useAuthStore();
+  const { user, logout } = useAuthStore();
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,10 +62,7 @@ export default function SecondMarkingPortalPage() {
   void _lastSaved;
   const [hasExcelAdded, setHasExcelAdded] = useState(false);
 
-  // Authentication Dialog Form States
-  const [authPassword, setAuthPassword] = useState('');
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [isSignedOut, setIsSignedOut] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const isInitialLoad = useRef(true);
@@ -105,13 +101,21 @@ export default function SecondMarkingPortalPage() {
           }
         }
 
-        const qList = config.questions || [
+        let qList = config.questions || [
           { key: 'q1', label: 'Q1', maxMarks: 20 },
           { key: 'q2', label: 'Q2', maxMarks: 20 },
           { key: 'q3', label: 'Q3', maxMarks: 20 },
           { key: 'q4', label: 'Q4', maxMarks: 20 },
           { key: 'q5', label: 'Q5', maxMarks: 20 },
         ];
+        if (
+          qList.length > 0 &&
+          qList.length !== 5 &&
+          qList.every((q: any) => Number(q.maxMarks) === 20)
+        ) {
+          const fixedMarks = Math.round((100 / qList.length) * 10) / 10;
+          qList = qList.map((q: any) => ({ ...q, maxMarks: fixedMarks }));
+        }
         setQuestions(qList);
 
         const firstMarks = config.firstMarkerSheet?.marks || {};
@@ -176,14 +180,70 @@ export default function SecondMarkingPortalPage() {
     return () => clearTimeout(timer);
   }, [secondMarks, questions, courseData, isSubmitted, isLoading]);
 
+  // Normalization helper for marks (ensures Excel percentage fractions like 0.6 are scaled to 60)
+  const normalizeFinalMark = (val: any): number | undefined => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const num = Number(val);
+    if (isNaN(num)) return undefined;
+    if (num > 0 && num <= 1) {
+      return Math.round(num * 100 * 10) / 10;
+    }
+    return num;
+  };
+
+  const parseExcelMarkValue = (rawVal: any, cellObj?: XLSX.CellObject): number | undefined => {
+    if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') {
+      return undefined;
+    }
+
+    // 1. Check formatted text on cell (e.g., "60%", "60.0%", "50%")
+    if (cellObj && typeof cellObj.w === 'string' && cellObj.w.includes('%')) {
+      const parsed = parseFloat(cellObj.w.replace('%', '').trim());
+      if (!isNaN(parsed)) return parsed;
+    }
+
+    // 2. Check string representation of raw value (e.g., "60%")
+    const strVal = String(rawVal).trim();
+    if (strVal.includes('%')) {
+      const parsed = parseFloat(strVal.replace('%', '').trim());
+      if (!isNaN(parsed)) return parsed;
+    }
+
+    const num = parseFloat(strVal);
+    if (isNaN(num)) return undefined;
+
+    // 3. Check format code on cell (e.g., "0%", "0.00%")
+    if (cellObj && typeof cellObj.z === 'string' && cellObj.z.includes('%')) {
+      return Math.round(num * 100 * 10) / 10;
+    }
+
+    // 4. In Final (100) or Total percentage context, a decimal <= 1 represents percentage
+    if (num > 0 && num <= 1) {
+      return Math.round(num * 100 * 10) / 10;
+    }
+
+    return num;
+  };
+
   // Helper calculations
   const calculateRowTotal = (studentId: number) => {
     const row = secondMarks[studentId] || {};
+    const normTot = normalizeFinalMark(row.total);
+    if (normTot !== undefined) return normTot;
     return questions.reduce((sum, q) => sum + (Number(row[q.key]) || 0), 0);
   };
 
   const calculateRowFinal = (studentId: number) => {
-    const totalMax = questions.reduce((sum, q) => sum + (Number(q.maxMarks) || 20), 0);
+    const row = secondMarks[studentId] || {};
+    const normFinal100 = normalizeFinalMark(row.final100);
+    if (normFinal100 !== undefined) return normFinal100;
+    const normFinal = normalizeFinalMark(row.final);
+    if (normFinal !== undefined) return normFinal;
+    const totalMax = questions.reduce(
+      (sum, q) =>
+        sum + (Number(q.maxMarks) || (questions.length > 0 ? 100 / questions.length : 20)),
+      0,
+    );
     const rowTotal = calculateRowTotal(studentId);
     if (totalMax === 0) return 0;
     return Math.round((rowTotal / totalMax) * 100 * 10) / 10;
@@ -207,7 +267,7 @@ export default function SecondMarkingPortalPage() {
       reader.onload = async (evt) => {
         try {
           const bstr = evt.target?.result;
-          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wb = XLSX.read(bstr, { type: 'binary', cellNF: true, cellText: true });
           const wsName = wb.SheetNames[0];
           const ws = wb.Sheets[wsName];
           const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
@@ -236,18 +296,31 @@ export default function SecondMarkingPortalPage() {
 
           const regIdx = lowerHeaders.findIndex((h: string) => h.includes('reg'));
           const indexIdx = lowerHeaders.findIndex((h: string) => h.includes('index'));
+
+          // Detect Final (100) column
+          const finalIdx = lowerHeaders.findIndex(
+            (h: string) =>
+              h.includes('final') ||
+              h.includes('(100)') ||
+              h.includes('out of 100') ||
+              h === '100%' ||
+              h === '100',
+          );
+
+          // Detect Total column (excluding final column)
           const totalIdx = lowerHeaders.findIndex(
-            (h: string) => h === 'total' || h.includes('total'),
+            (h: string, idx: number) => idx !== finalIdx && (h === 'total' || h.includes('total')),
           );
 
           if (regIdx < 0 && indexIdx < 0) {
             throw new Error('Could not locate Registration Number or Index Number column.');
           }
 
-          // Question columns between Index Number and Total
+          // Question columns between Index Number and Total/Final
           const qColIndices: { key: string; colIdx: number; name: string }[] = [];
-          const startQIdx = indexIdx >= 0 ? indexIdx + 1 : 2;
-          const endQIdx = totalIdx >= 0 ? totalIdx : headers.length;
+          const startQIdx = indexIdx >= 0 ? indexIdx + 1 : regIdx >= 0 ? regIdx + 1 : 2;
+          const boundaryIdxs = [totalIdx, finalIdx].filter((idx) => idx >= 0);
+          const endQIdx = boundaryIdxs.length > 0 ? Math.min(...boundaryIdxs) : headers.length;
 
           for (let c = startQIdx; c < endQIdx; c++) {
             const headerName = headers[c];
@@ -258,7 +331,9 @@ export default function SecondMarkingPortalPage() {
               !lowerHeaders[c].includes('status') &&
               !lowerHeaders[c].includes('name') &&
               !lowerHeaders[c].includes('student') &&
-              !lowerHeaders[c].includes('#')
+              !lowerHeaders[c].includes('#') &&
+              !lowerHeaders[c].includes('total') &&
+              !lowerHeaders[c].includes('final')
             ) {
               const key = `q_${c}`;
               qColIndices.push({ key, colIdx: c, name: headerName });
@@ -267,11 +342,19 @@ export default function SecondMarkingPortalPage() {
 
           let resolvedQuestions = questions;
           if (qColIndices.length > 0) {
-            resolvedQuestions = qColIndices.map((q) => ({
-              key: q.key,
-              label: q.name,
-              maxMarks: 20,
-            }));
+            resolvedQuestions = qColIndices.map((q) => {
+              const match = q.name.match(/(?:\(|\[|\/)\s*(\d+(?:\.\d+)?)\s*(?:\)|\])?/);
+              let maxMarks = match ? parseFloat(match[1]) : undefined;
+              if (!maxMarks || isNaN(maxMarks)) {
+                maxMarks =
+                  qColIndices.length > 0 ? Math.round((100 / qColIndices.length) * 10) / 10 : 20;
+              }
+              return {
+                key: q.key,
+                label: q.name,
+                maxMarks,
+              };
+            });
             setQuestions(resolvedQuestions);
           }
 
@@ -300,6 +383,27 @@ export default function SecondMarkingPortalPage() {
                 const val = col !== undefined ? parseFloat(rowData[col]) || 0 : 0;
                 updatedMarks[sId][q.key] = val;
               });
+
+              // Read Total if present
+              if (totalIdx >= 0) {
+                const rawTot = rowData[totalIdx];
+                const cellTot = ws[XLSX.utils.encode_cell({ r: i, c: totalIdx })];
+                const parsedTot = parseExcelMarkValue(rawTot, cellTot);
+                if (parsedTot !== undefined) {
+                  updatedMarks[sId]['total'] = parsedTot;
+                }
+              }
+
+              // Read Final (100) if present
+              if (finalIdx >= 0) {
+                const rawFin = rowData[finalIdx];
+                const cellFin = ws[XLSX.utils.encode_cell({ r: i, c: finalIdx })];
+                const parsedFin = parseExcelMarkValue(rawFin, cellFin);
+                if (parsedFin !== undefined) {
+                  updatedMarks[sId]['final100'] = parsedFin;
+                  updatedMarks[sId]['final'] = parsedFin;
+                }
+              }
             }
           }
 
@@ -356,9 +460,31 @@ export default function SecondMarkingPortalPage() {
         row[q.label] = val;
       });
 
-      const total = questions.reduce((sum, q) => sum + (Number(row[q.label]) || 0), 0);
-      const totalMax = questions.reduce((sum, q) => sum + (Number(q.maxMarks) || 20), 0);
-      const final100 = totalMax > 0 ? Math.round((total / totalMax) * 100 * 10) / 10 : 0;
+      const computedTotal = questions.reduce((sum, q) => sum + (Number(row[q.label]) || 0), 0);
+      const norm2ndTot = normalizeFinalMark(row2nd.total);
+      const norm1stTot = normalizeFinalMark(row1st.total);
+      const total =
+        norm2ndTot !== undefined
+          ? norm2ndTot
+          : norm1stTot !== undefined
+            ? norm1stTot
+            : computedTotal;
+
+      const totalMax = questions.reduce(
+        (sum, q) =>
+          sum + (Number(q.maxMarks) || (questions.length > 0 ? 100 / questions.length : 20)),
+        0,
+      );
+      const computedFinal =
+        totalMax > 0 ? Math.round((computedTotal / totalMax) * 100 * 10) / 10 : 0;
+      const norm2ndFin = normalizeFinalMark(row2nd.final100) ?? normalizeFinalMark(row2nd.final);
+      const norm1stFin = normalizeFinalMark(row1st.final100) ?? normalizeFinalMark(row1st.final);
+      const final100 =
+        norm2ndFin !== undefined
+          ? norm2ndFin
+          : norm1stFin !== undefined
+            ? norm1stFin
+            : computedFinal;
 
       row['Total'] = total;
       row['Final (Out of 100)'] = `${final100}%`;
@@ -415,38 +541,17 @@ export default function SecondMarkingPortalPage() {
     }
   };
 
-  // 6. Security Authentication Handler
-  const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!authPassword) {
-      setAuthError('Please enter your password.');
-      return;
-    }
+  const handleLogout = async () => {
+    const confirmed = await confirm({
+      title: 'Sign Out?',
+      message:
+        'Are you sure you want to sign out of the 2nd Marker Portal? To access it again later, you will need to use the link received via email.',
+      confirmText: 'Sign Out',
+      variant: 'warning',
+    });
+    if (!confirmed) return;
 
-    try {
-      setIsAuthenticating(true);
-      setAuthError(null);
-      const res = await apiClient.post('/auth/login', {
-        email: tokenEmail,
-        password: authPassword,
-      });
-
-      if (res.data?.success && res.data?.user) {
-        setUser(res.data.user);
-        toast.success(`Authenticated successfully as 2nd Marker (${tokenEmail})`);
-      } else {
-        setAuthError(res.data?.message || 'Authentication failed. Please verify credentials.');
-      }
-    } catch (err: any) {
-      setAuthError(
-        err.response?.data?.message || 'Invalid password or unable to verify account credentials.',
-      );
-    } finally {
-      setIsAuthenticating(false);
-    }
-  };
-
-  const handleLogout = () => {
+    setIsSignedOut(true);
     logout();
     toast.info('Signed out of 2nd Marker session.');
   };
@@ -499,11 +604,11 @@ export default function SecondMarkingPortalPage() {
             <AlertTriangle className="h-10 w-10" />
           </div>
           <h2 className="text-xl font-bold text-foreground">
-            {isNetworkError ? 'Backend Server Offline' : 'Access Restricted'}
+            {isNetworkError ? 'Unable to Connect' : 'Access Restricted'}
           </h2>
           <p className="text-xs text-muted-foreground leading-relaxed">
             {isNetworkError
-              ? 'Unable to connect to the EMS API backend (net::ERR_CONNECTION_REFUSED on port 4000). Please start the backend server with `npm run dev:backend` or `npm run dev`.'
+              ? 'Unable to connect to the server at this time. Please check your internet connection and try again.'
               : error || 'Unable to access 2nd marking evaluation sheet.'}
           </p>
           <div className="pt-2 flex items-center justify-center gap-2.5">
@@ -529,103 +634,38 @@ export default function SecondMarkingPortalPage() {
     );
   }
 
-  // Security Authentication Gate
-  const isEmailMatching = user && user.email.toLowerCase() === tokenEmail.toLowerCase();
-
-  if (!isEmailMatching) {
+  // Signed Out Screen
+  if (isSignedOut) {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-card/40 border border-border/80 rounded-3xl p-8 backdrop-blur-xl shadow-2xl space-y-6 animate-fadeIn">
-          <div className="text-center space-y-2">
-            <div className="p-3 bg-primary/10 border border-primary/20 rounded-2xl w-fit mx-auto text-primary">
-              <ShieldCheck className="h-10 w-10" />
-            </div>
-            <h2 className="text-lg font-bold text-foreground">Second Marker Verification</h2>
+        <div className="max-w-md w-full bg-card/50 border border-border/80 rounded-3xl p-8 text-center space-y-6 shadow-2xl backdrop-blur-xl animate-fadeIn">
+          <div className="p-4 bg-primary/10 border border-primary/20 rounded-2xl w-fit mx-auto text-primary">
+            <Mail className="h-10 w-10" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold text-foreground">Signed Out Successfully</h2>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              For academic confidentiality and security, you must authenticate with the registered
-              2nd marker email address to view or evaluate this course.
+              If you want to access the 2nd marker portal again, please use the link received via
+              email.
             </p>
           </div>
-
-          {user && !isEmailMatching ? (
-            <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl space-y-3">
-              <div className="flex items-start gap-2.5">
-                <ShieldAlert className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-                <div className="text-xs text-muted-foreground">
-                  <span className="font-bold text-foreground">Account Mismatch:</span> You are
-                  currently logged in as{' '}
-                  <span className="font-mono font-bold text-foreground">{user.email}</span>, but
-                  this evaluation link is restricted to{' '}
-                  <span className="font-mono font-bold text-foreground">{tokenEmail}</span>.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="w-full py-2 bg-secondary hover:bg-secondary/80 text-foreground font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                Sign Out & Switch Account
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={handleAuthSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                  Registered Evaluator Email
-                </label>
-                <input
-                  type="email"
-                  value={tokenEmail}
-                  disabled
-                  className="w-full px-3.5 py-2.5 bg-secondary/30 border border-border/80 rounded-xl text-xs font-mono font-bold text-foreground cursor-not-allowed opacity-90"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                  EMS Account Password
-                </label>
-                <input
-                  type="password"
-                  placeholder="Enter your EMS account password"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-background border border-border/80 rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  required
-                />
-              </div>
-
-              {authError && (
-                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-xs text-destructive font-semibold">
-                  {authError}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isAuthenticating}
-                className="w-full py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50 cursor-pointer"
-              >
-                {isAuthenticating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ShieldCheck className="h-4 w-4" />
-                )}
-                Authenticate & Access Evaluation
-              </button>
-            </form>
-          )}
-
-          <div className="text-center pt-2">
-            <span className="text-[11px] text-muted-foreground font-mono">
-              Course: {courseData.course_code} &bull; RUSL FOT
-            </span>
+          <div className="p-4 bg-secondary/30 border border-border/60 rounded-2xl text-left space-y-1">
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Registered Evaluator Email
+            </p>
+            <p className="text-xs font-mono font-bold text-foreground break-all">
+              {tokenEmail || 'Second Marker'}
+            </p>
           </div>
         </div>
       </div>
     );
   }
+
+  const secondMarkerDisplayName =
+    courseData?.second_marker_type === 'EXTERNAL'
+      ? courseData?.second_marker_name || 'Second Marker (External)'
+      : courseData?.second_marker_lecturer?.user?.full_name || user?.fullName || 'Second Marker';
 
   // =========================================================================
   // MAIN SECOND MARKING PORTAL WITH EXACT SYSTEM SIDEBAR LAYOUT
@@ -655,9 +695,11 @@ export default function SecondMarkingPortalPage() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold truncate leading-none mb-1">
-                {user?.fullName || 'Second Marker'}
+                {secondMarkerDisplayName}
               </p>
-              <p className="text-xs text-muted-foreground truncate leading-none">Second Marker</p>
+              <p className="text-xs text-muted-foreground truncate leading-none font-mono">
+                {tokenEmail || 'Second Marker'}
+              </p>
             </div>
           </div>
           <button
@@ -711,9 +753,11 @@ export default function SecondMarkingPortalPage() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold truncate leading-none mb-1">
-                {user?.fullName || 'Second Marker'}
+                {secondMarkerDisplayName}
               </p>
-              <p className="text-xs text-muted-foreground truncate leading-none">Second Marker</p>
+              <p className="text-xs text-muted-foreground truncate leading-none font-mono">
+                {tokenEmail || 'Second Marker'}
+              </p>
             </div>
           </div>
           <button
