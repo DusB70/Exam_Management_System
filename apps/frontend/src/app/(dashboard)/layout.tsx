@@ -56,7 +56,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // Define sidebar navigation items based on User roles
   const getNavItems = () => {
-    const common = [{ name: 'Overview', href: '/', icon: LayoutDashboard }];
+    const common = [{ name: 'Overview', href: '/dashboard', icon: LayoutDashboard }];
 
     if (!user) return common;
 

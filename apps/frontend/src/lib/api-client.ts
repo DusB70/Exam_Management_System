@@ -71,9 +71,13 @@ apiClient.interceptors.response.use(
         useAuthStore.getState().logout();
         if (
           typeof window !== 'undefined' &&
-          !['/login', '/forgot-password', '/reset-password', '/second-marking-portal'].includes(
-            window.location.pathname,
-          )
+          ![
+            '/',
+            '/login',
+            '/forgot-password',
+            '/reset-password',
+            '/second-marking-portal',
+          ].includes(window.location.pathname)
         ) {
           window.location.href = '/login';
         }

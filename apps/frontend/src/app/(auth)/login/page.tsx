@@ -91,7 +91,7 @@ export default function LoginPage() {
       const response = await apiClient.post('/auth/login', { email, password });
       if (response.data?.success && response.data?.user) {
         setUser(response.data.user);
-        router.push('/');
+        router.replace('/dashboard');
       } else {
         setError(response.data?.message || 'Login failed');
       }
@@ -114,7 +114,7 @@ export default function LoginPage() {
       });
       if (response.data?.success && response.data?.user) {
         setUser(response.data.user);
-        router.push('/');
+        router.replace('/dashboard');
       } else {
         setError(response.data?.message || 'Login failed');
       }

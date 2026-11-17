@@ -21,7 +21,7 @@ export default function RouteGuard({ children, allowedRoles }: RouteGuardProps) 
       } else if (allowedRoles && allowedRoles.length > 0 && user) {
         const hasAccess = allowedRoles.includes(user.role);
         if (!hasAccess) {
-          router.push('/');
+          router.push('/dashboard');
         }
       }
     }
@@ -63,7 +63,7 @@ export default function RouteGuard({ children, allowedRoles }: RouteGuardProps) 
             You do not have the required permissions to view this dashboard page.
           </p>
           <button
-            onClick={() => router.push('/')}
+            onClick={() => router.push('/dashboard')}
             className="px-5 py-2.5 bg-secondary text-secondary-foreground font-medium rounded-xl hover:bg-secondary/90 transition-colors"
           >
             Return to Homepage
