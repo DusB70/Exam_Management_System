@@ -48,8 +48,8 @@ function useAnimatedCounter(target: number, duration = 1600) {
 export default function Hero() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [statsData, setStatsData] = useState({
-    students: 57,
-    lecturers: 4,
+    students: 257,
+    lecturers: 5,
     courses: 222,
   });
 
@@ -67,8 +67,8 @@ export default function Hero() {
       .then((res) => {
         if (isMounted && res.data?.data) {
           setStatsData({
-            students: res.data.data.students ?? 57,
-            lecturers: res.data.data.lecturers ?? 4,
+            students: res.data.data.students ?? 257,
+            lecturers: res.data.data.lecturers ?? 5,
             courses: res.data.data.courses ?? 222,
           });
         }
