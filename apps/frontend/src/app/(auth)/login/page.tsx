@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { UserRole } from '@ems/shared';
 import { apiClient } from '../../../lib/api-client';
 import { useAuthStore } from '../../../store/authStore';
@@ -138,8 +139,18 @@ export default function LoginPage() {
 
       <div className="w-full max-w-5xl space-y-8 z-10">
         <div className="text-center space-y-3">
+          <div className="flex justify-center mb-2">
+            <Image
+              src="/images/logo.webp"
+              alt="FOT EMS"
+              width={78}
+              height={100}
+              priority
+              className="object-contain drop-shadow-md"
+            />
+          </div>
           <h2 className="text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
-            Welcome to EMS Portal
+            Welcome to FOT EMS Portal
           </h2>
           <p className="text-muted-foreground text-sm max-w-md mx-auto">
             Log in with your academic credentials or use a quick developer bypass profile below.

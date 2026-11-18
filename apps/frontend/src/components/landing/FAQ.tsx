@@ -1,33 +1,33 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDownIcon } from '@heroicons/react/24/outline';
+import { ChevronDown } from 'lucide-react';
 
 const faqs = [
   {
     question: 'What is the University Examination Management System?',
     answer:
-      'It is a web-based platform designed to manage university examinations, including scheduling, hall allocation, student management, invigilator assignments, and report generation.',
+      'It is a web-based platform designed to streamline academic examination workflows, including semester course registration, marks entry and verification, automated GPA calculation, result publication, and official reporting.',
   },
   {
     question: 'Who can use this system?',
     answer:
-      'The system is designed for administrators, examination coordinators, lecturers, invigilators, and students with role-based access control.',
+      'The system features dedicated role-based portals for Students, Lecturers, Examination Division Staff, and System Administrators, each with strictly controlled permissions.',
   },
   {
-    question: 'Can examination schedules be updated?',
+    question: 'Can students submit medical or re-correction requests online?',
     answer:
-      'Yes. Administrators can modify examination schedules, allocate halls, and assign invigilators while minimizing scheduling conflicts.',
+      'Yes. Students can submit medical certificate requests, re-correction applications, and other academic appeals directly through their portal. The examination division reviews each submission and updates its status in real time, so students can track progress without visiting the office.',
   },
   {
-    question: 'Does the system generate reports?',
+    question: 'Does the system generate official academic reports?',
     answer:
-      'Yes. The system provides attendance reports, examination summaries, hall allocation reports, and other administrative reports.',
+      'Yes. Students can view and download official PDF result sheets, while the examination division and administrators can generate comprehensive broadsheets, marks distribution summaries, and performance reports in PDF and CSV formats.',
   },
   {
-    question: 'Is student information secure?',
+    question: 'How is student and examination data secured?',
     answer:
-      'Yes. The system uses authentication, authorization, and secure data management practices to protect user information.',
+      'The system employs secure JWT-based authentication, role-based authorization, comprehensive audit trail logging for all sensitive operations, and automated database backups to ensure data integrity.',
   },
 ];
 
@@ -71,7 +71,7 @@ export default function FAQ() {
                   {faq.question}
                 </span>
 
-                <ChevronDownIcon
+                <ChevronDown
                   className={`h-6 w-6 text-slate-500 transition-transform duration-300 dark:text-gray-400 ${
                     openIndex === index ? 'rotate-180 text-[#980000] dark:text-red-400' : ''
                   }`}

@@ -11,6 +11,9 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'University Exam Management System',
   description: 'Enterprise-grade university Exam Management System (EMS)',
+  icons: {
+    icon: '/images/logo.webp',
+  },
 };
 
 export default function RootLayout({
@@ -20,7 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="light" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className={inter.className} suppressHydrationWarning>
         <QueryProvider>
           <AuthProvider>
             <NotificationProvider>

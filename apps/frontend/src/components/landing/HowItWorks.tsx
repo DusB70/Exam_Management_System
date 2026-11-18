@@ -1,32 +1,28 @@
 'use client';
 
-import {
-  UserPlusIcon,
-  ClipboardDocumentCheckIcon,
-  ChartBarSquareIcon,
-} from '@heroicons/react/24/outline';
+import { BookOpen, FileSpreadsheet, Award } from 'lucide-react';
 
 const steps = [
   {
     number: '01',
-    title: 'Manage Examination Data',
+    title: 'Course Registration & Enrollment',
     description:
-      'Create examinations, register students, assign courses, and prepare all required examination information.',
-    icon: UserPlusIcon,
+      'Students register for semester courses online within designated periods while administrators oversee course assignments and limits.',
+    icon: BookOpen,
   },
   {
     number: '02',
-    title: 'Schedule & Allocate',
+    title: 'Marks Entry & Verification',
     description:
-      'Generate examination schedules, allocate halls, and assign invigilators automatically with conflict-free planning.',
-    icon: ClipboardDocumentCheckIcon,
+      'Lecturers input continuous assessments and final marks directly or via Excel bulk upload with multi-marker verification workflows.',
+    icon: FileSpreadsheet,
   },
   {
     number: '03',
-    title: 'Monitor & Analyze',
+    title: 'GPA Calculation & Publication',
     description:
-      'Track attendance, monitor examination activities, and generate reports with real-time analytics.',
-    icon: ChartBarSquareIcon,
+      'The engine automatically processes letter grades, SGPA, and CGPA, enabling exam staff to review, publish, and issue official result sheets.',
+    icon: Award,
   },
 ];
 
@@ -48,8 +44,8 @@ export default function HowItWorks() {
           </h2>
 
           <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-slate-600 dark:text-gray-400">
-            Our examination management system simplifies the entire examination lifecycle, from
-            planning to reporting.
+            Our examination management system streamlines academic examination workflows, from
+            semester course registration to verified result publication.
           </p>
         </div>
 

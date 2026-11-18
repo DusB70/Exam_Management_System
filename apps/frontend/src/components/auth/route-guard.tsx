@@ -29,10 +29,19 @@ export default function RouteGuard({ children, allowedRoles }: RouteGuardProps) 
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-          <p className="text-sm font-medium text-muted-foreground animate-pulse">
+      <div
+        className="flex min-h-screen items-center justify-center bg-background text-foreground"
+        suppressHydrationWarning
+      >
+        <div className="flex flex-col items-center space-y-4" suppressHydrationWarning>
+          <div
+            className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
+            suppressHydrationWarning
+          />
+          <p
+            className="text-sm font-medium text-muted-foreground animate-pulse"
+            suppressHydrationWarning
+          >
             Checking authorization...
           </p>
         </div>

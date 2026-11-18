@@ -11,4 +11,14 @@ export class AppController {
   getHealth(): { status: string; timestamp: string } {
     return this.appService.getHealth();
   }
+
+  @Public()
+  @Get('public-stats')
+  async getPublicStats() {
+    const stats = await this.appService.getPublicStats();
+    return {
+      success: true,
+      data: stats,
+    };
+  }
 }

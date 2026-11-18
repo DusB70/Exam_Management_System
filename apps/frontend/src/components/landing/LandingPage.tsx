@@ -2,7 +2,6 @@ import Navbar from './Navbar';
 import Hero from './Hero';
 import Features from './Features';
 import HowItWorks from './HowItWorks';
-import Statistics from './Statistics';
 import FAQ from './FAQ';
 import Footer from './Footer';
 
@@ -13,7 +12,6 @@ export default function LandingPage() {
       <Hero />
       <Features />
       <HowItWorks />
-      <Statistics />
       <FAQ />
       <Footer />
     </main>

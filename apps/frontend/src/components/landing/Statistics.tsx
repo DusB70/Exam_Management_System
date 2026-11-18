@@ -1,32 +1,27 @@
 'use client';
 
-import {
-  AcademicCapIcon,
-  UserGroupIcon,
-  BuildingOffice2Icon,
-  ClipboardDocumentListIcon,
-} from '@heroicons/react/24/outline';
+import { GraduationCap, Users, BookOpen, ShieldCheck } from 'lucide-react';
 
 const stats = [
   {
-    value: '10K+',
-    label: 'Students Managed',
-    icon: UserGroupIcon,
-  },
-  {
-    value: '500+',
-    label: 'Examinations Conducted',
-    icon: ClipboardDocumentListIcon,
+    value: '2,500+',
+    label: 'Registered Students',
+    icon: Users,
   },
   {
     value: '150+',
-    label: 'Examination Halls',
-    icon: BuildingOffice2Icon,
+    label: 'Semester Courses',
+    icon: BookOpen,
+  },
+  {
+    value: '4',
+    label: 'Role-Based Portals',
+    icon: ShieldCheck,
   },
   {
     value: '99.9%',
     label: 'System Reliability',
-    icon: AcademicCapIcon,
+    icon: GraduationCap,
   },
 ];
 
