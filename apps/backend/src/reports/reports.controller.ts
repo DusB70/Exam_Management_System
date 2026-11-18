@@ -1,12 +1,40 @@
 import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { GetUser } from '../auth/decorators/get-user.decorator';
 import { UserRole } from '@ems/shared';
 
 @Controller('reports')
 @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF, UserRole.LECTURER)
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
+
+  @Get('lecturer-analytics')
+  @Roles(UserRole.LECTURER, UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async getLecturerAnalytics(
+    @GetUser('id') userId: number,
+    @GetUser('role') role: string,
+    @Query('semester') semester?: string,
+    @Query('batch') batch?: string,
+    @Query('courseId') courseId?: string,
+    @Query('search') search?: string,
+  ) {
+    const data = await this.reportsService.getLecturerAnalytics(
+      userId,
+      role,
+      {
+        semester,
+        batch,
+        courseId: courseId ? parseInt(courseId, 10) : undefined,
+        search,
+      },
+    );
+    return {
+      success: true,
+      message: 'Lecturer analytics retrieved successfully',
+      data,
+    };
+  }
 
   @Get('staff-overview')
   @Roles(UserRole.EXAM_DIVISION_STAFF, UserRole.ADMINISTRATOR)

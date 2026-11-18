@@ -42,6 +42,7 @@ export class CoursesController {
     @Query('academicYear') academicYear?: string,
     @Query('degreeId') degreeId?: string,
     @Query('specializationId') specializationId?: string,
+    @Query('status') status?: string,
   ) {
     const parsedPage = parseInt(page, 10) || 1;
     const parsedLimit = parseInt(limit, 10) || 10;
@@ -50,6 +51,7 @@ export class CoursesController {
     const parsedYear = academicYear ? parseInt(academicYear, 10) : undefined;
     const parsedDegreeId = degreeId ? parseInt(degreeId, 10) : undefined;
     const parsedSpecId = specializationId ? parseInt(specializationId, 10) : undefined;
+    const parsedStatus = status || undefined;
 
     const data = await this.coursesService.findAll(
       parsedPage,
@@ -60,6 +62,7 @@ export class CoursesController {
       parsedYear,
       parsedDegreeId,
       parsedSpecId,
+      parsedStatus,
     );
 
     return {

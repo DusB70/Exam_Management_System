@@ -22,7 +22,10 @@ export class RegistrationsService {
     return student;
   }
 
-  async getActivePeriodForStudent(userId: number): Promise<any> {
+  async getActivePeriodForStudent(
+    userId: number,
+    windowType: string = 'SEMESTER_REGISTRATION',
+  ): Promise<any> {
     const student = await this.getStudentByUserId(userId);
     const now = new Date();
 
@@ -31,6 +34,7 @@ export class RegistrationsService {
         status: 'OPEN',
         start_date: { lte: now },
         end_date: { gte: now },
+        window_type: windowType,
         OR: student.batch ? [{ batch: student.batch }, { batch: null }] : undefined,
       },
     });
@@ -204,14 +208,15 @@ export class RegistrationsService {
 
   async registerCourses(userId: number, dto: RegisterCoursesDto): Promise<CourseRegistration[]> {
     const student = await this.getStudentByUserId(userId);
-    const { courseIds } = dto;
+    const rawCourseIds = dto.courseIds || [];
+    const courseIds = Array.from(new Set(rawCourseIds.map(Number)));
 
     if (courseIds.length === 0) {
       throw new BadRequestException('No courses selected for registration.');
     }
 
     // 1. Verify Active Registration Period
-    const period = await this.getActivePeriodForStudent(userId);
+    const period = await this.getActivePeriodForStudent(userId, 'SEMESTER_REGISTRATION');
     if (!period) {
       throw new BadRequestException(
         `Registration window is closed or suspended for Enrollment Year ${student.batch || '21/22'}`,
@@ -277,47 +282,58 @@ export class RegistrationsService {
       );
     }
 
-    // 4. Register within a transaction
-    return this.prisma.$transaction(async (tx) => {
-      const results: CourseRegistration[] = [];
+    // 4. Register within a transaction (increased timeout for multiple courses)
+    const results = await this.prisma.$transaction(
+      async (tx) => {
+        const created: CourseRegistration[] = [];
 
-      for (const course of selectedCourses) {
-        // Double check unique registration in transaction to prevent concurrent race conditions
-        const exists = await tx.courseRegistration.findFirst({
-          where: {
-            student_id: student.student_id,
-            course_id: course.course_id,
-            attempt_number: 1,
-          },
-        });
+        for (const course of selectedCourses) {
+          const exists = await tx.courseRegistration.findFirst({
+            where: {
+              student_id: student.student_id,
+              course_id: course.course_id,
+              attempt_number: 1,
+            },
+          });
 
-        if (exists) {
-          continue; // Skip if already registered
+          if (exists) {
+            continue; // Skip if already registered
+          }
+
+          const registration = await tx.courseRegistration.create({
+            data: {
+              student_id: student.student_id,
+              course_id: course.course_id,
+              attempt_type:
+                period.window_type === 'MEDICAL_REPEAT_REGISTRATION' ? 'REPEAT' : 'PROPER',
+            },
+          });
+
+          created.push(registration);
         }
 
-        const registration = await tx.courseRegistration.create({
-          data: {
-            student_id: student.student_id,
-            course_id: course.course_id,
-            attempt_type:
-              period.window_type === 'MEDICAL_REPEAT_REGISTRATION' ? 'REPEAT' : 'PROPER',
-          },
-        });
+        return created;
+      },
+      { timeout: 30000, maxWait: 10000 },
+    );
 
+    // 5. Audit logs safely recorded outside the database transaction
+    for (const reg of results) {
+      try {
         await this.auditService.logAction(
           userId,
           'REGISTRATION_ADD',
           'course_registrations',
-          registration.registration_id.toString(),
+          reg.registration_id.toString(),
           null,
-          registration,
+          reg,
         );
-
-        results.push(registration);
+      } catch {
+        // Logging error should not interrupt client registration
       }
+    }
 
-      return results;
-    });
+    return results;
   }
 
   async dropCourse(userId: number, registrationId: number): Promise<CourseRegistration> {
@@ -550,7 +566,10 @@ export class RegistrationsService {
       }
     }
 
-    const activePeriod = await this.getActivePeriodForStudent(userId);
+    const activePeriod = await this.getActivePeriodForStudent(
+      userId,
+      'MEDICAL_REPEAT_REGISTRATION',
+    );
 
     return {
       activePeriod,
@@ -560,6 +579,14 @@ export class RegistrationsService {
 
   async registerRepeatCourse(userId: number, courseId: number) {
     const student = await this.getStudentByUserId(userId);
+
+    const activePeriod = await this.getActivePeriodForStudent(
+      userId,
+      'MEDICAL_REPEAT_REGISTRATION',
+    );
+    if (!activePeriod) {
+      throw new BadRequestException('Repeat / Medical exam registration window is currently closed.');
+    }
 
     const course = await this.prisma.course.findUnique({
       where: { course_id: courseId },

@@ -62,7 +62,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isExamRegOpen =
     isStudent &&
     Boolean(
-      repeatEligibleData?.activePeriod &&
+      repeatEligibleData?.activePeriod?.window_type === 'MEDICAL_REPEAT_REGISTRATION' &&
       repeatEligibleData?.eligibleCourses &&
       repeatEligibleData.eligibleCourses.length > 0,
     );
@@ -168,19 +168,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   }`}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{item.name}</span>
-                  {item.name === 'Course Registration' && isCourseRegOpen && (
-                    <span
-                      className="inline-block w-2 h-2 ml-1.5 rounded-full bg-white animate-pulse shrink-0 shadow-sm"
-                      title="Course Registration Window is Open"
-                    />
-                  )}
-                  {item.name === 'Exam Registration' && isExamRegOpen && (
-                    <span
-                      className="inline-block w-2 h-2 ml-1.5 rounded-full bg-white animate-pulse shrink-0 shadow-sm"
-                      title="Repeat / Medical Exam Window is Open"
-                    />
-                  )}
+                  <div className="flex items-center justify-between min-w-0 flex-1 gap-2">
+                    <span className="truncate">{item.name}</span>
+                    {item.name === 'Course Registration' && isCourseRegOpen && (
+                      <span
+                        className={`inline-block w-2 h-2 rounded-full animate-pulse shrink-0 ${
+                          active ? 'bg-white' : 'bg-primary dark:bg-rose-400'
+                        }`}
+                        title="Course Registration Window is Open"
+                      />
+                    )}
+                    {item.name === 'Exam Registration' && isExamRegOpen && (
+                      <span
+                        className={`inline-block w-2 h-2 rounded-full animate-pulse shrink-0 ${
+                          active ? 'bg-white' : 'bg-primary dark:bg-rose-400'
+                        }`}
+                        title="Repeat / Medical Exam Window is Open"
+                      />
+                    )}
+                  </div>
                 </Link>
               );
             })}
@@ -265,19 +271,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   }`}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{item.name}</span>
-                  {item.name === 'Course Registration' && isCourseRegOpen && (
-                    <span
-                      className="inline-block w-2 h-2 ml-1.5 rounded-full bg-white animate-pulse shrink-0 shadow-sm"
-                      title="Course Registration Window is Open"
-                    />
-                  )}
-                  {item.name === 'Exam Registration' && isExamRegOpen && (
-                    <span
-                      className="inline-block w-2 h-2 ml-1.5 rounded-full bg-white animate-pulse shrink-0 shadow-sm"
-                      title="Repeat / Medical Exam Window is Open"
-                    />
-                  )}
+                  <div className="flex items-center justify-between min-w-0 flex-1 gap-2">
+                    <span className="truncate">{item.name}</span>
+                    {item.name === 'Course Registration' && isCourseRegOpen && (
+                      <span
+                        className={`inline-block w-2 h-2 rounded-full animate-pulse shrink-0 ${
+                          active ? 'bg-white' : 'bg-primary dark:bg-rose-400'
+                        }`}
+                        title="Course Registration Window is Open"
+                      />
+                    )}
+                    {item.name === 'Exam Registration' && isExamRegOpen && (
+                      <span
+                        className={`inline-block w-2 h-2 rounded-full animate-pulse shrink-0 ${
+                          active ? 'bg-white' : 'bg-primary dark:bg-rose-400'
+                        }`}
+                        title="Repeat / Medical Exam Window is Open"
+                      />
+                    )}
+                  </div>
                 </Link>
               );
             })}

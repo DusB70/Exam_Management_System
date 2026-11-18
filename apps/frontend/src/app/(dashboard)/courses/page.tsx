@@ -43,9 +43,21 @@ const fetchDepartments = async () => {
   return response.data?.data || [];
 };
 
-const renderCourseStatus = (course: any) => {
-  const specs: any[] = course.course_specializations || [];
-  const degs: any[] = course.degrees || [];
+const isStatusOptional = (s?: string) => {
+  const v = (s || '').trim().toUpperCase();
+  return v === 'OPTIONAL' || v === 'O' || v.startsWith('OPT');
+};
+
+const renderCourseStatus = (course: any, activeDegreeFilter?: string) => {
+  let specs: any[] = course.course_specializations || [];
+  let degs: any[] = course.degrees || [];
+
+  // If a specific degree filter is active, evaluate status strictly for that degree
+  if (activeDegreeFilter) {
+    const degId = parseInt(activeDegreeFilter, 10);
+    degs = degs.filter((d: any) => d.degree_id === degId);
+    specs = specs.filter((cs: any) => cs.specialization?.degree_id === degId);
+  }
 
   // 1. Group status by degree and its specializations
   // Degree entries: { degreeCode, status }
@@ -64,7 +76,7 @@ const renderCourseStatus = (course: any) => {
         coveredSpecIds.add(cs.specialization_id);
         const specCode = cs.specialization?.specialization_code || String(cs.specialization_id);
         const item = { label: specCode, sub: degCode };
-        if (cs.status === 'OPTIONAL') {
+        if (isStatusOptional(cs.status)) {
           optionalItems.push(item);
         } else {
           compulsoryItems.push(item);
@@ -72,7 +84,7 @@ const renderCourseStatus = (course: any) => {
       }
     } else {
       const item = { label: degCode };
-      if (d.status === 'OPTIONAL') {
+      if (isStatusOptional(d.status)) {
         optionalItems.push(item);
       } else {
         compulsoryItems.push(item);
@@ -86,7 +98,7 @@ const renderCourseStatus = (course: any) => {
       const specCode = cs.specialization?.specialization_code || String(cs.specialization_id);
       const degCode = cs.specialization?.degree?.degree_code;
       const item = { label: specCode, sub: degCode };
-      if (cs.status === 'OPTIONAL') {
+      if (isStatusOptional(cs.status)) {
         optionalItems.push(item);
       } else {
         compulsoryItems.push(item);
@@ -185,6 +197,7 @@ export default function CoursesManagementPage() {
   const [deptFilter, setDeptFilter] = useState('');
   const [semesterFilter, setSemesterFilter] = useState('');
   const [degreeFilter, setDegreeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   // Filters State for Lecturer & Examiner Allocations (Exam Console layout)
   const [allocSearch, setAllocSearch] = useState('');
@@ -457,7 +470,7 @@ export default function CoursesManagementPage() {
     fetchNextPage: fetchNextCoursesPage,
     refetch: refetchCourses,
   } = useProgressiveInfiniteQuery<any>({
-    queryKey: ['courses', courseSearch, deptFilter, semesterFilter, degreeFilter],
+    queryKey: ['courses', courseSearch, deptFilter, semesterFilter, degreeFilter, statusFilter],
     queryFn: async (page, limit) => {
       const params: any = {
         page,
@@ -466,6 +479,7 @@ export default function CoursesManagementPage() {
         departmentId: deptFilter || undefined,
         semester: semesterFilter || undefined,
         degreeId: degreeFilter || undefined,
+        status: statusFilter || undefined,
       };
       const response = await apiClient.get('/courses', { params });
       return response.data?.data;
@@ -873,13 +887,30 @@ export default function CoursesManagementPage() {
                   </select>
                 </div>
 
-                {(deptFilter || degreeFilter || semesterFilter || courseSearch) && (
+                {/* Status Filter */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase">
+                    Status:
+                  </span>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+                  >
+                    <option value="">All Statuses</option>
+                    <option value="COMPULSORY">Compulsory</option>
+                    <option value="OPTIONAL">Optional</option>
+                  </select>
+                </div>
+
+                {(deptFilter || degreeFilter || semesterFilter || courseSearch || statusFilter) && (
                   <button
                     onClick={() => {
                       setDeptFilter('');
                       setDegreeFilter('');
                       setSemesterFilter('');
                       setCourseSearch('');
+                      setStatusFilter('');
                     }}
                     className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
                   >
@@ -988,24 +1019,54 @@ export default function CoursesManagementPage() {
                           </td>
                           <td className="px-4 py-2.5 whitespace-nowrap">
                             <div className="flex flex-nowrap items-center gap-1">
-                              {course.degrees && course.degrees.length > 0 ? (
-                                course.degrees.map((d: any) => (
-                                  <span
-                                    key={d.degree_id}
-                                    className="inline-block px-1.5 py-0.5 bg-secondary text-secondary-foreground rounded text-[10px] font-bold font-mono whitespace-nowrap"
-                                  >
-                                    {d.degree?.degree_code || d.degree_id}
-                                  </span>
-                                ))
-                              ) : (
-                                <span className="text-xs text-muted-foreground/60 italic whitespace-nowrap">
-                                  None
-                                </span>
-                              )}
+                              {(() => {
+                                const degMap = new Map<number, string>();
+                                (course.degrees || []).forEach((d: any) => {
+                                  if (d.degree_id) {
+                                    degMap.set(d.degree_id, d.degree?.degree_code || String(d.degree_id));
+                                  }
+                                });
+                                (course.course_specializations || []).forEach((cs: any) => {
+                                  const deg = cs.specialization?.degree;
+                                  if (deg?.degree_id && !degMap.has(deg.degree_id)) {
+                                    degMap.set(deg.degree_id, deg.degree_code || String(deg.degree_id));
+                                  }
+                                });
+                                if (course.specialization?.degree) {
+                                  const deg = course.specialization.degree;
+                                  if (deg.degree_id && !degMap.has(deg.degree_id)) {
+                                    degMap.set(deg.degree_id, deg.degree_code || String(deg.degree_id));
+                                  }
+                                }
+
+                                if (degMap.size === 0) {
+                                  return (
+                                    <span className="text-xs text-muted-foreground/60 italic whitespace-nowrap">
+                                      None
+                                    </span>
+                                  );
+                                }
+
+                                return Array.from(degMap.entries()).map(([degId, degCode]) => {
+                                  const isSelected = degreeFilter && parseInt(degreeFilter, 10) === degId;
+                                  return (
+                                    <span
+                                      key={degId}
+                                      className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold font-mono whitespace-nowrap border ${
+                                        isSelected
+                                          ? 'bg-primary/15 text-primary border-primary/30 ring-1 ring-primary/20'
+                                          : 'bg-secondary text-secondary-foreground border-border/60'
+                                      }`}
+                                    >
+                                      {degCode}
+                                    </span>
+                                  );
+                                });
+                              })()}
                             </div>
                           </td>
                           <td className="px-4 py-2.5 whitespace-nowrap">
-                            {renderCourseStatus(course)}
+                            {renderCourseStatus(course, degreeFilter)}
                           </td>
                           <td className="px-4 py-2.5 font-mono text-xs text-center whitespace-nowrap">
                             {course.credit_value}

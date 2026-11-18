@@ -431,7 +431,7 @@ export class ExamsService {
           },
         },
       },
-      orderBy: [{ exam_date: 'asc' }, { start_time: 'asc' }],
+      orderBy: [{ batch: 'asc' }, { exam_date: 'asc' }, { start_time: 'asc' }],
     });
 
     const courses = await this.prisma.course.findMany({
@@ -825,11 +825,8 @@ export class ExamsService {
     // Header validation
     const headerRow: string[] = (rawRows[0] || []).map((h: any) => String(h).trim());
     const expectedHeaders = [
-      'Batch',
-      'Semester',
-      'Examination Name',
       'Course Code',
-      'Date',
+      'Date and Time',
       'Start Time',
       'End Time',
       'Venue',
@@ -837,28 +834,16 @@ export class ExamsService {
 
     const headerErrors: string[] = [];
 
-    const hasBatchHeader = headerRow.some((h) => /batch/i.test(h));
-    const hasSemesterHeader = headerRow.some((h) => /semester|sem/i.test(h));
-    const hasExamNameHeader = headerRow.some((h) => /exam.*name|examination|exam_name/i.test(h));
-    const hasCodeHeader = headerRow.some((h) => /course|subject|code/i.test(h));
+    const hasCodeHeader = headerRow.some((h) => /course.*code|subject.*code|course|code/i.test(h));
     const hasDateHeader = headerRow.some((h) => /date/i.test(h));
-    const hasStartHeader = headerRow.some((h) => /start|time/i.test(h));
+    const hasStartHeader = headerRow.some((h) => /start/i.test(h));
     const hasEndHeader = headerRow.some((h) => /end/i.test(h));
 
-    if (!hasBatchHeader) {
-      headerErrors.push("Missing required column 'Batch'");
-    }
-    if (!hasSemesterHeader) {
-      headerErrors.push("Missing required column 'Semester'");
-    }
-    if (!hasExamNameHeader) {
-      headerErrors.push("Missing required column 'Examination Name'");
-    }
     if (!hasCodeHeader) {
       headerErrors.push("Missing required column 'Course Code'");
     }
     if (!hasDateHeader) {
-      headerErrors.push("Missing required column 'Date'");
+      headerErrors.push("Missing required column 'Date and Time'");
     }
     if (!hasStartHeader) {
       headerErrors.push("Missing required column 'Start Time'");
@@ -883,15 +868,22 @@ export class ExamsService {
       const batchKey = Object.keys(row).find((k) => /batch/i.test(k));
       const semesterKey = Object.keys(row).find((k) => /semester|sem/i.test(k));
       const examNameKey = Object.keys(row).find((k) => /exam.*name|examination|exam_name/i.test(k));
-      const codeKey = Object.keys(row).find((k) => /course|subject|code/i.test(k));
+      const codeKey = Object.keys(row).find((k) => /course.*code|subject.*code|course|code/i.test(k));
       const dateKey = Object.keys(row).find((k) => /date/i.test(k));
-      const startKey = Object.keys(row).find((k) => /start|time/i.test(k));
+      const startKey = Object.keys(row).find((k) => /start/i.test(k));
       const endKey = Object.keys(row).find((k) => /end/i.test(k));
       const venueKey = Object.keys(row).find((k) => /venue|hall|location/i.test(k));
 
-      const rawBatch = batchKey ? String(row[batchKey]).trim() : batch || '';
-      const rawSemester = semesterKey ? String(row[semesterKey]).trim() : semester || '';
-      const rawExamName = examNameKey ? String(row[examNameKey]).trim() : examName || '';
+      const rawBatch =
+        (batchKey && row[batchKey] ? String(row[batchKey]).trim() : '') || batch || '21/22';
+      const rawSemester =
+        (semesterKey && row[semesterKey] ? String(row[semesterKey]).trim() : '') ||
+        semester ||
+        '1.1';
+      const rawExamName =
+        (examNameKey && row[examNameKey] ? String(row[examNameKey]).trim() : '') ||
+        examName ||
+        'End Semester Examination';
 
       const rawCode = codeKey ? String(row[codeKey]).trim() : '';
       const rawDate = dateKey ? row[dateKey] : '';
@@ -1280,6 +1272,19 @@ export class ExamsService {
         };
       }),
     );
+
+    results.sort((a, b) => {
+      const numA = parseInt(a.batch?.split('/')[0] || '0', 10);
+      const numB = parseInt(b.batch?.split('/')[0] || '0', 10);
+      if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+        return numA - numB;
+      }
+      const batchComp = (a.batch || '').localeCompare(b.batch || '', undefined, { numeric: true });
+      if (batchComp !== 0) return batchComp;
+      const semComp = (a.semester || '').localeCompare(b.semester || '', undefined, { numeric: true });
+      if (semComp !== 0) return semComp;
+      return (a.exam_name || '').localeCompare(b.exam_name || '');
+    });
 
     return results;
   }

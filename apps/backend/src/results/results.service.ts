@@ -609,9 +609,25 @@ export class ResultsService {
     });
   }
 
-  async generateReportCardExcelBuffer(studentUserId: number): Promise<Buffer> {
+  async generateReportCardExcelBuffer(
+    studentUserId: number,
+    semester?: string,
+    type?: string,
+  ): Promise<Buffer> {
     const report = await this.getStudentReportCard(studentUserId);
-    const { student, gpas, grades } = report;
+    const { student, gpas } = report;
+    let grades = report.grades;
+
+    if (semester && semester !== 'all') {
+      grades = grades.filter((g: any) => g.course?.semester === semester);
+    }
+    if (type && type !== 'all') {
+      if (type === 'compulsory') {
+        grades = grades.filter((g: any) => g.type === 'COMPULSORY');
+      } else if (type === 'optional') {
+        grades = grades.filter((g: any) => g.type !== 'COMPULSORY');
+      }
+    }
 
     const deptName = (student as any).degree?.department?.department_name || 'Unknown Department';
 

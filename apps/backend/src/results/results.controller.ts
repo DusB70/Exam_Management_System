@@ -1,4 +1,4 @@
-import { Controller, Get, Res, Patch, Post, Param, Body, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Res, Patch, Post, Param, Body, ParseIntPipe, Query } from '@nestjs/common';
 import { ResultsService } from './results.service';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
@@ -34,8 +34,17 @@ export class ResultsController {
 
   @Get('my-report/excel')
   @Roles(UserRole.STUDENT)
-  async getMyReportExcel(@GetUser('id') studentUserId: number, @Res() res: Response) {
-    const buffer = await this.resultsService.generateReportCardExcelBuffer(studentUserId);
+  async getMyReportExcel(
+    @GetUser('id') studentUserId: number,
+    @Query('semester') semester: string | undefined,
+    @Query('type') type: string | undefined,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.resultsService.generateReportCardExcelBuffer(
+      studentUserId,
+      semester,
+      type,
+    );
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': 'attachment; filename=report_card.xlsx',

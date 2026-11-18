@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../../store/authStore';
 import { apiClient } from '../../../lib/api-client';
@@ -179,6 +179,16 @@ export default function StudentDirectoryPage() {
     },
     enabled: user?.role === UserRole.LECTURER,
   });
+
+  // Auto-select first active semester course on load if none selected
+  useEffect(() => {
+    if (!selectedLecturerCourseId && studentsOverviewData?.courseDistribution?.length > 0) {
+      setSelectedLecturerCourseId(studentsOverviewData.courseDistribution[0].courseId.toString());
+      if (studentsOverviewData.courseDistribution[0].batch) {
+        setSelectedBatchFilter(studentsOverviewData.courseDistribution[0].batch);
+      }
+    }
+  }, [selectedLecturerCourseId, studentsOverviewData]);
 
   const { data: enrolledStudentsData, isLoading: isEnrolledStudentsLoading } = useQuery({
     queryKey: ['lecturer-enrolled-students', selectedLecturerCourseId],
@@ -1835,44 +1845,13 @@ export default function StudentDirectoryPage() {
   // ==========================================
   // RENDER LECTURER CONSOLE (Allocated Roster)
   // ==========================================
-  // Dummy data fallbacks for lecturer view demonstration
-  const dummyOverview = {
-    courseDistribution: [
-      {
-        courseId: '101',
-        courseCode: 'CS3101',
-        courseName: 'Database Management Systems',
-        studentCount: 48,
-        latestSemesterCount: 48,
-        batch: '21/22',
-        semester: '3.1',
-      },
-      {
-        courseId: '102',
-        courseCode: 'CS3102',
-        courseName: 'Advanced Web Engineering',
-        studentCount: 42,
-        latestSemesterCount: 42,
-        batch: '21/22',
-        semester: '3.1',
-      },
-      {
-        courseId: '103',
-        courseCode: 'CS3103',
-        courseName: 'Software Architecture & Design',
-        studentCount: 35,
-        latestSemesterCount: 35,
-        batch: '20/21',
-        semester: '3.2',
-      },
-    ],
-  };
-
-  // Overview distribution data (real API or dummy)
-  const overviewDistribution =
-    studentsOverviewData?.courseDistribution && studentsOverviewData.courseDistribution.length > 0
-      ? studentsOverviewData.courseDistribution
-      : dummyOverview.courseDistribution;
+  // Overview distribution data for active semesters (no hardcoded dummy data)
+  const activeSemesters = Array.isArray(studentsOverviewData?.activeSemesters)
+    ? studentsOverviewData.activeSemesters
+    : STABLE_EMPTY_ARRAY;
+  const overviewDistribution = Array.isArray(studentsOverviewData?.courseDistribution)
+    ? studentsOverviewData.courseDistribution
+    : STABLE_EMPTY_ARRAY;
 
   // Active enrolled students data (real API only when course is selected)
   const baseStudents = selectedLecturerCourseId ? enrolledStudents : STABLE_EMPTY_ARRAY;
@@ -1914,64 +1893,85 @@ export default function StudentDirectoryPage() {
         </p>
       </div>
 
-      {/* Registration Distribution by Assigned Course (Full Width) */}
+      {/* Registration Distribution by Active Assigned Course (Full Width) */}
       <div className="bg-card/25 border border-border/80 p-6 rounded-2xl flex items-center justify-between backdrop-blur-sm shadow-md w-full">
         <div className="space-y-4 w-full">
-          <div className="flex items-center justify-between border-b border-border/60 pb-3">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <BookOpen className="h-4 w-4 text-primary" />
-              enrollment Distribution
-            </span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border/60 pb-3 gap-2">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-primary" />
+                Enrollment Distribution
+              </span>
+              {activeSemesters.length > 0 && (
+                <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded-md">
+                  Active Semesters: {activeSemesters.join(', ')}
+                </span>
+              )}
+            </div>
             <span className="text-xs text-muted-foreground">
-              Showing enrolled student count of latest semester
+              Showing enrolled student count of active semesters only
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {overviewDistribution.map((dist: any) => {
-              const batchLabel = dist.batch || '21/22';
-              const latestCount = dist.latestSemesterCount ?? dist.studentCount ?? 42;
+          {overviewDistribution.length === 0 ? (
+            <div className="p-8 text-center bg-secondary/10 border border-dashed border-border/60 rounded-2xl space-y-1.5">
+              <p className="text-sm font-bold text-foreground">No subjects in active semesters</p>
+              <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                No course allocations match the currently active semesters ({activeSemesters.join(', ') || 'None open'}). You can review historical student data and past taught courses in the Reports Panel.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {overviewDistribution.map((dist: any) => {
+                const batchLabel = dist.batch || '21/22';
+                const latestCount = dist.latestSemesterCount ?? dist.studentCount ?? 0;
 
-              return (
-                <div
-                  key={dist.courseId}
-                  onClick={() => {
-                    setSelectedLecturerCourseId(dist.courseId.toString());
-                    setSelectedBatchFilter(dist.batch || '21/22');
-                    setStudentsSearchQuery('');
-                  }}
-                  className={`p-4 border transition-all rounded-2xl flex justify-between items-center cursor-pointer group backdrop-blur-sm ${
-                    selectedLecturerCourseId === dist.courseId.toString()
-                      ? 'bg-primary/10 border-primary shadow-md'
-                      : 'bg-secondary/10 border-border/60 hover:border-primary/40 hover:bg-secondary/20'
-                  }`}
-                >
-                  <div className="min-w-0 space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
-                        {dist.courseCode}
-                      </span>
-                      {/* Learning Batch Badge */}
-                      <span className="text-[9px] font-bold font-mono px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md">
-                        Batch {batchLabel}
-                      </span>
+                return (
+                  <div
+                    key={dist.courseId}
+                    onClick={() => {
+                      setSelectedLecturerCourseId(dist.courseId.toString());
+                      setSelectedBatchFilter(dist.batch || 'ALL');
+                      setStudentsSearchQuery('');
+                    }}
+                    className={`p-4 border transition-all rounded-2xl flex justify-between items-center cursor-pointer group backdrop-blur-sm ${
+                      selectedLecturerCourseId === dist.courseId.toString()
+                        ? 'bg-primary/10 border-primary shadow-md'
+                        : 'bg-secondary/10 border-border/60 hover:border-primary/40 hover:bg-secondary/20'
+                    }`}
+                  >
+                    <div className="min-w-0 space-y-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
+                          {dist.courseCode}
+                        </span>
+                        {dist.semester && (
+                          <span className="text-[9px] font-bold font-mono px-2 py-0.5 bg-primary/15 text-primary border border-primary/30 rounded-md">
+                            Sem {dist.semester}
+                          </span>
+                        )}
+                        {/* Learning Batch Badge */}
+                        <span className="text-[9px] font-bold font-mono px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md">
+                          Batch {batchLabel}
+                        </span>
+                      </div>
+                      <h5 className="font-bold text-xs text-foreground truncate group-hover:text-primary transition-colors font-sans pt-0.5">
+                        {dist.courseName}
+                      </h5>
                     </div>
-                    <h5 className="font-bold text-xs text-foreground truncate group-hover:text-primary transition-colors font-sans pt-0.5">
-                      {dist.courseName}
-                    </h5>
+                    <div className="text-right shrink-0 pl-3">
+                      <span className="text-lg font-extrabold text-foreground group-hover:text-primary transition-colors font-mono">
+                        {latestCount}
+                      </span>
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
+                        Students Enrolled
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0 pl-3">
-                    <span className="text-lg font-extrabold text-foreground group-hover:text-primary transition-colors font-mono">
-                      {latestCount}
-                    </span>
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
-                      Students Enrolled
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 

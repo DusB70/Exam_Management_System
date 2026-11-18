@@ -113,6 +113,38 @@ export default function CourseRegistrationPage() {
     0,
   );
 
+  const formatAcademicYear = (ay?: string) => {
+    if (!ay) return 'N/A';
+    const match = ay.match(/(\d{2,4})[/-](\d{2,4})/);
+    if (match) {
+      const y1 = match[1].slice(-2);
+      const y2 = match[2].slice(-2);
+      return `${y1}/${y2}`;
+    }
+    return ay;
+  };
+
+  const availableWorkload = React.useMemo(
+    () => eligibleCourses.reduce((sum: number, c: any) => sum + parseFloat(c.credit_value || '0'), 0),
+    [eligibleCourses],
+  );
+
+  const compulsoryRegisteredCredits = React.useMemo(
+    () =>
+      myRegistrations
+        .filter((r: any) => r.is_compulsory)
+        .reduce((sum: number, r: any) => sum + parseFloat(r.course?.credit_value || '0'), 0),
+    [myRegistrations],
+  );
+
+  const optionalRegisteredCredits = React.useMemo(
+    () =>
+      myRegistrations
+        .filter((r: any) => !r.is_compulsory)
+        .reduce((sum: number, r: any) => sum + parseFloat(r.course?.credit_value || '0'), 0),
+    [myRegistrations],
+  );
+
   const totalCreditsCalculated = currentRegisteredCredits + selectedCredits;
 
   React.useEffect(() => {
@@ -300,7 +332,7 @@ export default function CourseRegistrationPage() {
                 <h4 className="text-lg font-bold text-foreground">Registration Period Active</h4>
               </div>
               <p className="text-sm text-muted-foreground mt-1 leading-normal">
-                Academic Year: <strong>{activePeriod.academic_year}</strong> | Semester:{' '}
+                Academic Year: <strong>{formatAcademicYear(activePeriod.academic_year)}</strong> | Semester:{' '}
                 <strong>{activePeriod.semester}</strong>
               </p>
               <p className="text-xs text-muted-foreground/75 mt-1.5 flex items-center gap-1">
@@ -316,20 +348,19 @@ export default function CourseRegistrationPage() {
           </div>
 
           {/* Credit WORKLOAD tracker */}
-          <div className="w-full md:w-80 bg-secondary/15 border border-border/40 p-4 rounded-2xl flex flex-col justify-center">
-            <div className="flex justify-between text-xs font-bold text-muted-foreground mb-2">
-              <span>SEMESTER WORKLOAD</span>
-              <span className="text-primary font-mono font-bold">
-                {totalCreditsCalculated.toFixed(1)} Credits
+          <div className="w-full md:w-80 bg-secondary/15 border border-border/40 p-4 rounded-2xl flex flex-col justify-center space-y-2">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-muted-foreground font-semibold">Available Workload</span>
+              <span className="font-mono font-bold text-foreground">
+                {availableWorkload.toFixed(1)} Credits
               </span>
             </div>
-            <div className="flex justify-between text-[11px] text-muted-foreground py-1 border-t border-border/30">
-              <span>Registered: {currentRegisteredCredits.toFixed(1)}</span>
-              <span>Selected: +{selectedCredits.toFixed(1)}</span>
+            <div className="flex justify-between items-center text-xs pt-2 border-t border-border/30">
+              <span className="text-muted-foreground font-semibold">Registered Workload</span>
+              <span className="font-mono font-bold text-primary">
+                {currentRegisteredCredits.toFixed(1)} Credits
+              </span>
             </div>
-            <p className="text-[10px] text-muted-foreground/80 mt-1.5 font-medium">
-              You can register for all available courses offered for this semester.
-            </p>
           </div>
         </div>
       )}
@@ -344,9 +375,6 @@ export default function CourseRegistrationPage() {
               pre-selected and required.
             </p>
           </div>
-          <span className="px-3 py-1 bg-secondary/40 border border-border/80 rounded-xl text-xs font-mono font-bold text-foreground">
-            {eligibleCourses.length} Offered Modules
-          </span>
         </div>
 
         {!isRegistrationWindowOpen ? (
@@ -530,10 +558,6 @@ export default function CourseRegistrationPage() {
                 label="Drop Selected"
               />
             )}
-            <span className="px-3 py-1 bg-secondary/40 border border-border/80 rounded-xl text-xs font-mono font-bold text-foreground">
-              {myRegistrations.length} Enrolled Modules ({currentRegisteredCredits.toFixed(1)}{' '}
-              Credits)
-            </span>
           </div>
         </div>
 
@@ -671,6 +695,37 @@ export default function CourseRegistrationPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Registered Courses Credit Summary Footer */}
+            <div className="p-4 bg-secondary/15 border-t border-border/70 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                <div className="flex items-center gap-1.5 bg-card/60 px-3 py-1.5 rounded-xl border border-border/60">
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded shrink-0">
+                    C
+                  </span>
+                  <span className="text-muted-foreground">Compulsory Registered:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {compulsoryRegisteredCredits.toFixed(1)} Credits
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-card/60 px-3 py-1.5 rounded-xl border border-border/60">
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded shrink-0">
+                    O
+                  </span>
+                  <span className="text-muted-foreground">Optional Registered:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {optionalRegisteredCredits.toFixed(1)} Credits
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-primary/10 px-3 py-1.5 rounded-xl border border-primary/20">
+                  <span className="text-muted-foreground font-semibold">Total Registered:</span>
+                  <span className="font-mono font-bold text-primary text-sm">
+                    {currentRegisteredCredits.toFixed(1)} Credits
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <ProgressiveLoadFooter
               loadedCount={visibleMyRegsCount}
               totalCount={totalMyRegsCount}

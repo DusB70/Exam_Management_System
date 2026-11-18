@@ -71,11 +71,21 @@ export class UsersService {
               degree: {
                 include: {
                   department: true,
+                  courses: {
+                    include: {
+                      course: true,
+                    },
+                  },
                 },
               },
               specialization: {
                 include: {
                   department: true,
+                  course_specializations: {
+                    include: {
+                      course: true,
+                    },
+                  },
                 },
               },
               registrations: {
@@ -570,11 +580,21 @@ export class UsersService {
               degree: {
                 include: {
                   department: true,
+                  courses: {
+                    include: {
+                      course: true,
+                    },
+                  },
                 },
               },
               specialization: {
                 include: {
                   department: true,
+                  course_specializations: {
+                    include: {
+                      course: true,
+                    },
+                  },
                 },
               },
               registrations: {

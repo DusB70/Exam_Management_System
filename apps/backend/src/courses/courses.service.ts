@@ -116,37 +116,114 @@ export class CoursesService {
     academicYear?: number,
     degreeId?: number,
     specializationId?: number,
+    status?: string,
   ) {
-    const where: Prisma.CourseWhereInput = {};
+    const conditions: Prisma.CourseWhereInput[] = [];
 
     if (search) {
-      where.OR = [
-        { course_code: { contains: search, mode: 'insensitive' } },
-        { course_name: { contains: search, mode: 'insensitive' } },
-        { department: { department_name: { contains: search, mode: 'insensitive' } } },
-        { department: { department_code: { contains: search, mode: 'insensitive' } } },
-      ];
+      conditions.push({
+        OR: [
+          { course_code: { contains: search, mode: 'insensitive' } },
+          { course_name: { contains: search, mode: 'insensitive' } },
+          { department: { department_name: { contains: search, mode: 'insensitive' } } },
+          { department: { department_code: { contains: search, mode: 'insensitive' } } },
+        ],
+      });
     }
 
     if (departmentId) {
-      where.department_id = departmentId;
+      conditions.push({ department_id: departmentId });
     }
 
-    if (degreeId) {
-      where.degrees = {
-        some: {
-          degree_id: degreeId,
-        },
-      };
+    if (degreeId && !status) {
+      conditions.push({
+        OR: [
+          { degrees: { some: { degree_id: degreeId } } },
+          { course_specializations: { some: { specialization: { degree_id: degreeId } } } },
+          { specialization: { degree_id: degreeId } },
+        ],
+      });
     }
 
     if (specializationId) {
-      where.specialization_id = specializationId;
+      conditions.push({
+        OR: [
+          { specialization_id: specializationId },
+          { course_specializations: { some: { specialization_id: specializationId } } },
+        ],
+      });
     }
 
     if (semester) {
-      where.semester = semester;
+      conditions.push({ semester });
     }
+
+    if (status) {
+      const normStatus = status.trim().toUpperCase();
+      const isOpt = normStatus.startsWith('OPT') || normStatus === 'O';
+      const statusValues = isOpt
+        ? ['OPTIONAL', 'Optional', 'optional', 'O', 'o', 'Opt', 'opt']
+        : ['COMPULSORY', 'Compulsory', 'compulsory', 'C', 'c', 'Comp', 'comp'];
+
+      const statusFilterCondition = {
+        in: statusValues,
+        mode: 'insensitive' as const,
+      };
+
+      if (degreeId) {
+        conditions.push({
+          OR: [
+            {
+              degrees: {
+                some: {
+                  degree_id: degreeId,
+                  status: statusFilterCondition,
+                },
+              },
+            },
+            {
+              course_specializations: {
+                some: {
+                  specialization: { degree_id: degreeId },
+                  status: statusFilterCondition,
+                },
+              },
+            },
+            {
+              specialization: {
+                degree_id: degreeId,
+              },
+              course_specializations: {
+                some: {
+                  status: statusFilterCondition,
+                },
+              },
+            },
+          ],
+        });
+      } else {
+        conditions.push({
+          OR: [
+            {
+              degrees: {
+                some: {
+                  status: statusFilterCondition,
+                },
+              },
+            },
+            {
+              course_specializations: {
+                some: {
+                  status: statusFilterCondition,
+                },
+              },
+            },
+          ],
+        });
+      }
+    }
+
+    const where: Prisma.CourseWhereInput = conditions.length > 0 ? { AND: conditions } : {};
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.course.findMany({
@@ -160,10 +237,18 @@ export class CoursesService {
               degree: true,
             },
           },
-          specialization: true,
+          specialization: {
+            include: {
+              degree: true,
+            },
+          },
           course_specializations: {
             include: {
-              specialization: true,
+              specialization: {
+                include: {
+                  degree: true,
+                },
+              },
             },
           },
           lecturers: {
@@ -227,10 +312,18 @@ export class CoursesService {
             degree: true,
           },
         },
-        specialization: true,
+        specialization: {
+          include: {
+            degree: true,
+          },
+        },
         course_specializations: {
           include: {
-            specialization: true,
+            specialization: {
+              include: {
+                degree: true,
+              },
+            },
           },
         },
         lecturers: {

@@ -29,7 +29,15 @@ export class DegreesController {
     const degrees = await this.prisma.degree.findMany({
       include: {
         department: true,
-        specializations: true,
+        specializations: {
+          include: {
+            course_specializations: {
+              include: {
+                course: true,
+              },
+            },
+          },
+        },
         courses: {
           include: {
             course: true,
@@ -40,20 +48,43 @@ export class DegreesController {
     });
 
     const mapped = degrees.map((deg) => {
-      const calculatedCompulsory = deg.courses
-        .filter((cd) => cd.status === 'COMPULSORY')
-        .reduce((sum, cd) => sum + Number(cd.course.credit_value), 0);
+      const compulsoryCourseMap = new Map<number, number>();
+      const optionalCourseMap = new Map<number, number>();
 
-      const compulsoryCredits =
-        deg.compulsory_credits != null && deg.compulsory_credits > 0
-          ? deg.compulsory_credits
-          : calculatedCompulsory;
+      for (const cd of deg.courses || []) {
+        if (!cd.course) continue;
+        const cId = cd.course_id;
+        const cred = Number(cd.course.credit_value || 0);
+        const status = (cd.status || '').toUpperCase();
+        if (status === 'COMPULSORY') {
+          compulsoryCourseMap.set(cId, cred);
+        } else if (status === 'OPTIONAL') {
+          optionalCourseMap.set(cId, cred);
+        }
+      }
 
-      const totalCreditsRequired = Number(deg.total_credits_required || 0);
-      const minOptionalCredits =
-        deg.min_optional_credits != null && deg.min_optional_credits > 0
-          ? deg.min_optional_credits
-          : Math.max(0, totalCreditsRequired - compulsoryCredits);
+      for (const spec of deg.specializations || []) {
+        for (const cs of spec.course_specializations || []) {
+          if (!cs.course) continue;
+          const cId = cs.course_id;
+          const cred = Number(cs.course.credit_value || 0);
+          const status = (cs.status || '').toUpperCase();
+          if (status === 'COMPULSORY') {
+            compulsoryCourseMap.set(cId, cred);
+            optionalCourseMap.delete(cId);
+          } else if (status === 'OPTIONAL' && !compulsoryCourseMap.has(cId)) {
+            optionalCourseMap.set(cId, cred);
+          }
+        }
+      }
+
+      let compulsoryCredits = 0;
+      for (const cred of compulsoryCourseMap.values()) {
+        compulsoryCredits += cred;
+      }
+
+      const totalCreditsRequired = 120;
+      const minOptionalCredits = Math.max(0, totalCreditsRequired - compulsoryCredits);
 
       return {
         degree_id: deg.degree_id,
@@ -61,12 +92,13 @@ export class DegreesController {
         degree_code: deg.degree_code,
         department_id: deg.department_id,
         duration_years: deg.duration_years ?? 4,
-        total_credits_required: deg.total_credits_required,
+        total_credits_required: totalCreditsRequired,
         compulsory_credits: compulsoryCredits,
         min_optional_credits: minOptionalCredits,
         optional_credits_required: minOptionalCredits,
         department: deg.department,
         specializations: deg.specializations,
+        courses: deg.courses,
       };
     });
 
@@ -107,7 +139,9 @@ export class DegreesController {
         department_id: dto.departmentId || null,
         duration_years: dto.durationYears != null ? Number(dto.durationYears) : 4,
         total_credits_required:
-          dto.totalCreditsRequired != null ? Number(dto.totalCreditsRequired) : 0,
+          dto.totalCreditsRequired != null && Number(dto.totalCreditsRequired) > 0
+            ? Number(dto.totalCreditsRequired)
+            : 120,
         compulsory_credits: dto.compulsoryCredits != null ? Number(dto.compulsoryCredits) : 0,
         min_optional_credits: dto.minOptionalCredits != null ? Number(dto.minOptionalCredits) : 0,
       },

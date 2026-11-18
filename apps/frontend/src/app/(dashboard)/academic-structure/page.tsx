@@ -77,9 +77,8 @@ export default function AcademicStructurePage() {
   const [limitYear, setLimitYear] = useState<number>(2026);
   const [limitSemester, setLimitSemester] = useState<string>('Semester 1');
 
-  // Bulk selection state for structure cards and semester limits
+  // Bulk selection state for semester limits
   const [isBulkDeletingLimits, setIsBulkDeletingLimits] = useState(false);
-  const structureSelection = useBulkSelection<number>();
   const limitsSelection = useBulkSelection<number>();
   const [limitCredits, setLimitCredits] = useState<number>(22);
 
@@ -107,6 +106,64 @@ export default function AcademicStructurePage() {
       return res.data?.data || [];
     },
   });
+
+  // Calculate degree credit statistics
+  const getDegreeCreditStats = (deg: any) => {
+    const totalCredits = 120;
+
+    // Use backend-calculated values if already present
+    if (deg.compulsory_credits !== undefined && deg.compulsory_credits !== null) {
+      const compulsoryCredits = Number(deg.compulsory_credits || 0);
+      const minOptionalCredits =
+        deg.min_optional_credits !== undefined && deg.min_optional_credits !== null
+          ? Number(deg.min_optional_credits)
+          : Math.max(0, totalCredits - compulsoryCredits);
+
+      return {
+        totalCredits,
+        compulsoryCredits,
+        minOptionalCredits,
+      };
+    }
+
+    // Client-side fallback based on actual degree and specialization course mappings
+    const compulsoryCourseMap = new Map<number, number>();
+
+    for (const cd of deg.courses || []) {
+      if (!cd.course) continue;
+      const cId = cd.course_id;
+      const cred = Number(cd.course.credit_value || 0);
+      const status = (cd.status || '').toUpperCase();
+      if (status === 'COMPULSORY') {
+        compulsoryCourseMap.set(cId, cred);
+      }
+    }
+
+    for (const spec of deg.specializations || []) {
+      for (const cs of spec.course_specializations || []) {
+        if (!cs.course) continue;
+        const cId = cs.course_id;
+        const cred = Number(cs.course.credit_value || 0);
+        const status = (cs.status || '').toUpperCase();
+        if (status === 'COMPULSORY') {
+          compulsoryCourseMap.set(cId, cred);
+        }
+      }
+    }
+
+    let compulsoryCredits = 0;
+    compulsoryCourseMap.forEach((cred) => {
+      compulsoryCredits += cred;
+    });
+
+    const minOptionalCredits = Math.max(0, totalCredits - compulsoryCredits);
+
+    return {
+      totalCredits,
+      compulsoryCredits,
+      minOptionalCredits,
+    };
+  };
 
   // Mutations
   const createMutation = useMutation({
@@ -188,7 +245,7 @@ export default function AcademicStructurePage() {
       departmentId: departments[0]?.department_id || 0,
       degreeId: degrees[0]?.degree_id || 0,
       durationYears: 4,
-      totalCreditsRequired: 0,
+      totalCreditsRequired: 120,
       compulsoryCredits: 0,
       minOptionalCredits: 0,
       establishedDate: new Date().toISOString().split('T')[0],
@@ -218,15 +275,16 @@ export default function AcademicStructurePage() {
           : '',
       });
     } else if (target === 'degree') {
+      const stats = getDegreeCreditStats(item);
       setFormData({
         name: item.degree_name,
         code: item.degree_code,
         departmentId: item.department_id || 0,
         degreeId: 0,
         durationYears: item.duration_years || 4,
-        totalCreditsRequired: item.total_credits_required || 0,
-        compulsoryCredits: item.compulsory_credits || 0,
-        minOptionalCredits: item.min_optional_credits || item.optional_credits_required || 0,
+        totalCreditsRequired: 120,
+        compulsoryCredits: stats.compulsoryCredits,
+        minOptionalCredits: stats.minOptionalCredits,
         establishedDate: '',
       });
     } else if (target === 'specialization') {
@@ -481,26 +539,28 @@ export default function AcademicStructurePage() {
             Manage academic departments, degrees offered, and advanced specializations
           </p>
         </div>
-        <button
-          onClick={() =>
-            handleOpenCreate(
-              activeTab === 'departments'
-                ? 'department'
-                : activeTab === 'degrees'
-                  ? 'degree'
-                  : 'specialization',
-            )
-          }
-          className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer self-start sm:self-auto"
-        >
-          <Plus className="h-4 w-4" />
-          Add{' '}
-          {activeTab === 'departments'
-            ? 'Department'
-            : activeTab === 'degrees'
-              ? 'Degree'
-              : 'Specialization'}
-        </button>
+        {activeTab !== 'bulk-specialization' && (
+          <button
+            onClick={() =>
+              handleOpenCreate(
+                activeTab === 'departments'
+                  ? 'department'
+                  : activeTab === 'degrees'
+                    ? 'degree'
+                    : 'specialization',
+              )
+            }
+            className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer self-start sm:self-auto"
+          >
+            <Plus className="h-4 w-4" />
+            Add{' '}
+            {activeTab === 'departments'
+              ? 'Department'
+              : activeTab === 'degrees'
+                ? 'Degree'
+                : 'Specialization'}
+          </button>
+        )}
       </div>
 
       {/* Tabs Switcher */}
@@ -509,7 +569,6 @@ export default function AcademicStructurePage() {
           onClick={() => {
             setActiveTab('departments');
             setSearchQuery('');
-            structureSelection.clear();
           }}
           className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'departments'
@@ -524,7 +583,6 @@ export default function AcademicStructurePage() {
           onClick={() => {
             setActiveTab('degrees');
             setSearchQuery('');
-            structureSelection.clear();
           }}
           className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'degrees'
@@ -539,7 +597,6 @@ export default function AcademicStructurePage() {
           onClick={() => {
             setActiveTab('specializations');
             setSearchQuery('');
-            structureSelection.clear();
           }}
           className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'specializations'
@@ -554,7 +611,6 @@ export default function AcademicStructurePage() {
           onClick={() => {
             setActiveTab('bulk-specialization');
             setSearchQuery('');
-            structureSelection.clear();
           }}
           className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
             activeTab === 'bulk-specialization'
@@ -586,26 +642,13 @@ export default function AcademicStructurePage() {
             visibleDepartments.map((dept: any) => (
               <div
                 key={dept.department_id}
-                className={`bg-card/30 border rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between hover:shadow-xl transition-all space-y-4 ${
-                  structureSelection.isSelected(dept.department_id)
-                    ? 'border-primary/70 ring-1 ring-primary/30 bg-primary/5'
-                    : 'border-border/80'
-                }`}
+                className="bg-card/30 border border-border/80 rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between hover:shadow-xl transition-all space-y-4"
               >
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <input
-                        type="checkbox"
-                        checked={structureSelection.isSelected(dept.department_id)}
-                        onChange={() => structureSelection.toggle(dept.department_id)}
-                        aria-label={`Select ${dept.department_name}`}
-                        className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
-                      />
-                      <span className="text-xs font-mono font-bold px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg uppercase">
-                        {dept.department_code}
-                      </span>
-                    </div>
+                    <span className="text-xs font-mono font-bold px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg uppercase">
+                      {dept.department_code}
+                    </span>
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => handleOpenEdit('department', dept)}
@@ -656,115 +699,104 @@ export default function AcademicStructurePage() {
               No degrees found.
             </div>
           ) : (
-            visibleDegrees.map((deg: any) => (
-              <div
-                key={deg.degree_id}
-                className={`bg-card/30 border rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between hover:shadow-xl transition-all space-y-4 ${
-                  structureSelection.isSelected(deg.degree_id)
-                    ? 'border-primary/70 ring-1 ring-primary/30 bg-primary/5'
-                    : 'border-border/80'
-                }`}
-              >
-                <div className="space-y-3">
-                  {/* Top Badges & Actions */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={structureSelection.isSelected(deg.degree_id)}
-                        onChange={() => structureSelection.toggle(deg.degree_id)}
-                        aria-label={`Select ${deg.degree_name}`}
-                        className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
-                      />
-                      <span className="text-xs font-mono font-bold px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg uppercase">
-                        {deg.degree_code}
-                      </span>
-                      <span className="text-xs font-medium px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg">
-                        {deg.duration_years || 4}{' '}
-                        {Number(deg.duration_years) === 1 ? 'Year' : 'Years'}
-                      </span>
+            visibleDegrees.map((deg: any) => {
+              const stats = getDegreeCreditStats(deg);
+              return (
+                <div
+                  key={deg.degree_id}
+                  className="bg-card/30 border border-border/80 rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between hover:shadow-xl transition-all space-y-4"
+                >
+                  <div className="space-y-3">
+                    {/* Top Badges & Actions */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-bold px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg uppercase">
+                          {deg.degree_code}
+                        </span>
+                        <span className="text-xs font-medium px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg">
+                          {deg.duration_years || 4}{' '}
+                          {Number(deg.duration_years) === 1 ? 'Year' : 'Years'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleOpenLimits(deg)}
+                          className="p-1.5 bg-secondary hover:bg-secondary/80 rounded-lg transition text-muted-foreground hover:text-foreground"
+                          title="Configure Semester Limits"
+                        >
+                          <Clock className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleOpenEdit('degree', deg)}
+                          className="p-1.5 bg-secondary hover:bg-secondary/80 rounded-lg transition text-muted-foreground hover:text-foreground"
+                          title="Edit Degree"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete('degree', deg.degree_id)}
+                          className="p-1.5 bg-destructive/10 hover:bg-destructive/20 rounded-lg transition text-destructive"
+                          title="Delete Degree"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => handleOpenLimits(deg)}
-                        className="p-1.5 bg-secondary hover:bg-secondary/80 rounded-lg transition text-muted-foreground hover:text-foreground"
-                        title="Configure Semester Limits"
-                      >
-                        <Clock className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleOpenEdit('degree', deg)}
-                        className="p-1.5 bg-secondary hover:bg-secondary/80 rounded-lg transition text-muted-foreground hover:text-foreground"
-                        title="Edit Degree"
-                      >
-                        <Edit2 className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete('degree', deg.degree_id)}
-                        className="p-1.5 bg-destructive/10 hover:bg-destructive/20 rounded-lg transition text-destructive"
-                        title="Delete Degree"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+
+                    {/* Degree Name */}
+                    <div>
+                      <h3 className="font-bold text-base leading-snug text-foreground">
+                        {deg.degree_name}
+                      </h3>
+                      {deg.department?.department_name && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {deg.department.department_name}
+                        </p>
+                      )}
                     </div>
                   </div>
 
-                  {/* Degree Name */}
-                  <div>
-                    <h3 className="font-bold text-base leading-snug text-foreground">
-                      {deg.degree_name}
-                    </h3>
-                    {deg.department?.department_name && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {deg.department.department_name}
-                      </p>
-                    )}
+                  {/* Credit Requirements Grid */}
+                  <div className="space-y-2.5 pt-3 border-t border-border/50">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="bg-secondary/30 p-2 rounded-xl border border-border/40">
+                        <span className="block text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">
+                          Total
+                        </span>
+                        <span className="text-xs font-bold text-foreground mt-0.5 block">
+                          {stats.totalCredits.toFixed(1)} Cr
+                        </span>
+                      </div>
+                      <div className="bg-secondary/30 p-2 rounded-xl border border-border/40">
+                        <span className="block text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">
+                          Compulsory
+                        </span>
+                        <span className="text-xs font-bold text-emerald-400 mt-0.5 block">
+                          {stats.compulsoryCredits.toFixed(1)} Cr
+                        </span>
+                      </div>
+                      <div className="bg-secondary/30 p-2 rounded-xl border border-border/40">
+                        <span className="block text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">
+                          Min Optional
+                        </span>
+                        <span className="text-xs font-bold text-amber-400 mt-0.5 block">
+                          {stats.minOptionalCredits.toFixed(1)} Cr
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Specializations summary row */}
+                    <div className="flex items-center justify-between text-xs text-muted-foreground pt-0.5">
+                      <span>Specializations:</span>
+                      <span className="font-semibold text-foreground bg-secondary/50 px-2 py-0.5 rounded-md text-[11px]">
+                        {deg.specializations?.length || 0} Specialization
+                        {deg.specializations?.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
                   </div>
                 </div>
-
-                {/* Credit Requirements Grid */}
-                <div className="space-y-2.5 pt-3 border-t border-border/50">
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="bg-secondary/30 p-2 rounded-xl border border-border/40">
-                      <span className="block text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">
-                        Total
-                      </span>
-                      <span className="text-xs font-bold text-foreground mt-0.5 block">
-                        {parseFloat(deg.total_credits_required || 0).toFixed(1)} Cr
-                      </span>
-                    </div>
-                    <div className="bg-secondary/30 p-2 rounded-xl border border-border/40">
-                      <span className="block text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">
-                        Compulsory
-                      </span>
-                      <span className="text-xs font-bold text-emerald-400 mt-0.5 block">
-                        {parseFloat(deg.compulsory_credits || 0).toFixed(1)} Cr
-                      </span>
-                    </div>
-                    <div className="bg-secondary/30 p-2 rounded-xl border border-border/40">
-                      <span className="block text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">
-                        Min Optional
-                      </span>
-                      <span className="text-xs font-bold text-amber-400 mt-0.5 block">
-                        {parseFloat(
-                          deg.min_optional_credits || deg.optional_credits_required || 0,
-                        ).toFixed(1)}{' '}
-                        Cr
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Specializations summary row */}
-                  <div className="flex items-center justify-between text-xs text-muted-foreground pt-0.5">
-                    <span>Specializations:</span>
-                    <span className="font-semibold text-foreground bg-secondary/50 px-2 py-0.5 rounded-md text-[11px]">
-                      {deg.specializations?.length || 0} Specialization
-                      {deg.specializations?.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
           <ProgressiveLoadFooter
             loadedCount={visibleDegreesCount}
@@ -786,23 +818,12 @@ export default function AcademicStructurePage() {
             visibleSpecializations.map((spec: any) => (
               <div
                 key={spec.specialization_id}
-                className={`bg-card/30 border rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between hover:shadow-xl transition-all space-y-4 ${
-                  structureSelection.isSelected(spec.specialization_id)
-                    ? 'border-primary/70 ring-1 ring-primary/30 bg-primary/5'
-                    : 'border-border/80'
-                }`}
+                className="bg-card/30 border border-border/80 rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between hover:shadow-xl transition-all space-y-4"
               >
                 <div className="space-y-3">
                   {/* Top Badges & Actions */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={structureSelection.isSelected(spec.specialization_id)}
-                        onChange={() => structureSelection.toggle(spec.specialization_id)}
-                        aria-label={`Select ${spec.specialization_name}`}
-                        className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
-                      />
                       <span className="text-xs font-mono font-bold px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-lg uppercase">
                         {spec.specialization_code}
                       </span>

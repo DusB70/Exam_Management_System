@@ -26,6 +26,11 @@ export class UsersRepository {
             specialization: {
               include: {
                 department: true,
+                course_specializations: {
+                  include: {
+                    course: true,
+                  },
+                },
               },
             },
             registrations: {
@@ -67,6 +72,11 @@ export class UsersRepository {
             specialization: {
               include: {
                 department: true,
+                course_specializations: {
+                  include: {
+                    course: true,
+                  },
+                },
               },
             },
             registrations: {

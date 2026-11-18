@@ -1346,149 +1346,108 @@ export default function DashboardOverview() {
           </div>
 
           {/* Degree Progress & Workload Limits Card */}
-          {profile?.student?.degree && (
-            <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-sm space-y-6 animate-fadeIn">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/40 pb-4">
-                <div>
-                  <h3 className="text-lg font-bold text-foreground">
-                    Degree Credit Requirements Overview
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Curriculum metrics for{' '}
-                    <strong>
-                      {profile.student.degree.degree_name} ({profile.student.degree.degree_code})
-                    </strong>
-                  </p>
-                </div>
-                {activePeriod && (
-                  <span className="px-3 py-1.5 bg-primary/10 text-primary border border-primary/20 rounded-xl text-xs font-bold font-mono">
-                    Semester {activePeriod.semester} Active
-                  </span>
-                )}
-              </div>
+          {profile?.student?.degree && (() => {
+            const deg = profile.student.degree;
+            const spec = profile.student.specialization;
+            const totalCredits = 120;
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Total Credits Card */}
-                <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
+            let compulsoryCredits = 0;
+            if (deg?.compulsory_credits !== undefined && deg?.compulsory_credits !== null) {
+              compulsoryCredits = Number(deg.compulsory_credits);
+            } else {
+              const compulsoryCourseMap = new Map<number, number>();
+              for (const cd of deg?.courses || []) {
+                if (!cd.course) continue;
+                if ((cd.status || '').toUpperCase() === 'COMPULSORY') {
+                  compulsoryCourseMap.set(cd.course_id, Number(cd.course.credit_value || 0));
+                }
+              }
+              for (const cs of spec?.course_specializations || []) {
+                if (!cs.course) continue;
+                if ((cs.status || '').toUpperCase() === 'COMPULSORY') {
+                  compulsoryCourseMap.set(cs.course_id, Number(cs.course.credit_value || 0));
+                }
+              }
+              compulsoryCourseMap.forEach((cred) => {
+                compulsoryCredits += cred;
+              });
+            }
+
+            const minOptionalCredits =
+              deg?.min_optional_credits !== undefined && deg?.min_optional_credits !== null
+                ? Number(deg.min_optional_credits)
+                : Math.max(0, totalCredits - compulsoryCredits);
+
+            return (
+              <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-sm space-y-6 animate-fadeIn">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/40 pb-4">
                   <div>
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
-                      Degree Total Completion Requirement
-                    </span>
-                    <p className="text-2xl font-extrabold text-foreground mt-2">
-                      {parseFloat(profile.student.degree.total_credits_required || 0).toFixed(1)}{' '}
-                      Credits
+                    <h3 className="text-lg font-bold text-foreground">
+                      Degree Credit Requirements Overview
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Curriculum metrics for{' '}
+                      <strong>
+                        {deg.degree_name} ({deg.degree_code})
+                      </strong>
                     </p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground mt-3">
-                    Total credits required to qualify for graduation.
-                  </p>
+                  {activePeriod && (
+                    <span className="px-3 py-1.5 bg-primary/10 text-primary border border-primary/20 rounded-xl text-xs font-bold font-mono">
+                      Semester {activePeriod.semester} Active
+                    </span>
+                  )}
                 </div>
 
-                {/* Compulsory Credits Card */}
-                <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
-                      Compulsory Credits in Curriculum
-                    </span>
-                    <p className="text-2xl font-extrabold text-amber-405 text-amber-500 mt-2">
-                      {parseFloat(profile.student.degree.compulsory_credits || 0).toFixed(1)}{' '}
-                      Credits
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Total Credits Card */}
+                  <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                        Degree Total Completion Requirement
+                      </span>
+                      <p className="text-2xl font-extrabold text-foreground mt-2">
+                        {totalCredits.toFixed(1)} Credits
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-3">
+                      Total credits required to qualify for graduation.
                     </p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground mt-3">
-                    Credits from core mandatory subjects in the degree syllabus.
-                  </p>
-                </div>
 
-                {/* Optional Credits Card */}
-                <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
-                      Minimum Optional Credits Required
-                    </span>
-                    <p className="text-2xl font-extrabold text-emerald-405 text-emerald-500 mt-2">
-                      {parseFloat(profile.student.degree.optional_credits_required || 0).toFixed(1)}{' '}
-                      Credits
+                  {/* Compulsory Credits Card */}
+                  <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                        Compulsory Credits in Curriculum
+                      </span>
+                      <p className="text-2xl font-extrabold text-amber-500 mt-2">
+                        {compulsoryCredits.toFixed(1)} Credits
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-3">
+                      Credits from core mandatory subjects in the degree syllabus.
                     </p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground mt-3">
-                    Credits needed from elective optional subjects to fulfill requirements.
-                  </p>
+
+                  {/* Optional Credits Card */}
+                  <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                        Minimum Optional Credits Required
+                      </span>
+                      <p className="text-2xl font-extrabold text-emerald-500 mt-2">
+                        {minOptionalCredits.toFixed(1)} Credits
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-3">
+                      Credits needed from elective optional subjects to fulfill requirements.
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* Available Modules Section */}
-          <div className="bg-card/20 border border-border/60 p-6 rounded-3xl backdrop-blur-sm space-y-6">
-            <div>
-              <h3 className="text-lg font-bold text-foreground">Available Modules</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                List of course modules offered for your degree and specialization in the current
-                semester.
-              </p>
-            </div>
-
-            {!isRegistrationWindowOpen ? (
-              <div className="py-12 text-center text-muted-foreground text-sm border border-dashed border-border/60 rounded-2xl">
-                Available modules list is currently hidden because the course registration window is
-                closed.
-              </div>
-            ) : eligibleCourses.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground text-sm border border-dashed border-border/60 rounded-2xl">
-                No eligible modules available. You may have registered for all subjects, or none are
-                assigned for this semester.
-              </div>
-            ) : (
-              <ProgressiveSlice
-                items={eligibleCourses}
-                entityLabel="courses"
-                footerClassName="col-span-full rounded-2xl border border-border/60"
-              >
-                {(visibleCourses, footer) => (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                    {visibleCourses.map((course: any) => (
-                      <div
-                        key={course.course_id}
-                        className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/20 transition-all duration-300 group"
-                      >
-                        <div>
-                          <div className="flex justify-between items-start">
-                            <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 rounded uppercase">
-                              {course.course_code}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground font-semibold">
-                              Credits: {Number(course.credit_value).toFixed(1)}
-                            </span>
-                          </div>
-                          <h4 className="font-bold text-sm text-foreground mt-3 leading-snug group-hover:text-primary transition-colors duration-300">
-                            {course.course_name}
-                          </h4>
-                          {course.department && (
-                            <p className="text-[11px] text-muted-foreground mt-1.5 font-medium uppercase tracking-wider">
-                              {course.department.department_name}
-                            </p>
-                          )}
-                        </div>
-                        <div className="border-t border-border/60 pt-4 mt-5 flex items-center justify-between">
-                          <span className="text-[10px] text-muted-foreground">
-                            Semester: <strong>{course.semester}</strong>
-                          </span>
-                          <Link
-                            href="/registration"
-                            className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
-                          >
-                            Register Modules &rarr;
-                          </Link>
-                        </div>
-                      </div>
-                    ))}
-                    {footer}
-                  </div>
-                )}
-              </ProgressiveSlice>
-            )}
-          </div>
+            );
+          })()}
         </div>
       );
     }

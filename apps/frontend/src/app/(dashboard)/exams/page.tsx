@@ -574,6 +574,7 @@ export default function ExamsManagementPage() {
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date());
   const [studentTab, setStudentTab] = useState<'my-schedules' | 'full-timetable'>('my-schedules');
   const [studentBatchFilter, setStudentBatchFilter] = useState<string>('ALL');
+  const [studentDeptFilters, setStudentDeptFilters] = useState<Record<string, string>>({});
 
   // =========================================================================
   // ADD NEW EXAM TIMETABLE MODAL WIZARD STATE
@@ -696,22 +697,15 @@ export default function ExamsManagementPage() {
         const headerRow: string[] = (rawRows[0] || []).map((h: any) => String(h).trim());
         const headerErrors: string[] = [];
 
-        const hasBatchHeader = headerRow.some((h) => /batch/i.test(h));
-        const hasSemesterHeader = headerRow.some((h) => /semester|sem/i.test(h));
-        const hasExamNameHeader = headerRow.some((h) =>
-          /exam.*name|examination|exam_name/i.test(h),
+        const hasCodeHeader = headerRow.some((h) =>
+          /course.*code|subject.*code|course|code/i.test(h),
         );
-        const hasCodeHeader = headerRow.some((h) => /course|subject|code/i.test(h));
         const hasDateHeader = headerRow.some((h) => /date/i.test(h));
-        const hasStartHeader = headerRow.some((h) => /start|time/i.test(h));
+        const hasStartHeader = headerRow.some((h) => /start/i.test(h));
         const hasEndHeader = headerRow.some((h) => /end/i.test(h));
 
-        if (!hasBatchHeader) headerErrors.push("Missing required column header 'Batch'");
-        if (!hasSemesterHeader) headerErrors.push("Missing required column header 'Semester'");
-        if (!hasExamNameHeader)
-          headerErrors.push("Missing required column header 'Examination Name'");
         if (!hasCodeHeader) headerErrors.push("Missing required column header 'Course Code'");
-        if (!hasDateHeader) headerErrors.push("Missing required column header 'Date'");
+        if (!hasDateHeader) headerErrors.push("Missing required column header 'Date and Time'");
         if (!hasStartHeader) headerErrors.push("Missing required column header 'Start Time'");
         if (!hasEndHeader) headerErrors.push("Missing required column header 'End Time'");
 
@@ -727,21 +721,32 @@ export default function ExamsManagementPage() {
           const examNameKey = Object.keys(row).find((k) =>
             /exam.*name|examination|exam_name/i.test(k),
           );
-          const codeKey = Object.keys(row).find((k) => /course|subject|code/i.test(k));
+          const codeKey = Object.keys(row).find((k) =>
+            /course.*code|subject.*code|course|code/i.test(k),
+          );
           const dateKey = Object.keys(row).find((k) => /date/i.test(k));
-          const startKey = Object.keys(row).find((k) => /start|time/i.test(k));
+          const startKey = Object.keys(row).find((k) => /start/i.test(k));
           const endKey = Object.keys(row).find((k) => /end/i.test(k));
           const venueKey = Object.keys(row).find((k) => /venue|hall|location/i.test(k));
 
-          const rawBatch = batchKey ? String(row[batchKey]).trim() : targetBatch || '';
-          const rawSemester = semesterKey ? String(row[semesterKey]).trim() : targetSemester || '';
-          const rawExamName = examNameKey ? String(row[examNameKey]).trim() : targetExamName || '';
+          const rawBatch =
+            (batchKey && row[batchKey] ? String(row[batchKey]).trim() : '') ||
+            targetBatch ||
+            '21/22';
+          const rawSemester =
+            (semesterKey && row[semesterKey] ? String(row[semesterKey]).trim() : '') ||
+            targetSemester ||
+            '1.1';
+          const rawExamName =
+            (examNameKey && row[examNameKey] ? String(row[examNameKey]).trim() : '') ||
+            targetExamName ||
+            'End Semester Examination';
 
           const rawCode = codeKey ? String(row[codeKey]).trim() : '';
           const rawDate = dateKey ? row[dateKey] : '';
           const rawStart = startKey ? String(row[startKey]).trim() : '09:00 AM';
           const rawEnd = endKey ? String(row[endKey]).trim() : '12:00 PM';
-          const rawVenue = venueKey ? String(row[venueKey]).trim() : 'Main Exam Hall A';
+          const rawVenue = venueKey ? String(row[venueKey]).trim() : 'Main Exam Hall';
 
           const cleanBatch = rawBatch.replace(/^batch\s+/i, '').trim();
           const cleanSemester = rawSemester.replace(/^semester\s+/i, '').trim();
@@ -810,11 +815,8 @@ export default function ExamsManagementPage() {
           headerRow,
           headerErrors,
           expectedHeaders: [
-            'Batch',
-            'Semester',
-            'Examination Name',
             'Course Code',
-            'Date',
+            'Date and Time',
             'Start Time',
             'End Time',
             'Venue',
@@ -836,20 +838,20 @@ export default function ExamsManagementPage() {
   };
 
   const handleDownloadTemplate = () => {
+    const semCourses = availableCourses.filter((c: any) => c.semester === wizardSemester);
     const sampleCourses =
-      availableCourses.length > 0
-        ? availableCourses.slice(0, 2)
-        : [
-            { course_code: 'ICT1101', semester: '1.1' },
-            { course_code: 'ICT1102', semester: '1.1' },
-          ];
+      semCourses.length > 0
+        ? semCourses
+        : availableCourses.length > 0
+          ? availableCourses.slice(0, 4)
+          : [
+              { course_code: 'ICT1101' },
+              { course_code: 'ICT1102' },
+            ];
 
     const sampleData = sampleCourses.map((course: any, idx: number) => ({
-      Batch: wizardBatch || '21/22',
-      Semester: course.semester || wizardSemester || '1.1',
-      'Examination Name': wizardExamName || 'End Semester Examination 2026',
       'Course Code': course.course_code,
-      Date: idx === 0 ? '15-10-2026' : '17-10-2026',
+      'Date and Time': idx === 0 ? '15-10-2026' : '17-10-2026',
       'Start Time': idx === 0 ? '09:00 AM' : '01:30 PM',
       'End Time': idx === 0 ? '12:00 PM' : '04:30 PM',
       Venue: idx === 0 ? 'Main Exam Hall A' : 'Auditorium B',
@@ -857,18 +859,15 @@ export default function ExamsManagementPage() {
 
     const ws = XLSX.utils.json_to_sheet(sampleData);
     ws['!cols'] = [
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 32 },
+      { wch: 14 },
+      { wch: 16 },
       { wch: 14 },
       { wch: 14 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 20 },
+      { wch: 22 },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Exam Timetable');
-    XLSX.writeFile(wb, 'exam_timetable_import_template.xlsx');
+    XLSX.writeFile(wb, 'exam_timetable_template.xlsx');
   };
 
   // ==========================================
@@ -1159,7 +1158,21 @@ export default function ExamsManagementPage() {
       }
     });
 
-    return Array.from(map.values());
+    const groups = Array.from(map.values());
+    groups.sort((a, b) => {
+      const numA = parseInt(a.batch?.split('/')[0] || '0', 10);
+      const numB = parseInt(b.batch?.split('/')[0] || '0', 10);
+      if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+        return numA - numB;
+      }
+      const batchComp = (a.batch || '').localeCompare(b.batch || '', undefined, { numeric: true });
+      if (batchComp !== 0) return batchComp;
+      const semComp = (a.semester || '').localeCompare(b.semester || '', undefined, { numeric: true });
+      if (semComp !== 0) return semComp;
+      return (a.examName || '').localeCompare(b.examName || '');
+    });
+
+    return groups;
   }, [filteredTimetables]);
 
   const handleEditGroupTimetable = (group: any) => {
@@ -1240,7 +1253,21 @@ export default function ExamsManagementPage() {
       map.get(groupKey)!.items.push(item);
     });
 
-    return Array.from(map.values());
+    const groups = Array.from(map.values());
+    groups.sort((a, b) => {
+      const numA = parseInt(a.batch?.split('/')[0] || '0', 10);
+      const numB = parseInt(b.batch?.split('/')[0] || '0', 10);
+      if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+        return numA - numB;
+      }
+      const batchComp = (a.batch || '').localeCompare(b.batch || '', undefined, { numeric: true });
+      if (batchComp !== 0) return batchComp;
+      const semComp = (a.semester || '').localeCompare(b.semester || '', undefined, { numeric: true });
+      if (semComp !== 0) return semComp;
+      return (a.examName || '').localeCompare(b.examName || '');
+    });
+
+    return groups;
   }, [filteredProgress]);
 
   // Calendar calculations for Student
@@ -1323,7 +1350,20 @@ export default function ExamsManagementPage() {
       }
       map.get(groupKey)!.items.push(item);
     });
-    return Array.from(map.values());
+    const groups = Array.from(map.values());
+    groups.sort((a, b) => {
+      const numA = parseInt(a.batch?.split('/')[0] || '0', 10);
+      const numB = parseInt(b.batch?.split('/')[0] || '0', 10);
+      if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+        return numA - numB;
+      }
+      const batchComp = (a.batch || '').localeCompare(b.batch || '', undefined, { numeric: true });
+      if (batchComp !== 0) return batchComp;
+      const semComp = (a.semester || '').localeCompare(b.semester || '', undefined, { numeric: true });
+      if (semComp !== 0) return semComp;
+      return (a.examName || '').localeCompare(b.examName || '');
+    });
+    return groups;
   }, [fullTimetable, studentBatchFilter]);
 
   const validationRows = React.useMemo(
@@ -1560,33 +1600,75 @@ export default function ExamsManagementPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {visibleStudentFullGrouped.map((group) => (
-                  <div
-                    key={group.groupKey}
-                    className="bg-card border border-border/80 rounded-3xl overflow-hidden shadow-sm p-5 space-y-3"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-3">
-                      <div>
-                        <span className="px-2.5 py-1 bg-primary/10 text-primary text-xs font-extrabold rounded-lg uppercase tracking-wider mr-2">
-                          Batch {group.batch}
-                        </span>
-                        <span className="px-2.5 py-1 bg-secondary text-foreground text-xs font-bold rounded-lg uppercase tracking-wider">
-                          Semester {group.semester}
-                        </span>
-                        <h4 className="text-base font-bold text-foreground mt-2">
-                          {group.examName}
-                        </h4>
-                      </div>
-                      <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-bold rounded-xl border border-emerald-500/20 w-fit">
-                        Published Official Timetable
-                      </span>
-                    </div>
+                {visibleStudentFullGrouped.map((group) => {
+                  const currentDept = studentDeptFilters[group.groupKey] || 'ALL';
+                  const groupDepts = Array.from(
+                    new Set(
+                      group.items
+                        .map(
+                          (item: any) =>
+                            item.course?.department?.department_code ||
+                            item.course?.department?.department_name,
+                        )
+                        .filter(Boolean),
+                    ),
+                  );
+                  const filteredGroupItems = group.items.filter((item: any) => {
+                    if (currentDept === 'ALL') return true;
+                    const code =
+                      item.course?.department?.department_code ||
+                      item.course?.department?.department_name;
+                    return code === currentDept;
+                  });
 
-                    <ProgressiveSlice
-                      items={group.items}
-                      entityLabel="exam entries"
-                      resetKey={group.groupKey}
+                  return (
+                    <div
+                      key={group.groupKey}
+                      className="bg-card border border-border/80 rounded-3xl overflow-hidden shadow-sm p-5 space-y-3"
                     >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
+                        <div>
+                          <span className="px-2.5 py-1 bg-primary/10 text-primary text-xs font-extrabold rounded-lg uppercase tracking-wider mr-2">
+                            Batch {group.batch}
+                          </span>
+                          <span className="px-2.5 py-1 bg-secondary text-foreground text-xs font-bold rounded-lg uppercase tracking-wider">
+                            Semester {group.semester}
+                          </span>
+                          <h4 className="text-base font-bold text-foreground mt-2">
+                            {group.examName}
+                          </h4>
+                        </div>
+
+                        {/* Department Filter for this Timetable Group */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-muted-foreground whitespace-nowrap">
+                            Department:
+                          </span>
+                          <select
+                            value={currentDept}
+                            onChange={(e) =>
+                              setStudentDeptFilters((prev) => ({
+                                ...prev,
+                                [group.groupKey]: e.target.value,
+                              }))
+                            }
+                            className="px-3 py-1.5 bg-secondary/60 border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+                          >
+                            <option value="ALL">All Departments</option>
+                            {groupDepts.map((d: any) => (
+                              <option key={d} value={d}>
+                                {d}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <ProgressiveSlice
+                        items={filteredGroupItems}
+                        entityLabel="exam entries"
+                        resetKey={`${group.groupKey}___${currentDept}`}
+                      >
                       {(visibleGroupItems, groupFooter) => (
                         <div className="overflow-x-auto">
                           <table className="w-full text-left border-collapse text-xs">
@@ -1636,7 +1718,8 @@ export default function ExamsManagementPage() {
                       )}
                     </ProgressiveSlice>
                   </div>
-                ))}
+                );
+              })}
                 <ProgressiveLoadFooter
                   loadedCount={visibleStudentFullGroupedCount}
                   totalCount={totalStudentFullGroupedCount}
@@ -2822,57 +2905,55 @@ export default function ExamsManagementPage() {
 
             {/* Modal Body */}
             <div className="p-6 md:p-8 space-y-6 overflow-y-auto flex-1">
-              {/* STEP 1: Context Selection - Displayed only for Manual Entry or Edit Mode */}
-              {(creationMode === 'manual' || isEditMode) && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-secondary/20 p-4 rounded-2xl border border-border/60">
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-bold text-muted-foreground uppercase">
-                      1. Target Batch
-                    </label>
-                    <select
-                      value={wizardBatch}
-                      onChange={(e) => setWizardBatch(e.target.value)}
-                      className="w-full px-3 py-2 bg-card border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
-                    >
-                      {BATCHES.map((b) => (
-                        <option key={b} value={b}>
-                          Batch {b}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-bold text-muted-foreground uppercase">
-                      2. Semester
-                    </label>
-                    <select
-                      value={wizardSemester}
-                      onChange={(e) => setWizardSemester(e.target.value)}
-                      className="w-full px-3 py-2 bg-card border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
-                    >
-                      {SEMESTERS.map((sem) => (
-                        <option key={sem} value={sem}>
-                          Semester {sem}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-bold text-muted-foreground uppercase">
-                      3. Examination Name
-                    </label>
-                    <input
-                      type="text"
-                      value={wizardExamName}
-                      onChange={(e) => setWizardExamName(e.target.value)}
-                      placeholder="e.g. End Semester Examination 2026"
-                      className="w-full px-3 py-2 bg-card border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60"
-                    />
-                  </div>
+              {/* STEP 1: Context Selection - Batch, Semester, and Exam Name Inputs */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-secondary/20 p-4 rounded-2xl border border-border/60">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold text-muted-foreground uppercase">
+                    1. Target Batch
+                  </label>
+                  <select
+                    value={wizardBatch}
+                    onChange={(e) => setWizardBatch(e.target.value)}
+                    className="w-full px-3 py-2 bg-card border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+                  >
+                    {BATCHES.map((b) => (
+                      <option key={b} value={b}>
+                        Batch {b}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              )}
+
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold text-muted-foreground uppercase">
+                    2. Semester
+                  </label>
+                  <select
+                    value={wizardSemester}
+                    onChange={(e) => setWizardSemester(e.target.value)}
+                    className="w-full px-3 py-2 bg-card border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60 cursor-pointer"
+                  >
+                    {SEMESTERS.map((sem) => (
+                      <option key={sem} value={sem}>
+                        Semester {sem}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold text-muted-foreground uppercase">
+                    3. Examination Name
+                  </label>
+                  <input
+                    type="text"
+                    value={wizardExamName}
+                    onChange={(e) => setWizardExamName(e.target.value)}
+                    placeholder="e.g. End Semester Examination 2026"
+                    className="w-full px-3 py-2 bg-card border border-border/80 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60"
+                  />
+                </div>
+              </div>
 
               {/* STEP 2: Mode Switcher - Hidden in Edit Mode */}
               {!isEditMode && (
@@ -2929,8 +3010,7 @@ export default function ExamsManagementPage() {
                         validate errors in real-time.
                       </p>
                       <p className="text-[11px] text-muted-foreground/80 mt-1 font-semibold">
-                        Required column headers: Batch, Semester, Examination Name, Course Code,
-                        Date, Start Time, End Time, Venue
+                        Required column headers: Course Code, Date and Time, Start Time, End Time, Venue
                       </p>
                     </div>
 
@@ -3277,8 +3357,7 @@ export default function ExamsManagementPage() {
                         </code>
                       </p>
                       <p className="font-semibold">
-                        Required column headers: Batch, Semester, Examination Name, Course Code,
-                        Date, Start Time, End Time, Venue
+                        Required column headers: Course Code, Date and Time, Start Time, End Time, Venue
                       </p>
                     </div>
                   )}

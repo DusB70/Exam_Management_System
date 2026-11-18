@@ -11,17 +11,50 @@ export class ProfileController {
     if (safeUser.student) {
       if (safeUser.student.degree) {
         const deg = safeUser.student.degree;
-        const compulsoryCredits = deg.courses
-          ? deg.courses
-              .filter((cd: any) => cd.status === 'COMPULSORY')
-              .reduce((sum: number, cd: any) => sum + Number(cd.course.credit_value), 0)
-          : 0;
+        const spec = safeUser.student.specialization;
 
-        const totalCreditsRequired = Number(deg.total_credits_required || 0);
-        const optionalCreditsRequired = Math.max(0, totalCreditsRequired - compulsoryCredits);
+        const compulsoryCourseMap = new Map<number, number>();
+        const optionalCourseMap = new Map<number, number>();
 
+        // 1. Direct degree courses (CourseDegree)
+        for (const cd of deg.courses || []) {
+          if (!cd.course) continue;
+          const cId = cd.course_id;
+          const cred = Number(cd.course.credit_value || 0);
+          const status = (cd.status || '').toUpperCase();
+          if (status === 'COMPULSORY') {
+            compulsoryCourseMap.set(cId, cred);
+          } else if (status === 'OPTIONAL') {
+            optionalCourseMap.set(cId, cred);
+          }
+        }
+
+        // 2. Specialization courses (if student is assigned to a specialization)
+        for (const cs of spec?.course_specializations || []) {
+          if (!cs.course) continue;
+          const cId = cs.course_id;
+          const cred = Number(cs.course.credit_value || 0);
+          const status = (cs.status || '').toUpperCase();
+          if (status === 'COMPULSORY') {
+            compulsoryCourseMap.set(cId, cred);
+            optionalCourseMap.delete(cId);
+          } else if (status === 'OPTIONAL' && !compulsoryCourseMap.has(cId)) {
+            optionalCourseMap.set(cId, cred);
+          }
+        }
+
+        let compulsoryCredits = 0;
+        for (const cred of compulsoryCourseMap.values()) {
+          compulsoryCredits += cred;
+        }
+
+        const totalCreditsRequired = 120;
+        const minOptionalCredits = Math.max(0, totalCreditsRequired - compulsoryCredits);
+
+        safeUser.student.degree.total_credits_required = totalCreditsRequired;
         safeUser.student.degree.compulsory_credits = compulsoryCredits;
-        safeUser.student.degree.optional_credits_required = optionalCreditsRequired;
+        safeUser.student.degree.min_optional_credits = minOptionalCredits;
+        safeUser.student.degree.optional_credits_required = minOptionalCredits;
       }
 
       const registeredSemesters = (safeUser.student.registrations || [])

@@ -25,7 +25,6 @@ export default function ResultsAndImportsPage() {
   const role = user?.role;
   const isStudent = role === UserRole.STUDENT;
 
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
 
   // Modal State for Progress Tracker Popup
@@ -33,6 +32,8 @@ export default function ResultsAndImportsPage() {
 
   // Search query filter for results
   const [searchQuery, setSearchQuery] = useState('');
+  const [semesterFilter, setSemesterFilter] = useState<string>('all');
+  const [courseTypeFilter, setCourseTypeFilter] = useState<string>('all');
 
   // Exam Violation Modal State (Staff/Admin)
   const [violationModalOpen, setViolationModalOpen] = useState(false);
@@ -70,31 +71,15 @@ export default function ResultsAndImportsPage() {
     enabled: isStudent,
   });
 
-  const handleDownloadMyPdf = async () => {
-    setIsDownloadingPdf(true);
-    try {
-      const response = await apiClient.get('/results/my-report/pdf', {
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `transcript_${user?.fullName || 'student'}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode?.removeChild(link);
-      toast.success('PDF transcript downloaded successfully.');
-    } catch {
-      toast.error('Failed to download PDF transcript.');
-    } finally {
-      setIsDownloadingPdf(false);
-    }
-  };
-
   const handleDownloadMyExcel = async () => {
     setIsDownloadingExcel(true);
     try {
+      const params: Record<string, string> = {};
+      if (semesterFilter !== 'all') params.semester = semesterFilter;
+      if (courseTypeFilter !== 'all') params.type = courseTypeFilter;
+
       const response = await apiClient.get('/results/my-report/excel', {
+        params,
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -251,32 +236,18 @@ export default function ResultsAndImportsPage() {
             </button>
           )}
           {isStudent && (
-            <>
-              <button
-                onClick={handleDownloadMyPdf}
-                disabled={isDownloadingPdf}
-                className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer disabled:opacity-50 whitespace-nowrap"
-              >
-                {isDownloadingPdf ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4" />
-                )}
-                Download PDF Transcript
-              </button>
-              <button
-                onClick={handleDownloadMyExcel}
-                disabled={isDownloadingExcel}
-                className="px-4 py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-500 transition text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer disabled:opacity-50 whitespace-nowrap"
-              >
-                {isDownloadingExcel ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FileSpreadsheet className="h-4 w-4" />
-                )}
-                Download Excel Sheet
-              </button>
-            </>
+            <button
+              onClick={handleDownloadMyExcel}
+              disabled={isDownloadingExcel}
+              className="px-4 py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-500 transition text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer disabled:opacity-50 whitespace-nowrap"
+            >
+              {isDownloadingExcel ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="h-4 w-4" />
+              )}
+              Download Excel Sheet
+            </button>
           )}
         </div>
       </div>
@@ -364,8 +335,8 @@ export default function ResultsAndImportsPage() {
         </div>
       )}
 
-      {/* Search Input Bar */}
-      <div className="bg-card border border-border/80 p-4 rounded-3xl shadow-sm flex items-center justify-between gap-4">
+      {/* Search & Filter Bar */}
+      <div className="bg-card border border-border/80 p-4 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -384,14 +355,52 @@ export default function ResultsAndImportsPage() {
             </button>
           )}
         </div>
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery('')}
-            className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
-          >
-            Clear Search
-          </button>
-        )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Semester Filter */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground font-semibold">Semester:</span>
+            <select
+              value={semesterFilter}
+              onChange={(e) => setSemesterFilter(e.target.value)}
+              className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
+            >
+              <option value="all">All Semesters</option>
+              {['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2'].map((s) => (
+                <option key={s} value={s}>
+                  Semester {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Course Type Filter */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground font-semibold">Course Type:</span>
+            <select
+              value={courseTypeFilter}
+              onChange={(e) => setCourseTypeFilter(e.target.value)}
+              className="px-3 py-2 bg-secondary/40 border border-border/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/60 text-foreground"
+            >
+              <option value="all">All Types</option>
+              <option value="COMPULSORY">Compulsory Only</option>
+              <option value="OPTIONAL">Optional Only</option>
+            </select>
+          </div>
+
+          {(searchQuery || semesterFilter !== 'all' || courseTypeFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setSemesterFilter('all');
+                setCourseTypeFilter('all');
+              }}
+              className="px-3 py-2 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl hover:bg-secondary/80 transition cursor-pointer"
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Semester Results Cards (Ordered 1.1 to 4.2) */}
@@ -411,19 +420,26 @@ export default function ResultsAndImportsPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {studentSemesters.map((sem) => {
-            const rawSemGrades = grades.filter((g: any) => g.course?.semester === sem);
-            const semGrades = rawSemGrades.filter((g: any) => {
-              if (!searchQuery.trim()) return true;
-              const q = searchQuery.toLowerCase().trim();
-              const code = (g.course?.course_code || '').toLowerCase();
-              const name = (g.course?.course_name || '').toLowerCase();
-              return code.includes(q) || name.includes(q);
-            });
+          {studentSemesters
+            .filter((sem) => (semesterFilter !== 'all' ? sem === semesterFilter : true))
+            .map((sem) => {
+              const rawSemGrades = grades.filter((g: any) => g.course?.semester === sem);
+              const semGrades = rawSemGrades.filter((g: any) => {
+                // Type Filter
+                if (courseTypeFilter === 'COMPULSORY' && g.type !== 'COMPULSORY') return false;
+                if (courseTypeFilter === 'OPTIONAL' && g.type === 'COMPULSORY') return false;
 
-            if (searchQuery.trim() && semGrades.length === 0) {
-              return null;
-            }
+                // Search Query
+                if (!searchQuery.trim()) return true;
+                const q = searchQuery.toLowerCase().trim();
+                const code = (g.course?.course_code || '').toLowerCase();
+                const name = (g.course?.course_name || '').toLowerCase();
+                return code.includes(q) || name.includes(q);
+              });
+
+              if ((searchQuery.trim() || courseTypeFilter !== 'all') && semGrades.length === 0) {
+                return null;
+              }
 
             const semGpa = getSemesterGpa(sem, rawSemGrades);
 

@@ -659,7 +659,35 @@ export class MarksService {
       },
     });
 
-    const courseDistribution = courses.map((c) => {
+    // 1. Identify currently active semesters from registration periods
+    const openPeriods = await this.prisma.registrationPeriod.findMany({
+      where: { status: { in: ['OPEN', 'ACTIVE'] } },
+    });
+    let activeSemesters: string[] = [
+      ...new Set(openPeriods.map((p) => p.semester?.trim()).filter(Boolean)),
+    ];
+
+    if (activeSemesters.length === 0) {
+      const latestPeriods = await this.prisma.registrationPeriod.findMany({
+        orderBy: { end_date: 'desc' },
+        take: 5,
+      });
+      if (latestPeriods.length > 0) {
+        activeSemesters = [
+          ...new Set(latestPeriods.map((p) => p.semester?.trim()).filter(Boolean)),
+        ];
+      } else {
+        // Fallback active semesters in odd-semester cycle
+        activeSemesters = ['1.1', '2.1', '3.1', '4.1'];
+      }
+    }
+
+    // 2. Filter courses to ONLY those that belong to currently active semesters
+    const activeCourses = courses.filter((c) =>
+      activeSemesters.includes(c.semester?.trim()),
+    );
+
+    const courseDistribution = activeCourses.map((c) => {
       const batchStr = c.registrations[0]?.student?.batch || '21/22';
 
       return {
@@ -670,18 +698,21 @@ export class MarksService {
         latestSemesterCount: c.registrations.length,
         batch: batchStr,
         semester: c.semester,
+        isActive: true,
       };
     });
 
-    const allStudentIds = new Set<number>();
-    courses.forEach((c) => {
+    // 3. Count unique students registered in active semester courses only
+    const activeStudentIds = new Set<number>();
+    activeCourses.forEach((c) => {
       c.registrations.forEach((r) => {
-        allStudentIds.add(r.student_id);
+        activeStudentIds.add(r.student_id);
       });
     });
 
     return {
-      totalUniqueStudents: allStudentIds.size,
+      activeSemesters,
+      totalUniqueStudents: activeStudentIds.size,
       courseDistribution,
     };
   }

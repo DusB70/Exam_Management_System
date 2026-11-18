@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Fingerprint,
   X,
+  KeyRound,
 } from 'lucide-react';
 
 export default function ProfilePage() {
@@ -45,14 +46,7 @@ export default function ProfilePage() {
     queryKey: ['profile'],
     queryFn: async () => {
       const response = await apiClient.get('/profile');
-      const data = response.data?.data;
-      if (data) {
-        // Pre-populate phone number
-        const existingPhone =
-          data.phone_number || data.student?.phone_number || data.lecturer?.phone_number || '';
-        setPhoneNumber(existingPhone);
-      }
-      return data;
+      return response.data?.data;
     },
   });
 
@@ -142,13 +136,9 @@ export default function ProfilePage() {
     profile?.student?.degree?.department || profile?.student?.specialization?.department;
   const lecturerDept = profile?.lecturer?.department;
   const deptDisplay = isStudent
-    ? studentDept
-      ? `${studentDept.department_name}${studentDept.department_code ? ` (${studentDept.department_code})` : ''}`
-      : 'N/A'
+    ? studentDept?.department_code || studentDept?.department_name || 'N/A'
     : isLecturer
-      ? lecturerDept
-        ? `${lecturerDept.department_name}${lecturerDept.department_code ? ` (${lecturerDept.department_code})` : ''}`
-        : 'N/A'
+      ? lecturerDept?.department_code || lecturerDept?.department_name || 'N/A'
       : 'N/A';
 
   // Academic Year (batch) resolve
@@ -205,101 +195,103 @@ export default function ProfilePage() {
           }}
           className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer self-start sm:self-auto shrink-0"
         >
-          <Lock className="h-4 w-4" />
+          <KeyRound className="h-4 w-4" />
           Change Credentials
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
         {/* Left Side: Summary Card & Non-editable Information */}
-        <div className="lg:col-span-1 space-y-6">
+        <div className="lg:col-span-1">
           {/* Main User Card */}
-          <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-md relative overflow-hidden flex flex-col items-center text-center shadow-xl">
+          <div className="bg-card/25 border border-border/80 p-5 rounded-3xl backdrop-blur-md relative overflow-hidden flex flex-col items-center text-center shadow-xl h-full justify-between">
             <div className="absolute -top-[50%] -right-[20%] h-[150%] w-[60%] rounded-full bg-primary/10 blur-[80px]" />
 
-            {/* Avatar */}
-            <div className="w-20 h-20 bg-primary/10 border border-primary/20 rounded-full flex items-center justify-center text-primary mb-4 relative z-10">
-              <UserIcon className="h-10 w-10" />
-            </div>
-
-            <h2 className="text-xl font-bold relative z-10 leading-tight">{profile?.full_name}</h2>
-            <p className="text-xs text-primary font-bold tracking-widest uppercase mt-1 px-2.5 py-0.5 bg-primary/10 border border-primary/20 rounded relative z-10">
-              {(profile?.role?.role_name || user?.role) === 'Exam Division Staff'
-                ? 'Staff'
-                : profile?.role?.role_name || user?.role}
-            </p>
-
-            <div className="w-full border-t border-border/60 my-5 relative z-10" />
-
-            {/* Read-only User Details List */}
-            <div className="w-full text-left space-y-3.5 relative z-10 text-xs text-muted-foreground">
-              <div className="flex justify-between">
-                <span className="font-semibold">Email:</span>
-                <span className="text-foreground font-medium select-all">{profile?.email}</span>
+            <div className="w-full flex flex-col items-center">
+              {/* Avatar */}
+              <div className="w-20 h-20 bg-primary/10 border border-primary/20 rounded-full flex items-center justify-center text-primary mb-3.5 relative z-10">
+                <UserIcon className="h-10 w-10" />
               </div>
 
-              {isStudent && (
-                <>
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Registration Number:</span>
-                    <span className="text-foreground font-mono font-bold">
-                      {profile?.student?.registration_number || '-'}
-                    </span>
-                  </div>
-                  {/* Index number placed directly under registration number */}
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Index Number:</span>
-                    <span className="text-foreground font-mono font-bold">
-                      {profile?.student?.index_number || '-'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Department:</span>
-                    <span
-                      className="text-foreground font-medium text-right max-w-[170px] truncate"
-                      title={deptDisplay}
-                    >
-                      {deptDisplay}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Specialization:</span>
-                    <span className="text-foreground font-medium">{specializationDisplay}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Academic Year:</span>
-                    <span className="text-foreground font-medium">{academicYearDisplay}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Active Semester:</span>
-                    <span className="text-foreground font-medium">
-                      {latestRegisteredSemester ? `Semester ${latestRegisteredSemester}` : '-'}
-                    </span>
-                  </div>
-                </>
-              )}
+              <h2 className="text-xl font-bold relative z-10 leading-tight">{profile?.full_name}</h2>
+              <p className="text-xs text-primary font-bold tracking-widest uppercase mt-1 px-2.5 py-0.5 bg-primary/10 border border-primary/20 rounded relative z-10">
+                {(profile?.role?.role_name || user?.role) === 'Exam Division Staff'
+                  ? 'Staff'
+                  : profile?.role?.role_name || user?.role}
+              </p>
 
-              {isLecturer && (
-                <>
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Employee ID:</span>
-                    <span className="text-foreground font-mono font-bold">
-                      {profile?.lecturer?.employee_number}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Department:</span>
-                    <span className="text-foreground font-medium">{deptDisplay}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Specialization:</span>
-                    <span className="text-foreground font-medium">{specializationDisplay}</span>
-                  </div>
-                </>
-              )}
+              <div className="w-full border-t border-border/60 my-4 relative z-10" />
+
+              {/* Read-only User Details List */}
+              <div className="w-full text-left space-y-2.5 relative z-10 text-xs text-muted-foreground">
+                <div className="flex justify-between">
+                  <span className="font-semibold">Email:</span>
+                  <span className="text-foreground font-medium select-all">{profile?.email}</span>
+                </div>
+
+                {isStudent && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="font-semibold">Registration Number:</span>
+                      <span className="text-foreground font-mono font-bold">
+                        {profile?.student?.registration_number || '-'}
+                      </span>
+                    </div>
+                    {/* Index number placed directly under registration number */}
+                    <div className="flex justify-between">
+                      <span className="font-semibold">Index Number:</span>
+                      <span className="text-foreground font-mono font-bold">
+                        {profile?.student?.index_number || '-'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold">Department:</span>
+                      <span
+                        className="text-foreground font-medium text-right max-w-[170px] truncate"
+                        title={deptDisplay}
+                      >
+                        {deptDisplay}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold">Specialization:</span>
+                      <span className="text-foreground font-medium">{specializationDisplay}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold">Academic Year:</span>
+                      <span className="text-foreground font-medium">{academicYearDisplay}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold">Active Semester:</span>
+                      <span className="text-foreground font-medium">
+                        {latestRegisteredSemester ? `Semester ${latestRegisteredSemester}` : '-'}
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                {isLecturer && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="font-semibold">Employee ID:</span>
+                      <span className="text-foreground font-mono font-bold">
+                        {profile?.lecturer?.employee_number}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold">Department:</span>
+                      <span className="text-foreground font-medium">{deptDisplay}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold">Specialization:</span>
+                      <span className="text-foreground font-medium">{specializationDisplay}</span>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
-            <div className="mt-6 flex items-center gap-1.5 text-[10px] text-muted-foreground bg-secondary/20 border border-border/55 px-3 py-1.5 rounded-xl font-medium w-full justify-center">
+            <div className="mt-5 flex items-center gap-1.5 text-[10px] text-muted-foreground bg-secondary/20 border border-border/55 px-3 py-1.5 rounded-xl font-medium w-full justify-center">
               <Lock className="h-3 w-3 shrink-0" />
               <span>Personal records locked by Academic Office</span>
             </div>
@@ -307,128 +299,137 @@ export default function ProfilePage() {
         </div>
 
         {/* Right Side: Personal Profile Details Form */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-md space-y-4 shadow-xl">
-            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-              <UserIcon className="h-4.5 w-4.5 text-primary" />
-              Personal Profile Details
-            </h3>
-            <p className="text-xs text-muted-foreground leading-normal">
-              Official registration credentials and personal identification parameters on record.
-              Contact the Academic Registrar's Office to request administrative changes.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              <div className="p-3 bg-secondary/15 rounded-xl space-y-1">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground">
-                  Full Name
-                </span>
-                <p className="text-xs font-semibold text-foreground">{profile?.full_name}</p>
-              </div>
-
-              <div className="p-3 bg-secondary/15 rounded-xl space-y-1">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground">
-                  Name with Initials
-                </span>
-                <p className="text-xs font-semibold text-foreground">
-                  {profile?.name_with_initials || 'N/A'}
+        <div className="lg:col-span-2">
+          <div className="bg-card/25 border border-border/80 p-5 rounded-3xl backdrop-blur-md space-y-3 shadow-xl h-full flex flex-col justify-between">
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <UserIcon className="h-4.5 w-4.5 text-primary" />
+                  Personal Profile Details
+                </h3>
+                <p className="text-xs text-muted-foreground leading-normal mt-0.5">
+                  Official registration credentials and personal identification parameters on record.
+                  Contact the Academic Registrar's Office to request administrative changes.
                 </p>
               </div>
 
-              <div className="p-3 bg-secondary/15 rounded-xl space-y-1">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground">
-                  National Identity Card (NIC)
-                </span>
-                <p className="text-xs font-semibold text-foreground font-mono">
-                  {profile?.nic_no || 'N/A'}
-                </p>
-              </div>
-
-              <div className="p-3 bg-secondary/15 rounded-xl space-y-1">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground">
-                  Date of Birth
-                </span>
-                <p className="text-xs font-semibold text-foreground">
-                  {profile?.date_of_birth
-                    ? new Date(profile.date_of_birth).toLocaleDateString(undefined, {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                      })
-                    : 'N/A'}
-                </p>
-              </div>
-
-              <div className="p-3 bg-secondary/15 rounded-xl space-y-1 md:col-span-2">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground">
-                  Permanent Address
-                </span>
-                <p className="text-xs font-semibold text-foreground leading-normal">
-                  {profile?.address || 'N/A'}
-                </p>
-              </div>
-
-              {/* Contact Information & Phone Editor embedded in Personal Profile Details */}
-              <div className="p-4 bg-secondary/20 rounded-2xl border border-border/60 space-y-3 md:col-span-2 mt-1">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <Phone className="h-4 w-4 text-primary" />
-                      Contact Phone Number
-                    </span>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      Keep your phone number updated so the university and exam division can reach
-                      you.
-                    </p>
-                  </div>
-
-                  {phoneSuccess && (
-                    <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="h-4 w-4 shrink-0" />
-                      {phoneSuccess}
-                    </span>
-                  )}
-                  {phoneError && (
-                    <span className="text-xs text-destructive font-semibold flex items-center gap-1">
-                      <AlertTriangle className="h-4 w-4 shrink-0" />
-                      {phoneError}
-                    </span>
-                  )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-0.5">
+                <div className="p-2.5 bg-secondary/15 rounded-xl space-y-0.5">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                    Full Name
+                  </span>
+                  <p className="text-xs font-semibold text-foreground">{profile?.full_name}</p>
                 </div>
 
-                <form
-                  onSubmit={handlePhoneSubmit}
-                  className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 pt-1"
-                >
-                  <div className="relative flex-1">
-                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-muted-foreground pointer-events-none">
-                      <Phone className="h-4 w-4" />
-                    </span>
-                    <input
-                      type="tel"
-                      placeholder="Enter mobile phone number..."
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2.5 bg-secondary/40 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-xs font-mono font-medium text-foreground placeholder:text-muted-foreground/60"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={
-                      updatePhoneMutation.isPending ||
-                      !phoneNumber ||
-                      phoneNumber === profile?.phone_number
-                    }
-                    className="py-2.5 px-5 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/95 transition flex items-center justify-center gap-2 text-xs shadow-md shadow-primary/10 disabled:opacity-50 cursor-pointer shrink-0"
-                  >
-                    {updatePhoneMutation.isPending ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      'Save Changes'
-                    )}
-                  </button>
-                </form>
+                <div className="p-2.5 bg-secondary/15 rounded-xl space-y-0.5">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                    Name with Initials
+                  </span>
+                  <p className="text-xs font-semibold text-foreground">
+                    {profile?.name_with_initials || 'N/A'}
+                  </p>
+                </div>
+
+                <div className="p-2.5 bg-secondary/15 rounded-xl space-y-0.5">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                    National Identity Card (NIC)
+                  </span>
+                  <p className="text-xs font-semibold text-foreground font-mono">
+                    {profile?.nic_no || 'N/A'}
+                  </p>
+                </div>
+
+                <div className="p-2.5 bg-secondary/15 rounded-xl space-y-0.5">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                    Date of Birth
+                  </span>
+                  <p className="text-xs font-semibold text-foreground">
+                    {profile?.date_of_birth
+                      ? new Date(profile.date_of_birth).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                        })
+                      : 'N/A'}
+                  </p>
+                </div>
+
+                <div className="p-2.5 bg-secondary/15 rounded-xl space-y-0.5 md:col-span-2">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                    Permanent Address
+                  </span>
+                  <p className="text-xs font-semibold text-foreground leading-normal">
+                    {profile?.address || 'N/A'}
+                  </p>
+                </div>
               </div>
+            </div>
+
+            {/* Contact Information & Phone Editor embedded in Personal Profile Details */}
+            <div className="p-3 bg-secondary/20 rounded-2xl border border-border/60 space-y-2 mt-1">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Phone className="h-4 w-4 text-primary" />
+                    Contact Phone Number
+                  </span>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Current on record:{' '}
+                    <span className="font-mono font-bold text-foreground">
+                      {profile?.phone_number ||
+                        profile?.student?.phone_number ||
+                        profile?.lecturer?.phone_number ||
+                        'Not set'}
+                    </span>
+                  </p>
+                </div>
+
+                {phoneSuccess && (
+                  <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    {phoneSuccess}
+                  </span>
+                )}
+                {phoneError && (
+                  <span className="text-xs text-destructive font-semibold flex items-center gap-1">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    {phoneError}
+                  </span>
+                )}
+              </div>
+
+              <form
+                onSubmit={handlePhoneSubmit}
+                className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-0.5"
+              >
+                <div className="relative flex-1">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-muted-foreground pointer-events-none">
+                    <Phone className="h-4 w-4" />
+                  </span>
+                  <input
+                    type="tel"
+                    placeholder="Enter new phone number..."
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 bg-secondary/40 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-xs font-mono font-medium text-foreground placeholder:text-muted-foreground/60"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={
+                    updatePhoneMutation.isPending ||
+                    !phoneNumber.trim() ||
+                    phoneNumber.trim() === profile?.phone_number
+                  }
+                  className="px-5 py-2 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/95 transition text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0 shadow-sm"
+                >
+                  {updatePhoneMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <span>Save Changes</span>
+                  )}
+                </button>
+              </form>
             </div>
           </div>
         </div>
