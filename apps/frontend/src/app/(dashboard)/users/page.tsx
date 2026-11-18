@@ -14,6 +14,7 @@ import StudentImportDialog from '../../../components/users/student-import-dialog
 import { useAuthStore } from '../../../store/authStore';
 import { UserRole } from '@ems/shared';
 import { Search, UserPlus, Upload, X, Users, SquarePen } from 'lucide-react';
+import { formatNameWithTitle } from '../../../lib/nic-utils';
 
 const fetchUsers = async (
   page: number,
@@ -387,9 +388,9 @@ export default function UsersManagementPage() {
                       <td className="px-4 py-2.5 max-w-[210px]">
                         <div
                           className="font-bold text-xs text-foreground leading-snug truncate"
-                          title={user.full_name}
+                          title={formatNameWithTitle(user.full_name, user.nic_no)}
                         >
-                          {user.full_name}
+                          {formatNameWithTitle(user.full_name, user.nic_no)}
                         </div>
                         {user.nic_no && (
                           <div className="text-[10px] text-muted-foreground font-mono leading-none mt-0.5">

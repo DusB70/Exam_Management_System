@@ -16,22 +16,17 @@ import ProgressiveLoadFooter from '../../../components/ui/progressive-load-foote
 import CourseDialog from '../../../components/courses/course-dialog';
 import CourseImportDialog from '../../../components/courses/course-import-dialog';
 import LecturerAssignmentDialog from '../../../components/courses/lecturer-assignment-dialog';
-import PeriodDialog from '../../../components/courses/period-dialog';
 import MarkerDialog from '../../../components/courses/marker-dialog';
 import UserDialog from '../../../components/users/user-dialog';
+import { formatNameWithTitle } from '../../../lib/nic-utils';
 import {
   Search,
   BookOpen,
-  Calendar,
   Plus,
-  Play,
-  Pause,
-  StopCircle,
   Edit3,
   SquarePen,
   UserCheck,
-  User,
-  Check,
+  UserPlus,
   Upload,
   X,
 } from 'lucide-react';
@@ -190,7 +185,7 @@ export default function CoursesManagementPage() {
   const { user } = useAuthStore();
   const toast = useToast();
   const confirm = useConfirm();
-  const [activeTab, setActiveTab] = useState<'courses' | 'periods' | 'lecturers'>('courses');
+  const [activeTab, setActiveTab] = useState<'courses' | 'lecturers'>('courses');
 
   // Filters State for Courses Catalog
   const [courseSearch, setCourseSearch] = useState('');
@@ -214,11 +209,6 @@ export default function CoursesManagementPage() {
   const [lecturerAssignmentOpen, setLecturerAssignmentOpen] = useState(false);
   const [assignmentCourse, setAssignmentCourse] = useState<any>(null);
 
-  // Period Dialog States
-  const [periodDialogOpen, setPeriodDialogOpen] = useState(false);
-  const [editingEndDatePeriodId, setEditingEndDatePeriodId] = useState<number | null>(null);
-  const [editingEndDateValue, setEditingEndDateValue] = useState<string>('');
-
   // Marker Dialog States
   const [markerDialogOpen, setMarkerDialogOpen] = useState(false);
   const [markerCourse, setMarkerCourse] = useState<any>(null);
@@ -230,11 +220,9 @@ export default function CoursesManagementPage() {
   const isAdminOrStaff =
     user?.role === UserRole.ADMINISTRATOR || user?.role === UserRole.EXAM_DIVISION_STAFF;
 
-  // Bulk selection states for Courses & Registration Windows
+  // Bulk selection states for Courses
   const [isBulkDeletingCourses, setIsBulkDeletingCourses] = useState(false);
-  const [isBulkDeletingPeriods, setIsBulkDeletingPeriods] = useState(false);
   const courseSelection = useBulkSelection<number>();
-  const periodSelection = useBulkSelection<number>();
 
   // Fetch departments
   const { data: departments = [] } = useQuery({
@@ -252,78 +240,7 @@ export default function CoursesManagementPage() {
     enabled: activeTab === 'lecturers' || markerDialogOpen,
   });
 
-  // Group lecturers by department for categorized dropdowns
-  const lecturersByDepartment = React.useMemo(() => {
-    const groups: Record<string, any[]> = {};
-    for (const lec of lecturersList || []) {
-      const deptName = lec.department?.department_name || 'Other / General Faculty';
-      if (!groups[deptName]) {
-        groups[deptName] = [];
-      }
-      groups[deptName].push(lec);
-    }
-    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [lecturersList]);
-
   const getCourseKey = useCallback((c: any) => c.course_id, []);
-
-  // Fetch all courses for Lecturer & Examiner Allocations table using progressive lazy loading
-  const {
-    items: allocationCourses,
-    total: totalAllocationCourses,
-    isLoading: isAllocationCoursesLoading,
-    isFetchingNextPage: isFetchingNextAllocPage,
-    hasNextPage: hasNextAllocPage,
-    isFetchNextPageError: isAllocNextError,
-    fetchNextPage: fetchNextAllocPage,
-    refetch: refetchAllocationCourses,
-  } = useProgressiveInfiniteQuery<any>({
-    queryKey: ['courses-allocations-all'],
-    queryFn: async (page, limit) => {
-      const response = await apiClient.get('/courses', {
-        params: { page, limit },
-      });
-      return response.data?.data;
-    },
-    enabled: activeTab === 'lecturers',
-    getItemKey: getCourseKey,
-  });
-
-  const handleSetCourseLecturerInline = async (courseId: number, lecturerIdStr: string) => {
-    setUpdatingCourseId(courseId);
-    try {
-      const lecturerId = lecturerIdStr ? parseInt(lecturerIdStr, 10) : null;
-      await apiClient.put(`/courses/${courseId}/lecturer`, { lecturerId });
-      toast.success(
-        lecturerId ? 'Course lecturer assigned successfully.' : 'Course lecturer cleared.',
-      );
-      refetchAllocationCourses();
-      refetchCourses();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to update course lecturer.');
-    } finally {
-      setUpdatingCourseId(null);
-    }
-  };
-
-  const handleSetCourseInChargeInline = async (courseId: number, inChargeIdStr: string) => {
-    setUpdatingCourseId(courseId);
-    try {
-      const inChargeLecturerId = inChargeIdStr ? parseInt(inChargeIdStr, 10) : null;
-      await apiClient.patch(`/courses/${courseId}/in-charge`, { inChargeLecturerId });
-      toast.success(
-        inChargeLecturerId
-          ? 'Course In-Charge assigned successfully.'
-          : 'Course In-Charge cleared.',
-      );
-      refetchAllocationCourses();
-      refetchCourses();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to update Course In-Charge.');
-    } finally {
-      setUpdatingCourseId(null);
-    }
-  };
 
   const handleRemovePrimaryFirstMarker = async (c: any) => {
     const confirmed = await confirm({
@@ -487,26 +404,6 @@ export default function CoursesManagementPage() {
     getItemKey: getCourseKey,
   });
 
-  // Fetch Registration Periods
-  const {
-    data: periods = [],
-    isLoading: isPeriodsLoading,
-    refetch: refetchPeriods,
-  } = useQuery({
-    queryKey: ['registration-periods'],
-    queryFn: async () => {
-      const response = await apiClient.get('/courses/periods');
-      return response.data?.data || [];
-    },
-  });
-
-  const {
-    visibleItems: visiblePeriods,
-    visibleCount: visiblePeriodsCount,
-    totalCount: totalPeriodsCount,
-    hasMore: hasMorePeriods,
-  } = useProgressiveList<any>(periods);
-
   const filteredAllocCourses = useMemo(() => {
     const rawAllocCourses = allocationCourses.length > 0 ? allocationCourses : courses;
     return rawAllocCourses.filter((c: any) => {
@@ -556,50 +453,6 @@ export default function CoursesManagementPage() {
   } = useProgressiveList<any>(filteredAllocCourses, {
     resetKey: `${allocSearch}|${allocSemesterFilter}|${allocDeptFilter}`,
   });
-
-  // Period Actions Handlers
-  const handlePeriodStatusChange = async (periodId: number, status: string) => {
-    try {
-      await apiClient.patch(`/courses/periods/${periodId}/status`, { status });
-      toast.success(`Registration window status updated to ${status}.`);
-      refetchPeriods();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to update period status');
-    }
-  };
-
-  const handleDeletePeriod = async (periodId: number) => {
-    const confirmed = await confirm({
-      title: 'Delete Registration Window?',
-      message:
-        'Are you sure you want to delete this course registration window? Students will no longer be able to register for this semester.',
-      confirmText: 'Delete Window',
-      variant: 'destructive',
-    });
-    if (confirmed) {
-      try {
-        await apiClient.delete(`/courses/periods/${periodId}`);
-        toast.success('Registration window deleted successfully.');
-        refetchPeriods();
-      } catch (err: any) {
-        toast.error(err.response?.data?.message || 'Failed to delete registration window.');
-      }
-    }
-  };
-
-  const handleSaveEndDate = async (periodId: number) => {
-    if (!editingEndDateValue) return;
-    try {
-      await apiClient.patch(`/courses/periods/${periodId}/end-date`, {
-        endDate: new Date(editingEndDateValue).toISOString(),
-      });
-      toast.success('Registration window end date updated.');
-      setEditingEndDatePeriodId(null);
-      refetchPeriods();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to update end date.');
-    }
-  };
 
   // Course Actions
   const handleCreateCourse = () => {
@@ -667,42 +520,6 @@ export default function CoursesManagementPage() {
     }
   };
 
-  const handleBulkDeletePeriods = async () => {
-    if (periodSelection.selectedCount === 0) return;
-    const confirmed = await confirm({
-      title: 'Delete Selected Registration Windows?',
-      message: `Are you sure you want to delete ${periodSelection.selectedCount} selected registration window(s)?`,
-      confirmText: `Delete (${periodSelection.selectedCount})`,
-      variant: 'destructive',
-    });
-    if (!confirmed) return;
-
-    setIsBulkDeletingPeriods(true);
-    try {
-      const deletedIds: number[] = [];
-      const { deletedCount, failedCount, firstErrorMessage } = await runBulkDelete(
-        periodSelection.selectedIds,
-        async (id) => {
-          await apiClient.delete(`/courses/periods/${id}`);
-          deletedIds.push(id);
-        },
-      );
-      if (deletedCount > 0) {
-        toast.success(`${deletedCount} registration window(s) deleted successfully.`);
-        periodSelection.removeFromSelection(deletedIds);
-        refetchPeriods();
-      }
-      if (failedCount > 0) {
-        toast.error(
-          `${failedCount} window(s) could not be deleted${firstErrorMessage ? `: ${firstErrorMessage}` : '.'}`,
-        );
-      }
-      if (failedCount === 0) periodSelection.clear();
-    } finally {
-      setIsBulkDeletingPeriods(false);
-    }
-  };
-
   return (
     <>
       <div className="space-y-6 animate-fadeIn">
@@ -734,14 +551,6 @@ export default function CoursesManagementPage() {
                   </button>
                 </>
               )}
-              {activeTab === 'periods' && (
-                <button
-                  onClick={() => setPeriodDialogOpen(true)}
-                  className="px-4 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
-                >
-                  <Plus className="h-4 w-4" /> Open Registration Window
-                </button>
-              )}
             </div>
           )}
         </div>
@@ -757,16 +566,6 @@ export default function CoursesManagementPage() {
             }`}
           >
             <BookOpen className="h-4 w-4" /> Course Catalog ({totalCourses})
-          </button>
-          <button
-            onClick={() => setActiveTab('periods')}
-            className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
-              activeTab === 'periods'
-                ? 'text-primary border-b-2 border-primary font-semibold'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <Calendar className="h-4 w-4" /> Registration Windows ({periods.length})
           </button>
           {isAdminOrStaff && (
             <button
@@ -1023,19 +822,28 @@ export default function CoursesManagementPage() {
                                 const degMap = new Map<number, string>();
                                 (course.degrees || []).forEach((d: any) => {
                                   if (d.degree_id) {
-                                    degMap.set(d.degree_id, d.degree?.degree_code || String(d.degree_id));
+                                    degMap.set(
+                                      d.degree_id,
+                                      d.degree?.degree_code || String(d.degree_id),
+                                    );
                                   }
                                 });
                                 (course.course_specializations || []).forEach((cs: any) => {
                                   const deg = cs.specialization?.degree;
                                   if (deg?.degree_id && !degMap.has(deg.degree_id)) {
-                                    degMap.set(deg.degree_id, deg.degree_code || String(deg.degree_id));
+                                    degMap.set(
+                                      deg.degree_id,
+                                      deg.degree_code || String(deg.degree_id),
+                                    );
                                   }
                                 });
                                 if (course.specialization?.degree) {
                                   const deg = course.specialization.degree;
                                   if (deg.degree_id && !degMap.has(deg.degree_id)) {
-                                    degMap.set(deg.degree_id, deg.degree_code || String(deg.degree_id));
+                                    degMap.set(
+                                      deg.degree_id,
+                                      deg.degree_code || String(deg.degree_id),
+                                    );
                                   }
                                 }
 
@@ -1048,7 +856,8 @@ export default function CoursesManagementPage() {
                                 }
 
                                 return Array.from(degMap.entries()).map(([degId, degCode]) => {
-                                  const isSelected = degreeFilter && parseInt(degreeFilter, 10) === degId;
+                                  const isSelected =
+                                    degreeFilter && parseInt(degreeFilter, 10) === degId;
                                   return (
                                     <span
                                       key={degId}
@@ -1074,6 +883,17 @@ export default function CoursesManagementPage() {
                           {isAdminOrStaff && (
                             <td className="px-4 py-2.5 text-right whitespace-nowrap">
                               <div className="inline-flex items-center justify-end gap-2.5 whitespace-nowrap">
+                                <button
+                                  onClick={() => {
+                                    setAssignmentCourse(course);
+                                    setLecturerAssignmentOpen(true);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-background border border-border/80 rounded-md text-[11px] font-bold text-foreground hover:bg-secondary/80 transition shadow-2xs cursor-pointer"
+                                  title="Assign Lecturers (Within or Outside Faculty)"
+                                >
+                                  <UserPlus className="h-3 w-3 text-primary" />
+                                  Lecturers
+                                </button>
                                 <button
                                   onClick={() => handleEditCourse(course)}
                                   className="inline-flex items-center gap-1 px-2.5 py-1 bg-background border border-border/80 rounded-md text-[11px] font-bold text-foreground hover:bg-secondary/80 transition shadow-2xs cursor-pointer"
@@ -1112,260 +932,7 @@ export default function CoursesManagementPage() {
         )}
 
         {/* ========================================== */}
-        {/* TAB 2: REGISTRATION WINDOWS */}
-        {/* ========================================== */}
-        {activeTab === 'periods' && (
-          <div className="space-y-6 animate-tabSwipeUp">
-            <div className="bg-card border border-border/80 p-4 rounded-3xl shadow-sm flex flex-wrap items-center justify-between gap-3">
-              <span className="text-xs font-semibold text-muted-foreground">
-                Course & repeat exam registration windows
-              </span>
-              <div className="flex items-center gap-2 shrink-0">
-                {isAdminOrStaff && (
-                  <BulkDeleteButton
-                    count={periodSelection.selectedCount}
-                    isDeleting={isBulkDeletingPeriods}
-                    onClick={handleBulkDeletePeriods}
-                  />
-                )}
-                <div className="px-3 py-2 bg-background border border-border/80 rounded-xl text-xs font-mono font-bold text-foreground flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-primary" />
-                  Showing {visiblePeriods.length} of {totalPeriodsCount} Records
-                </div>
-              </div>
-            </div>
-            <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
-                      {isAdminOrStaff && (
-                        <th className="px-4 py-4 w-10 text-center">
-                          <SelectAllCheckbox
-                            checked={periodSelection.isAllSelected(
-                              visiblePeriods.map((p: any) => p.period_id),
-                            )}
-                            indeterminate={periodSelection.isIndeterminate(
-                              visiblePeriods.map((p: any) => p.period_id),
-                            )}
-                            disabled={visiblePeriods.length === 0}
-                            onChange={() =>
-                              periodSelection.toggleAll(visiblePeriods.map((p: any) => p.period_id))
-                            }
-                            ariaLabel="Select all visible registration windows"
-                          />
-                        </th>
-                      )}
-                      <th className="px-4 py-4 w-12 text-center">#</th>
-                      <th className="px-6 py-4">Batch / Academic Year</th>
-                      <th className="px-6 py-4">Semester</th>
-                      <th className="px-6 py-4">Window Type</th>
-                      <th className="px-6 py-4">Start Date</th>
-                      <th className="px-6 py-4">End Date</th>
-                      <th className="px-6 py-4">Status</th>
-                      {isAdminOrStaff && <th className="px-6 py-4 text-right">Actions</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60 text-sm font-medium">
-                    {isPeriodsLoading ? (
-                      <tr>
-                        <td
-                          colSpan={isAdminOrStaff ? 9 : 7}
-                          className="text-center py-20 text-muted-foreground"
-                        >
-                          <span className="inline-flex items-center gap-2">
-                            <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></span>
-                            Loading registration windows...
-                          </span>
-                        </td>
-                      </tr>
-                    ) : periods.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={isAdminOrStaff ? 9 : 7}
-                          className="text-center py-20 text-muted-foreground"
-                        >
-                          No registration periods have been created yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      visiblePeriods.map((p: any, idx: number) => {
-                        const startStr = new Date(p.start_date).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        });
-                        const endStr = new Date(p.end_date).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        });
-
-                        const isOpen = p.status === 'OPEN';
-                        const isSuspended = p.status === 'SUSPENDED';
-                        const isMedicalRepeat =
-                          p.window_type === 'MEDICAL_REPEAT_REGISTRATION' ||
-                          p.window_type === 'PROPER_REPEAT_REGISTRATION';
-
-                        const isEditingEnd = editingEndDatePeriodId === p.period_id;
-
-                        return (
-                          <tr
-                            key={p.period_id}
-                            className={`hover:bg-secondary/15 transition-colors ${
-                              isAdminOrStaff && periodSelection.isSelected(p.period_id)
-                                ? 'bg-primary/5'
-                                : ''
-                            }`}
-                          >
-                            {isAdminOrStaff && (
-                              <td className="px-4 py-4.5 text-center">
-                                <input
-                                  type="checkbox"
-                                  checked={periodSelection.isSelected(p.period_id)}
-                                  onChange={() => periodSelection.toggle(p.period_id)}
-                                  aria-label={`Select window Semester ${p.semester}`}
-                                  className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
-                                />
-                              </td>
-                            )}
-                            <td className="px-4 py-4.5 text-center font-mono text-muted-foreground font-bold text-xs">
-                              {idx + 1}
-                            </td>
-                            <td className="px-6 py-4.5 font-semibold text-foreground font-mono">
-                              {p.batch ? `Batch ${p.batch}` : `Year ${p.academic_year}`}
-                            </td>
-                            <td className="px-6 py-4.5 font-mono text-muted-foreground">
-                              Semester {p.semester}
-                            </td>
-                            <td className="px-6 py-4.5">
-                              <span
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold font-mono border ${
-                                  isMedicalRepeat
-                                    ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                                    : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                                }`}
-                              >
-                                {isMedicalRepeat ? 'Medical / Repeat' : 'Semester Registration'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4.5 text-muted-foreground">{startStr}</td>
-                            <td className="px-6 py-4.5 text-muted-foreground">
-                              {isEditingEnd ? (
-                                <div className="flex items-center gap-1.5">
-                                  <input
-                                    type="date"
-                                    value={editingEndDateValue}
-                                    onChange={(e) => setEditingEndDateValue(e.target.value)}
-                                    className="px-2 py-1 bg-background border border-border rounded text-xs text-foreground font-medium"
-                                  />
-                                  <button
-                                    onClick={() => handleSaveEndDate(p.period_id)}
-                                    className="p-1 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition cursor-pointer"
-                                    title="Save End Date"
-                                  >
-                                    <Check className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => setEditingEndDatePeriodId(null)}
-                                    className="p-1 bg-secondary text-muted-foreground rounded hover:text-foreground transition cursor-pointer"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <span>{endStr}</span>
-                                  {isAdminOrStaff && (
-                                    <button
-                                      onClick={() => {
-                                        setEditingEndDatePeriodId(p.period_id);
-                                        setEditingEndDateValue(
-                                          new Date(p.end_date).toISOString().split('T')[0],
-                                        );
-                                      }}
-                                      className="p-1 text-muted-foreground hover:text-primary hover:bg-secondary/40 rounded transition cursor-pointer"
-                                      title="Edit End Date"
-                                    >
-                                      <Edit3 className="h-3.5 w-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-6 py-4.5">
-                              <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                  isOpen
-                                    ? 'bg-emerald-500/10 text-foreground dark:text-emerald-300 border-emerald-400/60 dark:border-emerald-500/40'
-                                    : isSuspended
-                                      ? 'bg-amber-500/10 text-amber-500 dark:text-amber-400 border-amber-500/30'
-                                      : 'bg-red-500/10 text-red-500 dark:text-red-400 border-red-500/30'
-                                }`}
-                              >
-                                {p.status}
-                              </span>
-                            </td>
-                            {isAdminOrStaff && (
-                              <td className="px-6 py-4.5 text-right space-x-2 whitespace-nowrap">
-                                {!isOpen && (
-                                  <button
-                                    onClick={() => handlePeriodStatusChange(p.period_id, 'OPEN')}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition text-xs font-semibold cursor-pointer"
-                                  >
-                                    <Play className="h-3 w-3" />
-                                    Open
-                                  </button>
-                                )}
-                                {isOpen && (
-                                  <button
-                                    onClick={() =>
-                                      handlePeriodStatusChange(p.period_id, 'SUSPENDED')
-                                    }
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 rounded-lg transition text-xs font-semibold cursor-pointer"
-                                  >
-                                    <Pause className="h-3 w-3" />
-                                    Suspend
-                                  </button>
-                                )}
-                                {p.status !== 'CLOSED' && (
-                                  <button
-                                    onClick={() => handlePeriodStatusChange(p.period_id, 'CLOSED')}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg transition text-xs font-semibold cursor-pointer"
-                                  >
-                                    <StopCircle className="h-3 w-3" />
-                                    Close
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => handleDeletePeriod(p.period_id)}
-                                  className="text-[11px] font-bold text-red-500 hover:text-red-600 transition cursor-pointer px-1 py-0.5"
-                                  title="Delete Window"
-                                >
-                                  Delete
-                                </button>
-                              </td>
-                            )}
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <ProgressiveLoadFooter
-                loadedCount={visiblePeriodsCount}
-                totalCount={totalPeriodsCount}
-                isLoadingMore={hasMorePeriods}
-                hasMore={hasMorePeriods}
-                entityLabel="registration windows"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* ========================================== */}
-        {/* TAB 3: LECTURER & EXAMINER ALLOCATIONS */}
+        {/* TAB 2: LECTURER & EXAMINER ALLOCATIONS */}
         {/* ========================================== */}
         {activeTab === 'lecturers' && isAdminOrStaff && (
           <div className="space-y-4 animate-tabSwipeUp">
@@ -1482,13 +1049,6 @@ export default function CoursesManagementPage() {
                       </tr>
                     ) : (
                       visibleAllocCourses.map((c: any, idx: number) => {
-                        const assignedLecturerId = c.lecturers?.[0]?.lecturer_id
-                          ? c.lecturers[0].lecturer_id.toString()
-                          : '';
-                        const assignedInChargeId = c.in_charge_lecturer_id
-                          ? c.in_charge_lecturer_id.toString()
-                          : '';
-
                         // IMPORTANT: Never fallback to c.lecturers[0] or 2nd marker when 1st marker is unassigned/removed
                         const isFirstExt = c.first_marker_type === 'EXTERNAL';
                         const hasPrimaryFirstMarker = Boolean(
@@ -1499,7 +1059,12 @@ export default function CoursesManagementPage() {
                           ? c.first_marker_name
                             ? `${c.first_marker_name} (Outside)`
                             : null
-                          : c.first_marker_lecturer?.user?.full_name || null;
+                          : c.first_marker_lecturer?.user
+                            ? formatNameWithTitle(
+                                c.first_marker_lecturer.user.full_name,
+                                c.first_marker_lecturer.user.nic_no,
+                              )
+                            : null;
 
                         const additionalFirstMarkers = Array.isArray(c.additional_first_markers)
                           ? c.additional_first_markers
@@ -1514,7 +1079,19 @@ export default function CoursesManagementPage() {
                           ? c.second_marker_name
                             ? `${c.second_marker_name} (Outside)`
                             : 'Unassigned'
-                          : c.second_marker_lecturer?.user?.full_name || 'Unassigned';
+                          : c.second_marker_lecturer?.user
+                            ? formatNameWithTitle(
+                                c.second_marker_lecturer.user.full_name,
+                                c.second_marker_lecturer.user.nic_no,
+                              )
+                            : 'Unassigned';
+
+                        const inChargeName = c.in_charge_lecturer?.user
+                          ? formatNameWithTitle(
+                              c.in_charge_lecturer.user.full_name,
+                              c.in_charge_lecturer.user.nic_no,
+                            )
+                          : 'Unassigned';
 
                         const isRowUpdating = updatingCourseId === c.course_id;
 
@@ -1536,111 +1113,90 @@ export default function CoursesManagementPage() {
                               {c.department?.department_code}
                             </td>
 
-                            {/* Column: Lecturer (Categorized by Department) */}
-                            <td className="px-5 py-4 min-w-[190px]">
-                              <select
-                                value={assignedLecturerId}
-                                disabled={isRowUpdating}
-                                onChange={(e) =>
-                                  handleSetCourseLecturerInline(c.course_id, e.target.value)
-                                }
-                                className={`w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40 ${
-                                  assignedLecturerId
-                                    ? 'bg-background border-border/80 text-foreground'
-                                    : 'bg-secondary/40 border-border/60 text-muted-foreground'
-                                }`}
-                              >
-                                <option value="">Unassigned</option>
-                                {lecturersByDepartment.map(([deptName, deptLecturers]) => (
-                                  <optgroup
-                                    key={deptName}
-                                    label={deptName}
-                                    className="bg-card font-bold text-foreground"
-                                  >
-                                    {deptLecturers.map((lec: any) => (
-                                      <option
-                                        key={lec.lecturer_id}
-                                        value={lec.lecturer_id}
-                                        className="bg-card font-normal text-foreground"
-                                      >
-                                        {lec.user?.full_name}
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                ))}
-                              </select>
-                            </td>
-
-                            {/* Column: In-Charge (Categorized by Department) */}
-                            <td className="px-5 py-4 min-w-[190px]">
-                              <select
-                                value={assignedInChargeId}
-                                disabled={isRowUpdating}
-                                onChange={(e) =>
-                                  handleSetCourseInChargeInline(c.course_id, e.target.value)
-                                }
-                                className={`w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40 ${
-                                  assignedInChargeId
-                                    ? 'bg-primary/5 border-primary/30 text-foreground'
-                                    : 'bg-secondary/40 border-border/60 text-muted-foreground'
-                                }`}
-                              >
-                                <option value="">Unassigned</option>
-                                {lecturersByDepartment.map(([deptName, deptLecturers]) => (
-                                  <optgroup
-                                    key={deptName}
-                                    label={deptName}
-                                    className="bg-card font-bold text-foreground"
-                                  >
-                                    {deptLecturers.map((lec: any) => (
-                                      <option
-                                        key={lec.lecturer_id}
-                                        value={lec.lecturer_id}
-                                        className="bg-card font-normal text-foreground"
-                                      >
-                                        {lec.user?.full_name}
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                ))}
-                              </select>
-                            </td>
-
-                            {/* Column: 1st Examiner / Marker */}
+                            {/* Column: Lecturer (Internal & External) */}
                             <td className="px-5 py-4 min-w-[200px]">
-                              <div className="flex flex-col gap-1.5">
+                              <div className="flex flex-col gap-1 items-start">
+                                {c.lecturers && c.lecturers.length > 0 && (
+                                  <div className="space-y-0.5">
+                                    {c.lecturers.map((l: any) => (
+                                      <div
+                                        key={l.lecturer_id}
+                                        className="text-xs font-medium text-foreground"
+                                      >
+                                        {formatNameWithTitle(
+                                          l.lecturer?.user?.full_name || l.lecturer?.full_name,
+                                          l.lecturer?.user?.nic_no,
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {c.external_lecturers && c.external_lecturers.length > 0 && (
+                                  <div className="space-y-0.5">
+                                    {c.external_lecturers.map((ext: any) => (
+                                      <div
+                                        key={ext.id}
+                                        className="text-xs font-medium text-foreground"
+                                      >
+                                        {ext.name}{' '}
+                                        <span className="text-[10px] text-muted-foreground font-medium">
+                                          (Outside)
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {(!c.lecturers || c.lecturers.length === 0) &&
+                                  (!c.external_lecturers || c.external_lecturers.length === 0) && (
+                                    <span className="text-xs text-muted-foreground">
+                                      Unassigned
+                                    </span>
+                                  )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAssignmentCourse(c);
+                                    setLecturerAssignmentOpen(true);
+                                  }}
+                                  className="text-[11px] font-semibold text-primary hover:underline mt-1 cursor-pointer flex items-center gap-1"
+                                >
+                                  <UserPlus className="h-3 w-3" /> Assign Lecturers
+                                </button>
+                              </div>
+                            </td>
+
+                            {/* Column: Course In-Charge */}
+                            <td className="px-5 py-4 min-w-[180px]">
+                              <span className="text-xs font-medium text-foreground">
+                                {inChargeName}
+                              </span>
+                            </td>
+
+                            {/* Column: 1st Examiner / Marker (Displayed as name, not as colorful badge) */}
+                            <td className="px-5 py-4 min-w-[200px]">
+                              <div className="flex flex-col gap-1">
                                 {hasPrimaryFirstMarker && primaryFirstMarkerName ? (
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span
-                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                                        isFirstExt
-                                          ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-                                          : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                      }`}
-                                    >
-                                      <UserCheck className="h-3.5 w-3.5 shrink-0" />
-                                      <span>{primaryFirstMarkerName}</span>
-                                      {c.is_first_marker_same_as_in_charge === false && (
-                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/25 font-bold">
-                                          Separate from In-Charge
-                                        </span>
-                                      )}
-                                      <button
-                                        type="button"
-                                        disabled={isRowUpdating}
-                                        onClick={() => handleRemovePrimaryFirstMarker(c)}
-                                        className="ml-1 hover:text-destructive transition cursor-pointer"
-                                        title="Remove primary 1st Marker (keeps slot empty)"
-                                      >
-                                        <X className="h-3 w-3" />
-                                      </button>
+                                    <span className="text-xs font-medium text-foreground">
+                                      {primaryFirstMarkerName}
                                     </span>
+                                    {c.is_first_marker_same_as_in_charge === false && (
+                                      <span className="text-[10px] text-muted-foreground font-semibold">
+                                        (Separate)
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      disabled={isRowUpdating}
+                                      onClick={() => handleRemovePrimaryFirstMarker(c)}
+                                      className="text-muted-foreground hover:text-destructive transition cursor-pointer p-0.5"
+                                      title="Remove primary 1st Marker (keeps slot empty)"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
                                   </div>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-secondary text-muted-foreground/60 w-fit">
-                                    <UserCheck className="h-3.5 w-3.5" />
-                                    Unassigned
-                                  </span>
+                                  <span className="text-xs text-muted-foreground">Unassigned</span>
                                 )}
 
                                 {/* Additional / Backup 1st Markers */}
@@ -1648,67 +1204,56 @@ export default function CoursesManagementPage() {
                                   const isAddExt = addM.type === 'EXTERNAL';
                                   const addLabel = isAddExt
                                     ? `${addM.name || 'External'} (Outside)`
-                                    : addM.lecturer?.user?.full_name ||
-                                      addM.name ||
-                                      'Faculty Marker';
+                                    : addM.lecturer?.user
+                                      ? formatNameWithTitle(
+                                          addM.lecturer.user.full_name,
+                                          addM.lecturer.user.nic_no,
+                                        )
+                                      : addM.name || 'Faculty Marker';
                                   return (
-                                    <div key={addM.id || idx} className="flex items-center gap-1">
-                                      <span
-                                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold ${
-                                          isAddExt
-                                            ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-                                            : 'bg-teal-500/10 text-teal-400 border border-teal-500/20'
-                                        }`}
-                                      >
-                                        <Plus className="h-3 w-3 shrink-0" />
-                                        <span>
-                                          1st Marker #{idx + 2}: {addLabel}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          disabled={isRowUpdating}
-                                          onClick={() =>
-                                            handleRemoveAdditionalFirstMarkerInline(c, addM.id)
-                                          }
-                                          className="ml-1 hover:text-destructive transition cursor-pointer"
-                                          title="Remove additional 1st Marker"
-                                        >
-                                          <X className="h-3 w-3" />
-                                        </button>
+                                    <div
+                                      key={addM.id || idx}
+                                      className="flex items-center gap-1 text-xs text-foreground"
+                                    >
+                                      <span>
+                                        #{idx + 2}: {addLabel}
                                       </span>
+                                      <button
+                                        type="button"
+                                        disabled={isRowUpdating}
+                                        onClick={() =>
+                                          handleRemoveAdditionalFirstMarkerInline(c, addM.id)
+                                        }
+                                        className="text-muted-foreground hover:text-destructive transition cursor-pointer p-0.5"
+                                        title="Remove additional 1st Marker"
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
                                     </div>
                                   );
                                 })}
                               </div>
                             </td>
 
-                            {/* Column: 2nd Examiner / Marker */}
+                            {/* Column: 2nd Examiner / Marker (Displayed as name, not as colorful badge) */}
                             <td className="px-5 py-4 min-w-[180px]">
                               {hasSecondMarker && secondMarkerName !== 'Unassigned' ? (
-                                <span
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                                    isSecondExt
-                                      ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-                                      : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                                  }`}
-                                >
-                                  <User className="h-3.5 w-3.5 shrink-0" />
-                                  <span>{secondMarkerName}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-medium text-foreground">
+                                    {secondMarkerName}
+                                  </span>
                                   <button
                                     type="button"
                                     disabled={isRowUpdating}
                                     onClick={() => handleRemoveSecondMarkerInline(c)}
-                                    className="ml-1 hover:text-destructive transition cursor-pointer"
+                                    className="text-muted-foreground hover:text-destructive transition cursor-pointer p-0.5"
                                     title="Remove 2nd Marker"
                                   >
                                     <X className="h-3 w-3" />
                                   </button>
-                                </span>
+                                </div>
                               ) : (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-secondary text-muted-foreground/60">
-                                  <User className="h-3.5 w-3.5" />
-                                  Unassigned
-                                </span>
+                                <span className="text-xs text-muted-foreground">Unassigned</span>
                               )}
                             </td>
 
@@ -1784,17 +1329,6 @@ export default function CoursesManagementPage() {
           courseName={assignmentCourse.course_name}
         />
       )}
-
-      <PeriodDialog
-        open={periodDialogOpen}
-        onClose={() => setPeriodDialogOpen(false)}
-        onSuccess={(newPeriod) => {
-          if (newPeriod) {
-            refetchPeriods();
-          }
-          setPeriodDialogOpen(false);
-        }}
-      />
 
       <MarkerDialog
         open={markerDialogOpen}

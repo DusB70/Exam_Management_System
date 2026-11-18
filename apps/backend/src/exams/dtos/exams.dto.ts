@@ -142,6 +142,10 @@ export class SaveBatchTimetableDto {
   @IsOptional()
   batch?: string;
 
+  @IsString()
+  @IsOptional()
+  examName?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => TimetableItemDto)

@@ -651,6 +651,7 @@ export class UsersService {
           select: {
             full_name: true,
             email: true,
+            nic_no: true,
           },
         },
         department: {

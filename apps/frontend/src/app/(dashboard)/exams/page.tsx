@@ -581,6 +581,8 @@ export default function ExamsManagementPage() {
   // =========================================================================
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
+  const [originalEditBatch, setOriginalEditBatch] = useState<string>('');
+  const [originalEditSemester, setOriginalEditSemester] = useState<string>('');
   const [wizardBatch, setWizardBatch] = useState<string>('20/21');
   const [wizardSemester, setWizardSemester] = useState<string>('1.1');
   const [wizardExamName, setWizardExamName] = useState<string>('End Semester Examination 2026');
@@ -814,13 +816,7 @@ export default function ExamsManagementPage() {
           examName: targetExamName || 'Imported Timetable',
           headerRow,
           headerErrors,
-          expectedHeaders: [
-            'Course Code',
-            'Date and Time',
-            'Start Time',
-            'End Time',
-            'Venue',
-          ],
+          expectedHeaders: ['Course Code', 'Date and Time', 'Start Time', 'End Time', 'Venue'],
           hasHeaderErrors: headerErrors.length > 0,
           hasBlockingErrors,
           totalRows: parsedRows.length,
@@ -844,10 +840,7 @@ export default function ExamsManagementPage() {
         ? semCourses
         : availableCourses.length > 0
           ? availableCourses.slice(0, 4)
-          : [
-              { course_code: 'ICT1101' },
-              { course_code: 'ICT1102' },
-            ];
+          : [{ course_code: 'ICT1101' }, { course_code: 'ICT1102' }];
 
     const sampleData = sampleCourses.map((course: any, idx: number) => ({
       'Course Code': course.course_code,
@@ -858,13 +851,7 @@ export default function ExamsManagementPage() {
     }));
 
     const ws = XLSX.utils.json_to_sheet(sampleData);
-    ws['!cols'] = [
-      { wch: 14 },
-      { wch: 16 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 22 },
-    ];
+    ws['!cols'] = [{ wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 22 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Exam Timetable');
     XLSX.writeFile(wb, 'exam_timetable_template.xlsx');
@@ -909,9 +896,18 @@ export default function ExamsManagementPage() {
 
   // Save Timetable Batch Mutation
   const saveBatchMutation = useMutation({
-    mutationFn: async ({ batch, items }: { batch: string; items: any[] }) => {
+    mutationFn: async ({
+      batch,
+      examName,
+      items,
+    }: {
+      batch: string;
+      examName?: string;
+      items: any[];
+    }) => {
       const res = await apiClient.put(`/exams/timetable/batch/${encodeURIComponent(batch)}`, {
         batch,
+        examName,
         items,
       });
       return res.data;
@@ -946,10 +942,10 @@ export default function ExamsManagementPage() {
       const itemsToSave = validationResult.rows
         .filter((r: any) => r.isValid && r.courseId)
         .map((r: any) => ({
-          batch: r.batch,
-          semester: r.semester,
+          batch: wizardBatch || r.batch,
+          semester: wizardSemester || r.semester,
           courseId: r.courseId,
-          examName: r.examName,
+          examName: wizardExamName || r.examName,
           examDate: r.examDate,
           startTime: r.startTime,
           endTime: r.endTime,
@@ -1167,7 +1163,9 @@ export default function ExamsManagementPage() {
       }
       const batchComp = (a.batch || '').localeCompare(b.batch || '', undefined, { numeric: true });
       if (batchComp !== 0) return batchComp;
-      const semComp = (a.semester || '').localeCompare(b.semester || '', undefined, { numeric: true });
+      const semComp = (a.semester || '').localeCompare(b.semester || '', undefined, {
+        numeric: true,
+      });
       if (semComp !== 0) return semComp;
       return (a.examName || '').localeCompare(b.examName || '');
     });
@@ -1175,8 +1173,28 @@ export default function ExamsManagementPage() {
     return groups;
   }, [filteredTimetables]);
 
+  const isBatchSemDuplicate = React.useMemo(() => {
+    if (isEditMode) {
+      if (wizardBatch === originalEditBatch && wizardSemester === originalEditSemester) {
+        return false;
+      }
+    }
+    return groupedTimetables.some(
+      (g: any) => g.batch === wizardBatch && g.semester === wizardSemester,
+    );
+  }, [
+    groupedTimetables,
+    wizardBatch,
+    wizardSemester,
+    isEditMode,
+    originalEditBatch,
+    originalEditSemester,
+  ]);
+
   const handleEditGroupTimetable = (group: any) => {
     setIsEditMode(true);
+    setOriginalEditBatch(group.batch);
+    setOriginalEditSemester(group.semester);
     setWizardBatch(group.batch);
     setWizardSemester(group.semester);
     setWizardExamName(group.examName);
@@ -1262,7 +1280,9 @@ export default function ExamsManagementPage() {
       }
       const batchComp = (a.batch || '').localeCompare(b.batch || '', undefined, { numeric: true });
       if (batchComp !== 0) return batchComp;
-      const semComp = (a.semester || '').localeCompare(b.semester || '', undefined, { numeric: true });
+      const semComp = (a.semester || '').localeCompare(b.semester || '', undefined, {
+        numeric: true,
+      });
       if (semComp !== 0) return semComp;
       return (a.examName || '').localeCompare(b.examName || '');
     });
@@ -1359,7 +1379,9 @@ export default function ExamsManagementPage() {
       }
       const batchComp = (a.batch || '').localeCompare(b.batch || '', undefined, { numeric: true });
       if (batchComp !== 0) return batchComp;
-      const semComp = (a.semester || '').localeCompare(b.semester || '', undefined, { numeric: true });
+      const semComp = (a.semester || '').localeCompare(b.semester || '', undefined, {
+        numeric: true,
+      });
       if (semComp !== 0) return semComp;
       return (a.examName || '').localeCompare(b.examName || '');
     });
@@ -1669,57 +1691,59 @@ export default function ExamsManagementPage() {
                         entityLabel="exam entries"
                         resetKey={`${group.groupKey}___${currentDept}`}
                       >
-                      {(visibleGroupItems, groupFooter) => (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse text-xs">
-                            <thead>
-                              <tr className="border-b border-border/60 bg-secondary/30 font-bold uppercase text-muted-foreground">
-                                <th className="py-2.5 px-3 border-r border-border/40 w-10 text-center">
-                                  #
-                                </th>
-                                <th className="py-2.5 px-3 border-r border-border/40">
-                                  Course Code
-                                </th>
-                                <th className="py-2.5 px-3 border-r border-border/40">
-                                  Subject Name
-                                </th>
-                                <th className="py-2.5 px-3 border-r border-border/40">Exam Date</th>
-                                <th className="py-2.5 px-3 border-r border-border/40">Time</th>
-                                <th className="py-2.5 px-3">Venue</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border/60 font-medium">
-                              {visibleGroupItems.map((item: any, idx: number) => (
-                                <tr key={item.timetable_id} className="hover:bg-secondary/10">
-                                  <td className="py-2.5 px-3 border-r border-border/40 text-center font-mono text-muted-foreground font-bold">
-                                    {idx + 1}
-                                  </td>
-                                  <td className="py-2.5 px-3 border-r border-border/40 font-mono font-bold text-primary">
-                                    {item.course?.course_code}
-                                  </td>
-                                  <td className="py-2.5 px-3 border-r border-border/40 text-foreground font-semibold">
-                                    {item.course?.course_name}
-                                  </td>
-                                  <td className="py-2.5 px-3 border-r border-border/40 font-mono text-foreground font-bold">
-                                    {formatToDDMMYYYY(item.exam_date)}
-                                  </td>
-                                  <td className="py-2.5 px-3 border-r border-border/40 font-mono text-muted-foreground">
-                                    {item.start_time} - {item.end_time}
-                                  </td>
-                                  <td className="py-2.5 px-3 font-semibold text-foreground">
-                                    {item.venue || 'Main Exam Hall A'}
-                                  </td>
+                        {(visibleGroupItems, groupFooter) => (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse text-xs">
+                              <thead>
+                                <tr className="border-b border-border/60 bg-secondary/30 font-bold uppercase text-muted-foreground">
+                                  <th className="py-2.5 px-3 border-r border-border/40 w-10 text-center">
+                                    #
+                                  </th>
+                                  <th className="py-2.5 px-3 border-r border-border/40">
+                                    Course Code
+                                  </th>
+                                  <th className="py-2.5 px-3 border-r border-border/40">
+                                    Subject Name
+                                  </th>
+                                  <th className="py-2.5 px-3 border-r border-border/40">
+                                    Exam Date
+                                  </th>
+                                  <th className="py-2.5 px-3 border-r border-border/40">Time</th>
+                                  <th className="py-2.5 px-3">Venue</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          {groupFooter}
-                        </div>
-                      )}
-                    </ProgressiveSlice>
-                  </div>
-                );
-              })}
+                              </thead>
+                              <tbody className="divide-y divide-border/60 font-medium">
+                                {visibleGroupItems.map((item: any, idx: number) => (
+                                  <tr key={item.timetable_id} className="hover:bg-secondary/10">
+                                    <td className="py-2.5 px-3 border-r border-border/40 text-center font-mono text-muted-foreground font-bold">
+                                      {idx + 1}
+                                    </td>
+                                    <td className="py-2.5 px-3 border-r border-border/40 font-mono font-bold text-primary">
+                                      {item.course?.course_code}
+                                    </td>
+                                    <td className="py-2.5 px-3 border-r border-border/40 text-foreground font-semibold">
+                                      {item.course?.course_name}
+                                    </td>
+                                    <td className="py-2.5 px-3 border-r border-border/40 font-mono text-foreground font-bold">
+                                      {formatToDDMMYYYY(item.exam_date)}
+                                    </td>
+                                    <td className="py-2.5 px-3 border-r border-border/40 font-mono text-muted-foreground">
+                                      {item.start_time} - {item.end_time}
+                                    </td>
+                                    <td className="py-2.5 px-3 font-semibold text-foreground">
+                                      {item.venue || 'Main Exam Hall A'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {groupFooter}
+                          </div>
+                        )}
+                      </ProgressiveSlice>
+                    </div>
+                  );
+                })}
                 <ProgressiveLoadFooter
                   loadedCount={visibleStudentFullGroupedCount}
                   totalCount={totalStudentFullGroupedCount}
@@ -1762,6 +1786,8 @@ export default function ExamsManagementPage() {
             <button
               onClick={() => {
                 setIsEditMode(false);
+                setOriginalEditBatch('');
+                setOriginalEditSemester('');
                 setCreationMode('excel');
                 setShowAddModal(true);
                 setValidationResult(null);
@@ -2199,13 +2225,11 @@ export default function ExamsManagementPage() {
                                       <td className="py-3 px-4 text-center">
                                         {item.course?.publishing_progress?.exam_held === 'HELD' ||
                                         item.exam_held === 'HELD' ? (
-                                          <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-extrabold rounded-lg border border-emerald-500/20 text-[10px] inline-flex items-center gap-1">
+                                          <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-extrabold rounded-lg border border-emerald-500/20 text-[10px] inline-flex items-center gap-1 font-mono">
                                             <CheckCircle2 className="h-3 w-3" />
-                                            HELD (
                                             {item.exam_date
                                               ? formatToDDMMYYYY(item.exam_date)
-                                              : 'Done'}
-                                            )
+                                              : 'Held'}
                                           </span>
                                         ) : (
                                           <span className="px-2.5 py-1 bg-amber-500/10 text-amber-500 font-extrabold rounded-lg border border-amber-500/20 text-[10px] uppercase">
@@ -2955,6 +2979,24 @@ export default function ExamsManagementPage() {
                 </div>
               </div>
 
+              {/* DUPLICATE TIMETABLE WARNING */}
+              {isBatchSemDuplicate && (
+                <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-start gap-2.5 text-amber-500 text-xs animate-fadeIn">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
+                  <div>
+                    <span className="font-bold">
+                      A timetable already exists for Batch {wizardBatch} - Semester {wizardSemester}
+                      !
+                    </span>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      To prevent duplicate entries for the same batch and semester, please close
+                      this dialog and edit the existing timetable from the Active Timetables list
+                      below.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* STEP 2: Mode Switcher - Hidden in Edit Mode */}
               {!isEditMode && (
                 <div className="flex border-b border-border/60 gap-4 text-xs font-semibold">
@@ -3010,7 +3052,8 @@ export default function ExamsManagementPage() {
                         validate errors in real-time.
                       </p>
                       <p className="text-[11px] text-muted-foreground/80 mt-1 font-semibold">
-                        Required column headers: Course Code, Date and Time, Start Time, End Time, Venue
+                        Required column headers: Course Code, Date and Time, Start Time, End Time,
+                        Venue
                       </p>
                     </div>
 
@@ -3018,7 +3061,14 @@ export default function ExamsManagementPage() {
                       type="file"
                       id="wizardExcelInput"
                       accept=".xlsx,.xls,.csv"
+                      disabled={isBatchSemDuplicate}
                       onChange={(e) => {
+                        if (isBatchSemDuplicate) {
+                          toast.error(
+                            `A timetable for Batch ${wizardBatch} (Semester ${wizardSemester}) already exists. Please edit the existing timetable.`,
+                          );
+                          return;
+                        }
                         if (e.target.files && e.target.files[0]) {
                           const file = e.target.files[0];
                           runLiveExcelValidation(file, wizardBatch, wizardSemester, wizardExamName);
@@ -3030,7 +3080,11 @@ export default function ExamsManagementPage() {
                     <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
                       <label
                         htmlFor="wizardExcelInput"
-                        className="px-5 py-2.5 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow-md hover:bg-primary/90 transition cursor-pointer"
+                        className={`px-5 py-2.5 text-xs font-bold rounded-xl shadow-md transition cursor-pointer ${
+                          isBatchSemDuplicate
+                            ? 'bg-secondary text-muted-foreground opacity-50 cursor-not-allowed'
+                            : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                        }`}
                       >
                         Browse Excel Spreadsheet
                       </label>
@@ -3245,14 +3299,24 @@ export default function ExamsManagementPage() {
                   <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/60">
                     <button
                       type="button"
-                      disabled={saveBatchMutation.isPending}
+                      disabled={saveBatchMutation.isPending || isBatchSemDuplicate}
                       onClick={() => {
+                        if (isBatchSemDuplicate) {
+                          toast.error(
+                            `A timetable for Batch ${wizardBatch} (Semester ${wizardSemester}) already exists. Please edit the existing timetable.`,
+                          );
+                          return;
+                        }
+
                         const items = Object.values(manualInputs)
                           .filter(
                             (item: any) => item.examDate && String(item.examDate).trim() !== '',
                           )
                           .map((item: any) => ({
                             ...item,
+                            batch: wizardBatch,
+                            semester: wizardSemester,
+                            examName: wizardExamName || item.examName,
                             startTime:
                               item.startTime && item.startTime !== '--:-- --'
                                 ? item.startTime
@@ -3273,7 +3337,11 @@ export default function ExamsManagementPage() {
                           );
                           return;
                         }
-                        saveBatchMutation.mutate({ batch: wizardBatch, items });
+                        saveBatchMutation.mutate({
+                          batch: wizardBatch,
+                          examName: wizardExamName,
+                          items,
+                        });
                         if (publishImmediately) {
                           publishBatchMutation.mutate(wizardBatch);
                         }
@@ -3357,7 +3425,8 @@ export default function ExamsManagementPage() {
                         </code>
                       </p>
                       <p className="font-semibold">
-                        Required column headers: Course Code, Date and Time, Start Time, End Time, Venue
+                        Required column headers: Course Code, Date and Time, Start Time, End Time,
+                        Venue
                       </p>
                     </div>
                   )}
@@ -3521,9 +3590,18 @@ export default function ExamsManagementPage() {
                 disabled={
                   !validationResult ||
                   validationResult.hasBlockingErrors ||
-                  commitExcelMutation.isPending
+                  commitExcelMutation.isPending ||
+                  isBatchSemDuplicate
                 }
-                onClick={() => commitExcelMutation.mutate()}
+                onClick={() => {
+                  if (isBatchSemDuplicate) {
+                    toast.error(
+                      `A timetable for Batch ${wizardBatch} (Semester ${wizardSemester}) already exists. Please edit the existing timetable.`,
+                    );
+                    return;
+                  }
+                  commitExcelMutation.mutate();
+                }}
                 className="px-6 py-2.5 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-500 transition text-xs disabled:opacity-40 flex items-center gap-2 shadow-md cursor-pointer"
               >
                 {commitExcelMutation.isPending ? (

@@ -225,6 +225,35 @@ export class CoursesController {
     };
   }
 
+  @Post(':id/lecturers/external')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async assignExternalLecturer(
+    @Param('id', ParseIntPipe) courseId: number,
+    @Body() dto: { name: string; email?: string },
+    @GetUser('id') executorId: number,
+  ) {
+    const assignment = await this.coursesService.assignExternalLecturer(courseId, dto, executorId);
+    return {
+      success: true,
+      message: 'External lecturer assigned to course successfully',
+      data: assignment,
+    };
+  }
+
+  @Delete(':id/lecturers/external/:externalId')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async removeExternalLecturer(
+    @Param('id', ParseIntPipe) courseId: number,
+    @Param('externalId') externalId: string,
+    @GetUser('id') executorId: number,
+  ) {
+    await this.coursesService.removeExternalLecturer(courseId, externalId, executorId);
+    return {
+      success: true,
+      message: 'External lecturer removed from course successfully',
+    };
+  }
+
   @Put(':id/lecturer')
   @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
   async setCourseLecturer(

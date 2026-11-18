@@ -210,7 +210,12 @@ export class ExamsController {
   ) {
     const rawBatch = dto?.batch || queryBatch || params.batch || params['0'] || '';
     const batch = decodeURIComponent(rawBatch).trim();
-    const data = await this.examsService.saveBatchTimetable(batch, dto?.items || [], executorId);
+    const data = await this.examsService.saveBatchTimetable(
+      batch,
+      dto?.items || [],
+      executorId,
+      dto?.examName,
+    );
     return {
       success: true,
       message: 'Timetable saved successfully',

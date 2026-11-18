@@ -11,7 +11,6 @@ import {
   Calendar,
   Database,
   Activity,
-  Search,
   Loader2,
   Shield,
   AlertTriangle,
@@ -22,14 +21,13 @@ import {
 import Link from 'next/link';
 import { UserRole } from '@ems/shared';
 import { ProgressiveSlice } from '../../components/ui/progressive-load-footer';
+import { formatNameWithTitle } from '../../lib/nic-utils';
 
 const STABLE_EMPTY_ARRAY: any[] = [];
 
 export default function DashboardOverview() {
   const { user, setUser } = useAuthStore();
   const queryClient = useQueryClient();
-  const [selectedBatch, setSelectedBatch] = useState<string>('');
-  const [nonFilledSearch, setNonFilledSearch] = useState<string>('');
   const [isSwitching, setIsSwitching] = useState<boolean>(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
 
@@ -51,11 +49,9 @@ export default function DashboardOverview() {
 
   // Staff overview query
   const { data: staffOverview, isLoading: isStaffOverviewLoading } = useQuery({
-    queryKey: ['staff-overview', selectedBatch],
+    queryKey: ['staff-overview'],
     queryFn: async () => {
-      const response = await apiClient.get('/reports/staff-overview', {
-        params: selectedBatch ? { batch: selectedBatch } : undefined,
-      });
+      const response = await apiClient.get('/reports/staff-overview');
       return response.data?.data;
     },
     enabled: user?.role === UserRole.EXAM_DIVISION_STAFF,
@@ -166,16 +162,6 @@ export default function DashboardOverview() {
     queryFn: async () => {
       const response = await apiClient.get('/registrations/active-period');
       return response.data?.data;
-    },
-    enabled: user?.role === UserRole.STUDENT,
-  });
-
-  // Fetch eligible courses for registration (only for student)
-  const { data: eligibleCourses = [] } = useQuery({
-    queryKey: ['eligible-courses-dashboard'],
-    queryFn: async () => {
-      const response = await apiClient.get('/registrations/eligible-courses');
-      return response.data?.data || [];
     },
     enabled: user?.role === UserRole.STUDENT,
   });
@@ -420,16 +406,6 @@ export default function DashboardOverview() {
         },
       ];
 
-      const filteredNonFilled =
-        staffOverview?.batchDetails?.nonFilledStudents?.filter((s: any) => {
-          const search = nonFilledSearch.toLowerCase();
-          return (
-            s.fullName?.toLowerCase()?.includes(search) ||
-            s.registrationNumber?.toLowerCase()?.includes(search) ||
-            s.email?.toLowerCase()?.includes(search)
-          );
-        }) || [];
-
       return (
         <div className="space-y-8 animate-fadeIn">
           {/* Welcome Banner */}
@@ -486,160 +462,13 @@ export default function DashboardOverview() {
             ))}
           </div>
 
-          {/* Batch Filter & Statistics Section */}
-          <div className="bg-card/20 border border-border/60 p-6 rounded-3xl backdrop-blur-sm space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-bold text-foreground">Batch Enrollment Monitor</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Select an academic year to check registration progress
-                </p>
-              </div>
-              <div className="w-full sm:w-60">
-                <select
-                  value={selectedBatch}
-                  onChange={(e) => setSelectedBatch(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-secondary/40 border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
-                >
-                  <option value="">Choose Batch (Academic Year)...</option>
-                  {staffOverview?.batches?.map((b: number) => (
-                    <option key={b} value={b} className="bg-card">
-                      Batch {b}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {selectedBatch && staffOverview?.batchDetails && (
-              <div className="space-y-6 animate-fadeIn">
-                {/* Batch Stat Highlights */}
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                  <div className="p-4 bg-secondary/20 border border-border/40 rounded-xl">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground">
-                      Current Semester
-                    </span>
-                    <p className="text-lg font-extrabold text-foreground mt-1">
-                      Semester {staffOverview.batchDetails.semester}
-                    </p>
-                  </div>
-                  <div className="p-4 bg-secondary/20 border border-border/40 rounded-xl">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground">
-                      Offered Courses
-                    </span>
-                    <p className="text-lg font-extrabold text-foreground mt-1">
-                      {staffOverview.batchDetails.availableCoursesCount} Courses
-                    </p>
-                  </div>
-                  <div className="p-4 bg-secondary/20 border border-border/40 rounded-xl">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground">
-                      Registered Students
-                    </span>
-                    <p className="text-lg font-extrabold text-emerald-400 mt-1">
-                      {staffOverview.batchDetails.registeredCount} /{' '}
-                      {staffOverview.batchDetails.totalStudentsCount}
-                    </p>
-                  </div>
-                  <div className="p-4 bg-secondary/20 border border-border/40 rounded-xl">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground">
-                      Non-Registered Students
-                    </span>
-                    <p className="text-lg font-extrabold text-destructive mt-1">
-                      {staffOverview.batchDetails.nonFilledStudents.length} Students
-                    </p>
-                  </div>
-                </div>
-
-                {/* Non Filled Students Table */}
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <h4 className="text-sm font-bold text-foreground">
-                      Non-Registered Students List
-                    </h4>
-                    <div className="relative w-full sm:w-72">
-                      <input
-                        type="text"
-                        placeholder="Search non-registered..."
-                        value={nonFilledSearch}
-                        onChange={(e) => setNonFilledSearch(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary transition text-xs"
-                      />
-                      <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                    </div>
-                  </div>
-
-                  <ProgressiveSlice
-                    items={filteredNonFilled}
-                    entityLabel="students"
-                    resetKey={`${selectedBatch}|${nonFilledSearch}`}
-                  >
-                    {(visibleStudents, footer) => (
-                      <div className="border border-border/60 rounded-xl overflow-hidden shadow-md">
-                        <table className="w-full text-left border-collapse text-xs">
-                          <thead>
-                            <tr className="border-b border-border/60 bg-secondary/15 text-muted-foreground font-bold">
-                              <th className="px-4 py-3 w-12 text-center">#</th>
-                              <th className="px-4 py-3">Registration No</th>
-                              <th className="px-4 py-3">Full Name</th>
-                              <th className="px-4 py-3">Email Address</th>
-                              <th className="px-4 py-3">Phone Number</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border/40 font-medium">
-                            {filteredNonFilled.length === 0 ? (
-                              <tr>
-                                <td colSpan={5} className="text-center py-8 text-muted-foreground">
-                                  No students matching criteria are pending registration.
-                                </td>
-                              </tr>
-                            ) : (
-                              visibleStudents.map((student: any, idx: number) => (
-                                <tr
-                                  key={student.studentId}
-                                  className="hover:bg-secondary/10 transition-colors"
-                                >
-                                  <td className="px-4 py-2.5 text-center font-mono text-muted-foreground font-bold">
-                                    {idx + 1}
-                                  </td>
-                                  <td className="px-4 py-2.5 font-bold text-foreground">
-                                    {student.registrationNumber}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-muted-foreground">
-                                    {student.fullName}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-muted-foreground">
-                                    {student.email}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-muted-foreground">
-                                    {student.phoneNumber}
-                                  </td>
-                                </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
-                        {footer}
-                      </div>
-                    )}
-                  </ProgressiveSlice>
-                </div>
-              </div>
-            )}
-
-            {!selectedBatch && (
-              <div className="py-12 text-center text-muted-foreground text-sm border border-dashed border-border/60 rounded-2xl">
-                Please choose a batch academic year from the dropdown above to display enrollment
-                statistics and pending students.
-              </div>
-            )}
-          </div>
-
-          {/* Pending Marksheet Approvals section */}
+          {/* Pending Marksheet Approvals section (Final Marksheets Only) */}
           <div className="bg-card/20 border border-border/60 p-6 rounded-3xl backdrop-blur-sm space-y-6">
             <div>
               <h3 className="text-lg font-bold text-foreground">Pending Marksheet Approvals</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Review and approve marks submitted by lecturers to publish overall grades
+                Review and approve final exam marksheets submitted by lecturers to publish overall
+                grades
               </p>
             </div>
 
@@ -648,57 +477,118 @@ export default function DashboardOverview() {
                 <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
                 Loading pending marksheets...
               </div>
-            ) : pendingApprovals.length === 0 ? (
-              <div className="py-8 text-center text-muted-foreground text-xs border border-dashed border-border/60 rounded-2xl">
-                No submitted marksheets are pending approval.
-              </div>
             ) : (
-              <ProgressiveSlice
-                items={pendingApprovals}
-                entityLabel="marksheets"
-                footerClassName="col-span-full rounded-2xl border border-border/60"
-              >
-                {(visibleApprovals, footer) => (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {visibleApprovals.map((exam: any) => (
-                      <div
-                        key={exam.exam_id}
-                        className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md"
-                      >
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-start">
-                            <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md uppercase">
-                              {exam.course?.course_code}
-                            </span>
-                            <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-md uppercase">
-                              {exam.exam_type}
-                            </span>
-                          </div>
-                          <h4 className="font-bold text-sm text-foreground pt-1 truncate">
-                            {exam.exam_title}
-                          </h4>
-                          <p className="text-xs text-muted-foreground">
-                            Course: {exam.course?.course_name}
-                          </p>
-                          <p className="text-[10px] text-muted-foreground">
-                            Date: {new Date(exam.exam_date).toLocaleDateString()} | Max Marks:{' '}
-                            {exam.total_marks}
-                          </p>
-                        </div>
-                        <div className="border-t border-border/60 pt-4 mt-6 flex items-center justify-between">
-                          <Link
-                            href="/marks"
-                            className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
-                          >
-                            Go to Review Queue &rarr;
-                          </Link>
-                        </div>
+              (() => {
+                const finalPending = (pendingApprovals || []).filter((exam: any) => {
+                  const t = String(exam.exam_type || '').toUpperCase();
+                  return t !== 'CA' && !t.includes('CONTINUOUS');
+                });
+
+                if (finalPending.length === 0) {
+                  return (
+                    <div className="py-8 text-center text-muted-foreground text-xs border border-dashed border-border/60 rounded-2xl">
+                      No submitted final marksheets are pending approval.
+                    </div>
+                  );
+                }
+
+                return (
+                  <ProgressiveSlice
+                    items={finalPending}
+                    entityLabel="marksheets"
+                    footerClassName="col-span-full rounded-2xl border border-border/60"
+                  >
+                    {(visibleApprovals, footer) => (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {visibleApprovals.map((exam: any) => {
+                          const recUser = exam.exam_marks?.[0]?.recorded_by;
+                          const firstLecUser = exam.course?.first_marker_lecturer?.user;
+                          const assignedLecUser = exam.course?.lecturers?.[0]?.lecturer?.user;
+                          const targetUser = recUser || firstLecUser || assignedLecUser;
+                          const rawName =
+                            targetUser?.full_name ||
+                            exam.course?.first_marker_name ||
+                            'Assigned Lecturer';
+                          const displayLecturer = formatNameWithTitle(rawName, targetUser?.nic_no);
+
+                          const subDateVal =
+                            exam.exam_marks?.[0]?.updated_at ||
+                            exam.exam_marks?.[0]?.created_at ||
+                            exam.exam_date;
+                          const formattedSubDate = subDateVal
+                            ? new Date(subDateVal).toLocaleDateString('en-GB', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                              })
+                            : 'Recently';
+
+                          return (
+                            <div
+                              key={exam.exam_id}
+                              className="bg-card/25 border border-border/80 p-5 rounded-2xl flex flex-col justify-between backdrop-blur-sm shadow-md hover:border-primary/30 transition-all duration-300"
+                            >
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md uppercase">
+                                    {exam.course?.course_code}
+                                  </span>
+                                  {exam.course?.department?.department_code && (
+                                    <span className="text-[10px] font-semibold text-muted-foreground uppercase font-mono">
+                                      {exam.course.department.department_code}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div>
+                                  <h4
+                                    className="font-bold text-sm text-foreground truncate leading-snug"
+                                    title={exam.course?.course_name || exam.exam_title}
+                                  >
+                                    {exam.course?.course_name || exam.exam_title}
+                                  </h4>
+                                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                                    Semester {exam.course?.semester || '1'}
+                                  </p>
+                                </div>
+
+                                <div className="space-y-1.5 pt-1 text-xs">
+                                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                                    <span className="font-semibold text-foreground/80">
+                                      Lecturer:
+                                    </span>
+                                    <span className="text-foreground truncate font-medium">
+                                      {displayLecturer}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                                    <span className="font-semibold text-foreground/80">
+                                      Submitted:
+                                    </span>
+                                    <span className="font-mono text-muted-foreground">
+                                      {formattedSubDate}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="border-t border-border/60 pt-4 mt-5 flex items-center justify-between">
+                                <Link
+                                  href="/marks"
+                                  className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                                >
+                                  Review Marksheet &rarr;
+                                </Link>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {footer}
                       </div>
-                    ))}
-                    {footer}
-                  </div>
-                )}
-              </ProgressiveSlice>
+                    )}
+                  </ProgressiveSlice>
+                );
+              })()
             )}
           </div>
         </div>
@@ -1346,108 +1236,109 @@ export default function DashboardOverview() {
           </div>
 
           {/* Degree Progress & Workload Limits Card */}
-          {profile?.student?.degree && (() => {
-            const deg = profile.student.degree;
-            const spec = profile.student.specialization;
-            const totalCredits = 120;
+          {profile?.student?.degree &&
+            (() => {
+              const deg = profile.student.degree;
+              const spec = profile.student.specialization;
+              const totalCredits = 120;
 
-            let compulsoryCredits = 0;
-            if (deg?.compulsory_credits !== undefined && deg?.compulsory_credits !== null) {
-              compulsoryCredits = Number(deg.compulsory_credits);
-            } else {
-              const compulsoryCourseMap = new Map<number, number>();
-              for (const cd of deg?.courses || []) {
-                if (!cd.course) continue;
-                if ((cd.status || '').toUpperCase() === 'COMPULSORY') {
-                  compulsoryCourseMap.set(cd.course_id, Number(cd.course.credit_value || 0));
+              let compulsoryCredits = 0;
+              if (deg?.compulsory_credits !== undefined && deg?.compulsory_credits !== null) {
+                compulsoryCredits = Number(deg.compulsory_credits);
+              } else {
+                const compulsoryCourseMap = new Map<number, number>();
+                for (const cd of deg?.courses || []) {
+                  if (!cd.course) continue;
+                  if ((cd.status || '').toUpperCase() === 'COMPULSORY') {
+                    compulsoryCourseMap.set(cd.course_id, Number(cd.course.credit_value || 0));
+                  }
                 }
-              }
-              for (const cs of spec?.course_specializations || []) {
-                if (!cs.course) continue;
-                if ((cs.status || '').toUpperCase() === 'COMPULSORY') {
-                  compulsoryCourseMap.set(cs.course_id, Number(cs.course.credit_value || 0));
+                for (const cs of spec?.course_specializations || []) {
+                  if (!cs.course) continue;
+                  if ((cs.status || '').toUpperCase() === 'COMPULSORY') {
+                    compulsoryCourseMap.set(cs.course_id, Number(cs.course.credit_value || 0));
+                  }
                 }
+                compulsoryCourseMap.forEach((cred) => {
+                  compulsoryCredits += cred;
+                });
               }
-              compulsoryCourseMap.forEach((cred) => {
-                compulsoryCredits += cred;
-              });
-            }
 
-            const minOptionalCredits =
-              deg?.min_optional_credits !== undefined && deg?.min_optional_credits !== null
-                ? Number(deg.min_optional_credits)
-                : Math.max(0, totalCredits - compulsoryCredits);
+              const minOptionalCredits =
+                deg?.min_optional_credits !== undefined && deg?.min_optional_credits !== null
+                  ? Number(deg.min_optional_credits)
+                  : Math.max(0, totalCredits - compulsoryCredits);
 
-            return (
-              <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-sm space-y-6 animate-fadeIn">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/40 pb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-foreground">
-                      Degree Credit Requirements Overview
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Curriculum metrics for{' '}
-                      <strong>
-                        {deg.degree_name} ({deg.degree_code})
-                      </strong>
-                    </p>
-                  </div>
-                  {activePeriod && (
-                    <span className="px-3 py-1.5 bg-primary/10 text-primary border border-primary/20 rounded-xl text-xs font-bold font-mono">
-                      Semester {activePeriod.semester} Active
-                    </span>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Total Credits Card */}
-                  <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
+              return (
+                <div className="bg-card/25 border border-border/80 p-6 rounded-3xl backdrop-blur-sm space-y-6 animate-fadeIn">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/40 pb-4">
                     <div>
-                      <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
-                        Degree Total Completion Requirement
-                      </span>
-                      <p className="text-2xl font-extrabold text-foreground mt-2">
-                        {totalCredits.toFixed(1)} Credits
+                      <h3 className="text-lg font-bold text-foreground">
+                        Degree Credit Requirements Overview
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Curriculum metrics for{' '}
+                        <strong>
+                          {deg.degree_name} ({deg.degree_code})
+                        </strong>
                       </p>
                     </div>
-                    <p className="text-[11px] text-muted-foreground mt-3">
-                      Total credits required to qualify for graduation.
-                    </p>
+                    {activePeriod && (
+                      <span className="px-3 py-1.5 bg-primary/10 text-primary border border-primary/20 rounded-xl text-xs font-bold font-mono">
+                        Semester {activePeriod.semester} Active
+                      </span>
+                    )}
                   </div>
 
-                  {/* Compulsory Credits Card */}
-                  <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
-                        Compulsory Credits in Curriculum
-                      </span>
-                      <p className="text-2xl font-extrabold text-amber-500 mt-2">
-                        {compulsoryCredits.toFixed(1)} Credits
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Total Credits Card */}
+                    <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                          Degree Total Completion Requirement
+                        </span>
+                        <p className="text-2xl font-extrabold text-foreground mt-2">
+                          {totalCredits.toFixed(1)} Credits
+                        </p>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-3">
+                        Total credits required to qualify for graduation.
                       </p>
                     </div>
-                    <p className="text-[11px] text-muted-foreground mt-3">
-                      Credits from core mandatory subjects in the degree syllabus.
-                    </p>
-                  </div>
 
-                  {/* Optional Credits Card */}
-                  <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
-                        Minimum Optional Credits Required
-                      </span>
-                      <p className="text-2xl font-extrabold text-emerald-500 mt-2">
-                        {minOptionalCredits.toFixed(1)} Credits
+                    {/* Compulsory Credits Card */}
+                    <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                          Compulsory Credits in Curriculum
+                        </span>
+                        <p className="text-2xl font-extrabold text-amber-500 mt-2">
+                          {compulsoryCredits.toFixed(1)} Credits
+                        </p>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-3">
+                        Credits from core mandatory subjects in the degree syllabus.
                       </p>
                     </div>
-                    <p className="text-[11px] text-muted-foreground mt-3">
-                      Credits needed from elective optional subjects to fulfill requirements.
-                    </p>
+
+                    {/* Optional Credits Card */}
+                    <div className="bg-secondary/15 border border-border/40 p-5 rounded-2xl flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                          Minimum Optional Credits Required
+                        </span>
+                        <p className="text-2xl font-extrabold text-emerald-500 mt-2">
+                          {minOptionalCredits.toFixed(1)} Credits
+                        </p>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-3">
+                        Credits needed from elective optional subjects to fulfill requirements.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })()}
+              );
+            })()}
         </div>
       );
     }

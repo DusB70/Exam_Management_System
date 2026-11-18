@@ -41,7 +41,7 @@ export class CoursesService {
       const lecturers = await this.prisma.lecturer.findMany({
         where: { lecturer_id: { in: Array.from(lecturerIdsToFetch) } },
         include: {
-          user: { select: { full_name: true, email: true } },
+          user: { select: { full_name: true, email: true, nic_no: true } },
           department: {
             select: {
               department_id: true,
@@ -97,12 +97,15 @@ export class CoursesService {
         };
       });
 
+      const externalLecturers = Array.isArray(cfg.externalLecturers) ? cfg.externalLecturers : [];
+
       return {
         ...c,
         is_first_marker_same_as_in_charge: isSameAsInCharge,
         in_charge_lecturer_id: inChargeLecturerId,
         in_charge_lecturer: inChargeLecturer,
         additional_first_markers: additionalFirstMarkers,
+        external_lecturers: externalLecturers,
       };
     });
   }
@@ -271,6 +274,7 @@ export class CoursesService {
                 select: {
                   full_name: true,
                   email: true,
+                  nic_no: true,
                 },
               },
             },
@@ -281,6 +285,7 @@ export class CoursesService {
                 select: {
                   full_name: true,
                   email: true,
+                  nic_no: true,
                 },
               },
             },
@@ -341,6 +346,7 @@ export class CoursesService {
               select: {
                 full_name: true,
                 email: true,
+                nic_no: true,
               },
             },
           },
@@ -351,6 +357,7 @@ export class CoursesService {
               select: {
                 full_name: true,
                 email: true,
+                nic_no: true,
               },
             },
           },
@@ -706,6 +713,86 @@ export class CoursesService {
     );
 
     return assignment;
+  }
+
+  async assignExternalLecturer(
+    courseId: number,
+    dto: { name: string; email?: string },
+    executorId: number,
+  ) {
+    const course = await this.findOne(courseId);
+    const existingConfig =
+      course.marks_config && typeof course.marks_config === 'object'
+        ? { ...(course.marks_config as Record<string, any>) }
+        : {};
+    const externalLecturers = Array.isArray(existingConfig.externalLecturers)
+      ? [...existingConfig.externalLecturers]
+      : [];
+
+    const newExt = {
+      id: `ext-lec-${Date.now()}`,
+      name: dto.name.trim(),
+      email: dto.email?.trim() || null,
+      assigned_at: new Date().toISOString(),
+    };
+    externalLecturers.push(newExt);
+
+    const updatedConfig = {
+      ...existingConfig,
+      externalLecturers,
+    };
+
+    await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        marks_config: updatedConfig as any,
+      },
+    });
+
+    await this.auditService.logAction(
+      executorId,
+      'COURSE_ASSIGN_EXTERNAL_LECTURER',
+      'course_lecturers',
+      courseId.toString(),
+      null,
+      newExt,
+    );
+
+    return newExt;
+  }
+
+  async removeExternalLecturer(courseId: number, externalId: string, executorId: number) {
+    const course = await this.findOne(courseId);
+    const existingConfig =
+      course.marks_config && typeof course.marks_config === 'object'
+        ? { ...(course.marks_config as Record<string, any>) }
+        : {};
+    const externalLecturers = Array.isArray(existingConfig.externalLecturers)
+      ? existingConfig.externalLecturers.filter((e: any) => e.id !== externalId)
+      : [];
+
+    const updatedConfig = {
+      ...existingConfig,
+      externalLecturers,
+    };
+
+    await this.prisma.course.update({
+      where: { course_id: courseId },
+      data: {
+        marks_config: updatedConfig as any,
+      },
+    });
+
+    await this.auditService.logAction(
+      executorId,
+      'COURSE_REMOVE_EXTERNAL_LECTURER',
+      'course_lecturers',
+      courseId.toString(),
+      null,
+      { externalId },
+    );
+
+    return { success: true };
   }
 
   // ==========================================

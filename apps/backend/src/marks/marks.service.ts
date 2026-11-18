@@ -483,10 +483,14 @@ export class MarksService {
   // REVIEW & APPROVAL ENDPOINTS (STAFF/ADMIN)
   // ==========================================
 
-  // Returns list of exams that have marks submitted for review
+  // Returns list of exams that have marks submitted for review (Final exams only)
   async getSubmittedMarksheetsForReview() {
     return this.prisma.exam.findMany({
       where: {
+        exam_type: {
+          not: 'CA',
+          mode: 'insensitive',
+        },
         exam_marks: {
           some: {
             grading_status: 'SUBMITTED',
@@ -497,6 +501,29 @@ export class MarksService {
         course: {
           include: {
             department: true,
+            first_marker_lecturer: {
+              include: { user: true },
+            },
+            second_marker_lecturer: {
+              include: { user: true },
+            },
+            lecturers: {
+              include: {
+                lecturer: {
+                  include: { user: true },
+                },
+              },
+            },
+          },
+        },
+        exam_marks: {
+          where: {
+            grading_status: 'SUBMITTED',
+          },
+          take: 1,
+          orderBy: { updated_at: 'desc' },
+          include: {
+            recorded_by: true,
           },
         },
       },
@@ -636,6 +663,101 @@ export class MarksService {
     });
   }
 
+  private async resolveActiveSemesters(): Promise<string[]> {
+    const activeSemestersSet = new Set<string>();
+
+    // 1. Any currently OPEN or ACTIVE registration periods
+    const openPeriods = await this.prisma.registrationPeriod.findMany({
+      where: { status: { in: ['OPEN', 'ACTIVE'] } },
+    });
+    for (const p of openPeriods) {
+      if (p.semester?.trim()) {
+        activeSemestersSet.add(p.semester.trim());
+      }
+    }
+
+    // 2. Determine the latest semester registered by each active batch
+    const activeBatches = await this.prisma.student.findMany({
+      where: {
+        status: { not: 'GRADUATED' },
+        batch: { not: null },
+      },
+      select: { batch: true },
+      distinct: ['batch'],
+    });
+
+    for (const { batch } of activeBatches) {
+      if (!batch) continue;
+
+      // Look for latest PROPER course registration for this batch
+      const latestProper = await this.prisma.courseRegistration.findFirst({
+        where: {
+          student: { batch, status: { not: 'GRADUATED' } },
+          attempt_type: 'PROPER',
+        },
+        orderBy: [{ registration_date: 'desc' }, { registration_id: 'desc' }],
+        include: {
+          course: {
+            select: { semester: true },
+          },
+        },
+      });
+
+      if (latestProper?.course?.semester?.trim()) {
+        activeSemestersSet.add(latestProper.course.semester.trim());
+        continue;
+      }
+
+      // If no PROPER registration found for this batch, check any course registration
+      const latestAny = await this.prisma.courseRegistration.findFirst({
+        where: {
+          student: { batch, status: { not: 'GRADUATED' } },
+        },
+        orderBy: [{ registration_date: 'desc' }, { registration_id: 'desc' }],
+        include: {
+          course: {
+            select: { semester: true },
+          },
+        },
+      });
+
+      if (latestAny?.course?.semester?.trim()) {
+        activeSemestersSet.add(latestAny.course.semester.trim());
+        continue;
+      }
+
+      // Fallback: check latest registration period created for this batch
+      const latestBatchPeriod = await this.prisma.registrationPeriod.findFirst({
+        where: { batch },
+        orderBy: [{ start_date: 'desc' }, { period_id: 'desc' }],
+      });
+
+      if (latestBatchPeriod?.semester?.trim()) {
+        activeSemestersSet.add(latestBatchPeriod.semester.trim());
+      }
+    }
+
+    // 3. Fallback: if no active batch registrations exist yet, inspect latest registration periods
+    if (activeSemestersSet.size === 0) {
+      const latestPeriods = await this.prisma.registrationPeriod.findMany({
+        orderBy: [{ end_date: 'desc' }, { period_id: 'desc' }],
+        take: 5,
+      });
+      for (const p of latestPeriods) {
+        if (p.semester?.trim()) {
+          activeSemestersSet.add(p.semester.trim());
+        }
+      }
+    }
+
+    // 4. Default fallback to odd-semester cycle
+    if (activeSemestersSet.size === 0) {
+      return ['1.1', '2.1', '3.1', '4.1'];
+    }
+
+    return Array.from(activeSemestersSet).sort();
+  }
+
   async getMyStudentsOverview(lecturerUserId: number) {
     const lecturer = await this.getLecturerByUserId(lecturerUserId);
 
@@ -659,33 +781,11 @@ export class MarksService {
       },
     });
 
-    // 1. Identify currently active semesters from registration periods
-    const openPeriods = await this.prisma.registrationPeriod.findMany({
-      where: { status: { in: ['OPEN', 'ACTIVE'] } },
-    });
-    let activeSemesters: string[] = [
-      ...new Set(openPeriods.map((p) => p.semester?.trim()).filter(Boolean)),
-    ];
-
-    if (activeSemesters.length === 0) {
-      const latestPeriods = await this.prisma.registrationPeriod.findMany({
-        orderBy: { end_date: 'desc' },
-        take: 5,
-      });
-      if (latestPeriods.length > 0) {
-        activeSemesters = [
-          ...new Set(latestPeriods.map((p) => p.semester?.trim()).filter(Boolean)),
-        ];
-      } else {
-        // Fallback active semesters in odd-semester cycle
-        activeSemesters = ['1.1', '2.1', '3.1', '4.1'];
-      }
-    }
+    // 1. Identify currently active semesters (latest semester registered per batch + any open period)
+    const activeSemesters = await this.resolveActiveSemesters();
 
     // 2. Filter courses to ONLY those that belong to currently active semesters
-    const activeCourses = courses.filter((c) =>
-      activeSemesters.includes(c.semester?.trim()),
-    );
+    const activeCourses = courses.filter((c) => activeSemesters.includes(c.semester?.trim()));
 
     const courseDistribution = activeCourses.map((c) => {
       const batchStr = c.registrations[0]?.student?.batch || '21/22';

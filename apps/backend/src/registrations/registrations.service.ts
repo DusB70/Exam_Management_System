@@ -585,7 +585,9 @@ export class RegistrationsService {
       'MEDICAL_REPEAT_REGISTRATION',
     );
     if (!activePeriod) {
-      throw new BadRequestException('Repeat / Medical exam registration window is currently closed.');
+      throw new BadRequestException(
+        'Repeat / Medical exam registration window is currently closed.',
+      );
     }
 
     const course = await this.prisma.course.findUnique({
@@ -640,5 +642,138 @@ export class RegistrationsService {
     );
 
     return registration;
+  }
+
+  // ==========================================
+  // BATCH ENROLLMENT MONITOR FOR STAFF / ADMIN
+  // ==========================================
+
+  async getEnrollmentMonitor(filter: {
+    batch?: string;
+    semester?: string;
+    degreeId?: number;
+    departmentId?: number;
+  }) {
+    const { batch, semester, degreeId, departmentId } = filter;
+
+    const whereStudent: any = {};
+    if (batch && batch !== 'ALL' && batch !== '') {
+      whereStudent.batch = batch;
+    }
+    if (degreeId && !isNaN(degreeId) && degreeId > 0) {
+      whereStudent.degree_id = degreeId;
+    }
+    if (departmentId && !isNaN(departmentId) && departmentId > 0) {
+      whereStudent.degree = { department_id: departmentId };
+    }
+
+    // Determine active semester
+    let activeSemester = semester && semester !== 'ALL' && semester !== '' ? semester : '';
+    if (!activeSemester) {
+      if (batch && batch !== 'ALL' && batch !== '') {
+        const latestPeriod = await this.prisma.registrationPeriod.findFirst({
+          where: { batch },
+          orderBy: { end_date: 'desc' },
+        });
+        activeSemester = latestPeriod ? latestPeriod.semester : '1.1';
+      } else {
+        const anyPeriod = await this.prisma.registrationPeriod.findFirst({
+          where: { status: 'OPEN' },
+          orderBy: { end_date: 'desc' },
+        });
+        activeSemester = anyPeriod ? anyPeriod.semester : '1.1';
+      }
+    }
+
+    // Courses offered in this active semester matching degree/department
+    const whereCourse: any = { semester: activeSemester };
+    if (departmentId && !isNaN(departmentId) && departmentId > 0) {
+      whereCourse.department_id = departmentId;
+    }
+    if (degreeId && !isNaN(degreeId) && degreeId > 0) {
+      whereCourse.degrees = {
+        some: { degree_id: degreeId },
+      };
+    }
+    const offeredCoursesCount = await this.prisma.course.count({
+      where: whereCourse,
+    });
+
+    // Students matching filter
+    const students = await this.prisma.student.findMany({
+      where: whereStudent,
+      include: {
+        user: {
+          select: {
+            user_id: true,
+            full_name: true,
+            email: true,
+            phone_number: true,
+            nic_no: true,
+          },
+        },
+        degree: {
+          include: {
+            department: true,
+          },
+        },
+        registrations: {
+          where: {
+            course: {
+              semester: activeSemester,
+            },
+          },
+          include: {
+            course: {
+              select: {
+                course_id: true,
+                course_code: true,
+                course_name: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ registration_number: 'asc' }],
+    });
+
+    const registeredCount = students.filter((s) => s.registrations.length > 0).length;
+    const totalStudentsCount = students.length;
+    const nonRegisteredCount = totalStudentsCount - registeredCount;
+
+    // Distinct available batches for filter dropdown
+    const distinctBatches = await this.prisma.student.groupBy({
+      by: ['batch'],
+    });
+    const batches = distinctBatches
+      .map((b) => b.batch)
+      .filter((b): b is string => Boolean(b))
+      .sort((a, b) => b.localeCompare(a));
+
+    return {
+      activeSemester,
+      offeredCoursesCount,
+      registeredCount,
+      totalStudentsCount,
+      nonRegisteredCount,
+      batches,
+      students: students.map((s) => ({
+        studentId: s.student_id,
+        registrationNumber: s.registration_number,
+        indexNumber: s.index_number,
+        fullName: s.user?.full_name,
+        nicNo: s.user?.nic_no,
+        email: s.user?.email,
+        phoneNumber: s.user?.phone_number || '—',
+        batch: s.batch,
+        degreeCode: s.degree?.degree_code,
+        degreeName: s.degree?.degree_name,
+        departmentCode: s.degree?.department?.department_code,
+        departmentName: s.degree?.department?.department_name,
+        registeredCoursesCount: s.registrations.length,
+        isRegistered: s.registrations.length > 0,
+        registeredCourses: s.registrations.map((r) => r.course),
+      })),
+    };
   }
 }

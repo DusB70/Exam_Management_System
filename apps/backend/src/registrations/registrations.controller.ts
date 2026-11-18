@@ -5,6 +5,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   ParseIntPipe,
   HttpStatus,
   HttpCode,
@@ -108,6 +109,27 @@ export class RegistrationsController {
   // ==========================================
   // ADMINISTRATOR / DIVISION STAFF OVERRIDES
   // ==========================================
+
+  @Get('enrollment-monitor')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async getEnrollmentMonitor(
+    @Query('batch') batch?: string,
+    @Query('semester') semester?: string,
+    @Query('degreeId') degreeId?: string,
+    @Query('departmentId') departmentId?: string,
+  ) {
+    const data = await this.registrationsService.getEnrollmentMonitor({
+      batch,
+      semester,
+      degreeId: degreeId ? parseInt(degreeId, 10) : undefined,
+      departmentId: departmentId ? parseInt(departmentId, 10) : undefined,
+    });
+    return {
+      success: true,
+      message: 'Enrollment monitor statistics and student list retrieved successfully',
+      data,
+    };
+  }
 
   @Get('admin/student/:studentId')
   @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)

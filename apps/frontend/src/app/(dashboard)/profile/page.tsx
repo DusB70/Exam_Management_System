@@ -142,7 +142,28 @@ export default function ProfilePage() {
       : 'N/A';
 
   // Academic Year (batch) resolve
-  const academicYearDisplay = profile?.student?.batch || profile?.student?.academic_year || 'N/A';
+  const formatAcademicYear = (batch?: string, ay?: any) => {
+    if (batch) {
+      const match = String(batch).match(/(\d{2,4})[/-](\d{2,4})/);
+      if (match) return `${match[1].slice(-2)}/${match[2].slice(-2)}`;
+      return String(batch);
+    }
+    if (ay === undefined || ay === null || ay === '') return 'N/A';
+    const str = String(ay).trim();
+    const match = str.match(/(\d{2,4})[/-](\d{2,4})/);
+    if (match) return `${match[1].slice(-2)}/${match[2].slice(-2)}`;
+    const num = Number(str);
+    if (!isNaN(num) && num >= 1900 && num <= 2100) {
+      const next = (num + 1) % 100;
+      return `${String(num).slice(-2)}/${String(next).padStart(2, '0')}`;
+    }
+    return str;
+  };
+
+  const academicYearDisplay = formatAcademicYear(
+    profile?.student?.batch,
+    profile?.student?.academic_year,
+  );
 
   // Latest Registered Semester resolve
   const latestRegisteredSemester = useMemo(() => {
@@ -213,7 +234,9 @@ export default function ProfilePage() {
                 <UserIcon className="h-10 w-10" />
               </div>
 
-              <h2 className="text-xl font-bold relative z-10 leading-tight">{profile?.full_name}</h2>
+              <h2 className="text-xl font-bold relative z-10 leading-tight">
+                {profile?.full_name}
+              </h2>
               <p className="text-xs text-primary font-bold tracking-widest uppercase mt-1 px-2.5 py-0.5 bg-primary/10 border border-primary/20 rounded relative z-10">
                 {(profile?.role?.role_name || user?.role) === 'Exam Division Staff'
                   ? 'Staff'
@@ -308,8 +331,8 @@ export default function ProfilePage() {
                   Personal Profile Details
                 </h3>
                 <p className="text-xs text-muted-foreground leading-normal mt-0.5">
-                  Official registration credentials and personal identification parameters on record.
-                  Contact the Academic Registrar's Office to request administrative changes.
+                  Official registration credentials and personal identification parameters on
+                  record. Contact the Academic Registrar's Office to request administrative changes.
                 </p>
               </div>
 

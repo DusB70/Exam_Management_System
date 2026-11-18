@@ -483,7 +483,12 @@ export class ExamsService {
     };
   }
 
-  async saveBatchTimetable(batch: string, items: any[], executorId: number) {
+  async saveBatchTimetable(
+    batch: string,
+    items: any[],
+    executorId: number,
+    globalExamName?: string,
+  ) {
     if (!items || !Array.isArray(items) || items.length === 0) {
       throw new BadRequestException(
         'Please provide at least one course timetable entry with a valid exam date before saving.',
@@ -515,7 +520,10 @@ export class ExamsService {
           where: { batch, course_id: courseId },
         });
 
-        const examName = item.examName || 'End Semester Examination 2026';
+        const examName =
+          (globalExamName && String(globalExamName).trim()) ||
+          (item.examName && String(item.examName).trim()) ||
+          'End Semester Examination 2026';
         const startTime = item.startTime || '09:00 AM';
         const endTime = item.endTime || '12:00 PM';
         const venue = item.venue || 'Main Exam Hall A';
@@ -524,6 +532,7 @@ export class ExamsService {
           const updated = await this.prisma.examTimetable.update({
             where: { timetable_id: existing.timetable_id },
             data: {
+              batch,
               exam_name: examName,
               exam_date: parsedDate,
               start_time: startTime,
@@ -824,13 +833,7 @@ export class ExamsService {
 
     // Header validation
     const headerRow: string[] = (rawRows[0] || []).map((h: any) => String(h).trim());
-    const expectedHeaders = [
-      'Course Code',
-      'Date and Time',
-      'Start Time',
-      'End Time',
-      'Venue',
-    ];
+    const expectedHeaders = ['Course Code', 'Date and Time', 'Start Time', 'End Time', 'Venue'];
 
     const headerErrors: string[] = [];
 
@@ -868,7 +871,9 @@ export class ExamsService {
       const batchKey = Object.keys(row).find((k) => /batch/i.test(k));
       const semesterKey = Object.keys(row).find((k) => /semester|sem/i.test(k));
       const examNameKey = Object.keys(row).find((k) => /exam.*name|examination|exam_name/i.test(k));
-      const codeKey = Object.keys(row).find((k) => /course.*code|subject.*code|course|code/i.test(k));
+      const codeKey = Object.keys(row).find((k) =>
+        /course.*code|subject.*code|course|code/i.test(k),
+      );
       const dateKey = Object.keys(row).find((k) => /date/i.test(k));
       const startKey = Object.keys(row).find((k) => /start/i.test(k));
       const endKey = Object.keys(row).find((k) => /end/i.test(k));
@@ -1281,7 +1286,9 @@ export class ExamsService {
       }
       const batchComp = (a.batch || '').localeCompare(b.batch || '', undefined, { numeric: true });
       if (batchComp !== 0) return batchComp;
-      const semComp = (a.semester || '').localeCompare(b.semester || '', undefined, { numeric: true });
+      const semComp = (a.semester || '').localeCompare(b.semester || '', undefined, {
+        numeric: true,
+      });
       if (semComp !== 0) return semComp;
       return (a.exam_name || '').localeCompare(b.exam_name || '');
     });

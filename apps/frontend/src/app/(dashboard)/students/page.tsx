@@ -17,6 +17,7 @@ import {
 import { ProgressiveLoadFooter } from '../../../components/ui/progressive-load-footer';
 import UserDialog from '../../../components/users/user-dialog';
 import { UserRole } from '@ems/shared';
+import { formatNameWithTitle } from '../../../lib/nic-utils';
 import {
   Users,
   Search,
@@ -671,9 +672,9 @@ export default function StudentDirectoryPage() {
                         <td className="px-4 py-2.5 max-w-[210px]">
                           <div
                             className="font-bold text-xs text-foreground leading-snug truncate"
-                            title={st.user?.full_name}
+                            title={formatNameWithTitle(st.user?.full_name, st.user?.nic_no)}
                           >
-                            {st.user?.full_name || '-'}
+                            {formatNameWithTitle(st.user?.full_name, st.user?.nic_no) || '-'}
                           </div>
                           {st.user?.email && (
                             <div
@@ -765,7 +766,10 @@ export default function StudentDirectoryPage() {
                       <h3 className="text-lg font-bold text-foreground">
                         {isFullRecordLoading
                           ? 'Loading Student Record...'
-                          : studentRecord?.user?.full_name}
+                          : formatNameWithTitle(
+                              studentRecord?.user?.full_name,
+                              studentRecord?.user?.nic_no,
+                            )}
                       </h3>
                       {studentRecord?.status && (
                         <span
@@ -967,7 +971,10 @@ export default function StudentDirectoryPage() {
                               Full Name
                             </span>
                             <span className="text-foreground font-semibold text-sm">
-                              {studentRecord?.user?.full_name || 'N/A'}
+                              {formatNameWithTitle(
+                                studentRecord?.user?.full_name,
+                                studentRecord?.user?.nic_no,
+                              ) || 'N/A'}
                             </span>
                           </div>
                           <div>
@@ -1917,7 +1924,9 @@ export default function StudentDirectoryPage() {
             <div className="p-8 text-center bg-secondary/10 border border-dashed border-border/60 rounded-2xl space-y-1.5">
               <p className="text-sm font-bold text-foreground">No subjects in active semesters</p>
               <p className="text-xs text-muted-foreground max-w-md mx-auto">
-                No course allocations match the currently active semesters ({activeSemesters.join(', ') || 'None open'}). You can review historical student data and past taught courses in the Reports Panel.
+                No course allocations match the currently active semesters (
+                {activeSemesters.join(', ') || 'None open'}). You can review historical student data
+                and past taught courses in the Reports Panel.
               </p>
             </div>
           ) : (
@@ -2208,7 +2217,10 @@ export default function StudentDirectoryPage() {
                                   {student.registration_number || 'N/A'}
                                 </td>
                                 <td className="px-5 py-3.5 text-foreground font-semibold truncate max-w-xs">
-                                  {student.user?.full_name || student.full_name}
+                                  {formatNameWithTitle(
+                                    student.user?.full_name || student.full_name,
+                                    student.user?.nic_no || student.nic_no,
+                                  )}
                                 </td>
 
                                 <td className="px-5 py-3.5 text-center">
@@ -2347,7 +2359,10 @@ export default function StudentDirectoryPage() {
                       Full Name
                     </span>
                     <span className="text-foreground font-semibold">
-                      {selectedLecturerStudentModal.user?.full_name || 'N/A'}
+                      {formatNameWithTitle(
+                        selectedLecturerStudentModal.user?.full_name,
+                        selectedLecturerStudentModal.user?.nic_no,
+                      ) || 'N/A'}
                     </span>
                   </div>
                   <div className="sm:col-span-2">

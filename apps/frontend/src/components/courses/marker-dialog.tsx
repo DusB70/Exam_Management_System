@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { apiClient } from '../../lib/api-client';
 import { useToast } from '../../hooks/use-toast';
 import { User, UserCheck, ShieldCheck, Loader2, Check, X, Plus, Trash2, Info } from 'lucide-react';
+import SearchableLecturerSelect from '../ui/searchable-lecturer-select';
 
 interface AdditionalFirstMarkerItem {
   id: string;
@@ -184,26 +185,6 @@ export default function MarkerDialog({
   const handleRemoveAdditionalFirstMarker = (id: string) => {
     setAdditionalFirstMarkers((prev) => prev.filter((item) => item.id !== id));
   };
-
-  const renderCategorizedLecturerOptions = (placeholder: string) => (
-    <>
-      <option value="">{placeholder}</option>
-      {lecturersByDepartment.map(([deptName, deptLecturers]) => (
-        <optgroup key={deptName} label={deptName} className="bg-card font-bold text-foreground">
-          {deptLecturers.map((lec: any) => (
-            <option
-              key={lec.lecturer_id}
-              value={lec.lecturer_id}
-              className="bg-card font-normal text-foreground"
-            >
-              {lec.user?.full_name} (
-              {lec.department?.department_code || lec.department?.department_name || 'Faculty'})
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </>
-  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -408,18 +389,17 @@ export default function MarkerDialog({
                     </button>
                   )}
                 </div>
-                <select
+                <SearchableLecturerSelect
                   value={firstMarkerLecturerId}
-                  onChange={(e) => {
-                    setFirstMarkerLecturerId(e.target.value);
-                    if (e.target.value) {
-                      setInChargeLecturerId(e.target.value);
+                  onChange={(val) => {
+                    setFirstMarkerLecturerId(val);
+                    if (val) {
+                      setInChargeLecturerId(val);
                     }
                   }}
-                  className="w-full px-3 py-2.5 bg-background border border-border/80 rounded-xl text-xs text-foreground font-medium"
-                >
-                  {renderCategorizedLecturerOptions('-- Unassigned (Keep 1st Marker Empty) --')}
-                </select>
+                  lecturersByDepartment={lecturersByDepartment}
+                  placeholder="Search and select 1st Marker & In-Charge..."
+                />
                 {!firstMarkerLecturerId && inChargeLecturerId && (
                   <p className="text-[11px] text-amber-500 font-medium">
                     Primary 1st Marker slot is currently empty (Unassigned).
@@ -459,13 +439,12 @@ export default function MarkerDialog({
                       </button>
                     )}
                   </div>
-                  <select
+                  <SearchableLecturerSelect
                     value={inChargeLecturerId}
-                    onChange={(e) => setInChargeLecturerId(e.target.value)}
-                    className="w-full px-3 py-2 bg-background border border-border/80 rounded-xl text-xs text-foreground font-medium"
-                  >
-                    {renderCategorizedLecturerOptions('Choose Course In-Charge Lecturer...')}
-                  </select>
+                    onChange={(val) => setInChargeLecturerId(val)}
+                    lecturersByDepartment={lecturersByDepartment}
+                    placeholder="Search and select Course In-Charge..."
+                  />
                 </div>
 
                 {/* Separate 1st Marker Selection */}
@@ -515,15 +494,12 @@ export default function MarkerDialog({
                       <label className="block text-[10px] font-bold text-muted-foreground uppercase mb-1">
                         Select 1st Marker Lecturer (Categorized by Department)
                       </label>
-                      <select
+                      <SearchableLecturerSelect
                         value={firstMarkerLecturerId}
-                        onChange={(e) => setFirstMarkerLecturerId(e.target.value)}
-                        className="w-full px-3 py-2 bg-background border border-border/80 rounded-xl text-xs text-foreground font-medium"
-                      >
-                        {renderCategorizedLecturerOptions(
-                          '-- Unassigned (Keep 1st Marker Empty) --',
-                        )}
-                      </select>
+                        onChange={(val) => setFirstMarkerLecturerId(val)}
+                        lecturersByDepartment={lecturersByDepartment}
+                        placeholder="Search and select 1st Marker..."
+                      />
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
@@ -628,19 +604,16 @@ export default function MarkerDialog({
                       </div>
 
                       {item.type === 'INTERNAL' ? (
-                        <select
+                        <SearchableLecturerSelect
                           value={item.lecturerId}
-                          onChange={(e) =>
+                          onChange={(val) =>
                             handleUpdateAdditionalFirstMarker(item.id, {
-                              lecturerId: e.target.value,
+                              lecturerId: val,
                             })
                           }
-                          className="w-full px-3 py-2 bg-background border border-border/80 rounded-xl text-xs text-foreground font-medium"
-                        >
-                          {renderCategorizedLecturerOptions(
-                            'Choose Additional Faculty 1st Marker...',
-                          )}
-                        </select>
+                          lecturersByDepartment={lecturersByDepartment}
+                          placeholder="Search and select additional 1st Marker..."
+                        />
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <input
@@ -717,13 +690,12 @@ export default function MarkerDialog({
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase mb-1">
                   Select Internal 2nd Marker (Categorized by Department)
                 </label>
-                <select
+                <SearchableLecturerSelect
                   value={secondMarkerLecturerId}
-                  onChange={(e) => setSecondMarkerLecturerId(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-background border border-border/80 rounded-xl text-xs text-foreground font-medium"
-                >
-                  {renderCategorizedLecturerOptions('-- Unassigned (No 2nd Marker) --')}
-                </select>
+                  onChange={(val) => setSecondMarkerLecturerId(val)}
+                  lecturersByDepartment={lecturersByDepartment}
+                  placeholder="Search and select 2nd Marker..."
+                />
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">

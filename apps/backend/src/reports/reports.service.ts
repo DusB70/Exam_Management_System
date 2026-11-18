@@ -235,6 +235,101 @@ export class ReportsService {
     };
   }
 
+  private async resolveActiveSemesters(): Promise<string[]> {
+    const activeSemestersSet = new Set<string>();
+
+    // 1. Any currently OPEN or ACTIVE registration periods
+    const openPeriods = await this.prisma.registrationPeriod.findMany({
+      where: { status: { in: ['OPEN', 'ACTIVE'] } },
+    });
+    for (const p of openPeriods) {
+      if (p.semester?.trim()) {
+        activeSemestersSet.add(p.semester.trim());
+      }
+    }
+
+    // 2. Determine the latest semester registered by each active batch
+    const activeBatches = await this.prisma.student.findMany({
+      where: {
+        status: { not: 'GRADUATED' },
+        batch: { not: null },
+      },
+      select: { batch: true },
+      distinct: ['batch'],
+    });
+
+    for (const { batch } of activeBatches) {
+      if (!batch) continue;
+
+      // Look for latest PROPER course registration for this batch
+      const latestProper = await this.prisma.courseRegistration.findFirst({
+        where: {
+          student: { batch, status: { not: 'GRADUATED' } },
+          attempt_type: 'PROPER',
+        },
+        orderBy: [{ registration_date: 'desc' }, { registration_id: 'desc' }],
+        include: {
+          course: {
+            select: { semester: true },
+          },
+        },
+      });
+
+      if (latestProper?.course?.semester?.trim()) {
+        activeSemestersSet.add(latestProper.course.semester.trim());
+        continue;
+      }
+
+      // If no PROPER registration found for this batch, check any course registration
+      const latestAny = await this.prisma.courseRegistration.findFirst({
+        where: {
+          student: { batch, status: { not: 'GRADUATED' } },
+        },
+        orderBy: [{ registration_date: 'desc' }, { registration_id: 'desc' }],
+        include: {
+          course: {
+            select: { semester: true },
+          },
+        },
+      });
+
+      if (latestAny?.course?.semester?.trim()) {
+        activeSemestersSet.add(latestAny.course.semester.trim());
+        continue;
+      }
+
+      // Fallback: check latest registration period created for this batch
+      const latestBatchPeriod = await this.prisma.registrationPeriod.findFirst({
+        where: { batch },
+        orderBy: [{ start_date: 'desc' }, { period_id: 'desc' }],
+      });
+
+      if (latestBatchPeriod?.semester?.trim()) {
+        activeSemestersSet.add(latestBatchPeriod.semester.trim());
+      }
+    }
+
+    // 3. Fallback: if no active batch registrations exist yet, inspect latest registration periods
+    if (activeSemestersSet.size === 0) {
+      const latestPeriods = await this.prisma.registrationPeriod.findMany({
+        orderBy: [{ end_date: 'desc' }, { period_id: 'desc' }],
+        take: 5,
+      });
+      for (const p of latestPeriods) {
+        if (p.semester?.trim()) {
+          activeSemestersSet.add(p.semester.trim());
+        }
+      }
+    }
+
+    // 4. Default fallback to odd-semester cycle
+    if (activeSemestersSet.size === 0) {
+      return ['1.1', '2.1', '3.1', '4.1'];
+    }
+
+    return Array.from(activeSemestersSet).sort();
+  }
+
   async getLecturerAnalytics(
     userId: number,
     role: string,
@@ -300,28 +395,19 @@ export class ReportsService {
       orderBy: [{ semester: 'asc' }, { course_code: 'asc' }],
     });
 
-    // 2. Identify active semesters
-    const openPeriods = await this.prisma.registrationPeriod.findMany({
-      where: { status: { in: ['OPEN', 'ACTIVE'] } },
-    });
-    let activeSemesters: string[] = [
-      ...new Set(openPeriods.map((p) => p.semester?.trim()).filter(Boolean)),
-    ];
-    if (activeSemesters.length === 0) {
-      const latestPeriods = await this.prisma.registrationPeriod.findMany({
-        orderBy: { end_date: 'desc' },
-        take: 5,
-      });
-      if (latestPeriods.length > 0) {
-        activeSemesters = [
-          ...new Set(latestPeriods.map((p) => p.semester?.trim()).filter(Boolean)),
-        ];
-      } else {
-        activeSemesters = ['1.1', '2.1', '3.1', '4.1'];
-      }
-    }
+    // 2. Identify active semesters based on latest registered semester per batch + open periods
+    const activeSemesters = await this.resolveActiveSemesters();
 
-    const activeAcademicYear = openPeriods[0]?.academic_year || new Date().getFullYear();
+    const openPeriod = await this.prisma.registrationPeriod.findFirst({
+      where: { status: { in: ['OPEN', 'ACTIVE'] } },
+      orderBy: { start_date: 'desc' },
+    });
+    const latestPeriod =
+      openPeriod ||
+      (await this.prisma.registrationPeriod.findFirst({
+        orderBy: [{ end_date: 'desc' }, { period_id: 'desc' }],
+      }));
+    const activeAcademicYear = latestPeriod?.academic_year || new Date().getFullYear();
 
     // 3. Collect distinct filter options across all courses
     const availableSemestersSet = new Set<string>();
@@ -403,7 +489,21 @@ export class ReportsService {
     }
 
     // 6. Process course performance analytics
-    const GRADE_ORDER = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F', 'E(CA)', 'E(SA)'];
+    const GRADE_ORDER = [
+      'A+',
+      'A',
+      'A-',
+      'B+',
+      'B',
+      'B-',
+      'C+',
+      'C',
+      'C-',
+      'D',
+      'F',
+      'E(CA)',
+      'E(SA)',
+    ];
     const overallGradeCounts: { [grade: string]: number } = {};
     GRADE_ORDER.forEach((g) => (overallGradeCounts[g] = 0));
 
@@ -508,7 +608,8 @@ export class ReportsService {
         });
       }
 
-      const avgCaMarks = courseCaCount > 0 ? Math.round((courseCaSum / courseCaCount) * 10) / 10 : 0;
+      const avgCaMarks =
+        courseCaCount > 0 ? Math.round((courseCaSum / courseCaCount) * 10) / 10 : 0;
       const avgFinalExamMarks =
         courseFinalCount > 0 ? Math.round((courseFinalSum / courseFinalCount) * 10) / 10 : 0;
       const avgCombinedMarks =
