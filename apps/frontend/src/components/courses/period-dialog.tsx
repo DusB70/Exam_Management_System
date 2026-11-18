@@ -1,18 +1,30 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../lib/api-client';
 import { useToast } from '../../hooks/use-toast';
 import { AxiosError } from 'axios';
 import { ApiResponse } from '@ems/shared';
 
+const DEFAULT_ACADEMIC_YEARS = [
+  '19/20',
+  '20/21',
+  '21/22',
+  '22/23',
+  '23/24',
+  '24/25',
+  '25/26',
+  '26/27',
+  '27/28',
+];
+
 const PeriodFormSchema = z
   .object({
-    academicYear: z.coerce.number().int().min(2000, 'Academic year must be 2000 or later'),
-    batch: z.string().optional(),
+    academicYear: z.string().min(1, 'Please select an academic year'),
     semester: z
       .string()
       .regex(
@@ -51,6 +63,26 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Fetch existing periods to include any existing batches in dropdown options
+  const { data: existingPeriods = [] } = useQuery({
+    queryKey: ['registration-periods-for-dialog'],
+    queryFn: async () => {
+      const response = await apiClient.get('/courses/periods');
+      return response.data?.data || [];
+    },
+    enabled: open,
+  });
+
+  const academicYearOptions = useMemo(() => {
+    const set = new Set<string>(DEFAULT_ACADEMIC_YEARS);
+    existingPeriods.forEach((p: any) => {
+      if (p.batch && typeof p.batch === 'string') {
+        set.add(p.batch.trim());
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [existingPeriods]);
+
   const {
     register,
     handleSubmit,
@@ -59,8 +91,7 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
   } = useForm<PeriodFormInput>({
     resolver: zodResolver(PeriodFormSchema),
     defaultValues: {
-      academicYear: new Date().getFullYear(),
-      batch: '20/21',
+      academicYear: '21/22',
       semester: '1.1',
       windowType: 'SEMESTER_REGISTRATION',
       status: 'CLOSED',
@@ -74,12 +105,24 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
     setIsSubmitting(true);
 
     try {
+      const match = data.academicYear.match(/^(\d{2,4})[/-](\d{2,4})$/);
+      const numericYear = match
+        ? match[1].length === 2
+          ? 2000 + parseInt(match[1], 10)
+          : parseInt(match[1], 10)
+        : new Date().getFullYear();
+
       // Map to ISOString dates
       const payload = {
-        ...data,
+        academicYear: numericYear,
+        batch: data.academicYear,
+        semester: data.semester,
+        windowType: data.windowType,
         startDate: new Date(data.startDate).toISOString(),
         endDate: new Date(data.endDate).toISOString(),
+        status: data.status,
       };
+
       const response = await apiClient.post('/courses/periods', payload);
       toast.success('Course registration window opened successfully!');
       onSuccess(response.data?.data);
@@ -103,7 +146,7 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
           <h3 className="text-lg font-bold">New Registration Period</h3>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground"
+            className="p-1 hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground cursor-pointer"
           >
             ✕
           </button>
@@ -116,29 +159,23 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                Batch (e.g. 20/21)
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. 20/21"
-                {...register('batch')}
-                className="w-full px-3 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm font-semibold"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                Academic Year
-              </label>
-              <input
-                type="number"
-                {...register('academicYear')}
-                className="w-full px-3 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+              Academic Year (e.g. 21/22)
+            </label>
+            <select
+              {...register('academicYear')}
+              className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground font-semibold cursor-pointer"
+            >
+              {academicYearOptions.map((ay) => (
+                <option key={ay} value={ay} className="bg-card">
+                  {ay}
+                </option>
+              ))}
+            </select>
+            {errors.academicYear && (
+              <p className="mt-1 text-xs text-destructive">{errors.academicYear.message}</p>
+            )}
           </div>
 
           <div>
@@ -147,7 +184,7 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
             </label>
             <select
               {...register('semester')}
-              className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+              className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground cursor-pointer"
             >
               <option value="1.1">Semester 1.1</option>
               <option value="1.2">Semester 1.2</option>
@@ -169,7 +206,7 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
             </label>
             <select
               {...register('windowType')}
-              className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+              className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground cursor-pointer"
             >
               <option value="SEMESTER_REGISTRATION">Semester Course Registration</option>
               <option value="MEDICAL_REPEAT_REGISTRATION">
@@ -186,7 +223,7 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
               <input
                 type="date"
                 {...register('startDate')}
-                className="w-full px-3 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm"
+                className="w-full px-3 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
               />
               {errors.startDate && (
                 <p className="mt-1 text-xs text-destructive">{errors.startDate.message}</p>
@@ -200,7 +237,7 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
               <input
                 type="date"
                 {...register('endDate')}
-                className="w-full px-3 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm"
+                className="w-full px-3 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
               />
               {errors.endDate && (
                 <p className="mt-1 text-xs text-destructive">{errors.endDate.message}</p>
@@ -214,7 +251,7 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
             </label>
             <select
               {...register('status')}
-              className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground"
+              className="w-full px-4 py-2.5 bg-secondary/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 transition text-sm text-foreground cursor-pointer"
             >
               <option value="CLOSED" className="bg-card">
                 CLOSED
@@ -232,14 +269,14 @@ export default function PeriodDialog({ open, onClose, onSuccess }: PeriodDialogP
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2 bg-secondary text-secondary-foreground font-medium rounded-xl hover:bg-secondary/90 transition text-sm"
+              className="px-5 py-2 bg-secondary text-secondary-foreground font-medium rounded-xl hover:bg-secondary/90 transition text-sm cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-5 py-2 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-sm disabled:opacity-50"
+              className="px-5 py-2 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 transition text-sm disabled:opacity-50 cursor-pointer"
             >
               {isSubmitting ? 'Opening...' : 'Create Window'}
             </button>

@@ -41,6 +41,14 @@ export class RegistrationsService {
 
     if (!period) return null;
 
+    // Check if student has progression hold
+    if (
+      student.progression_status === 'HOLD_REMEDIATION' ||
+      student.progression_status === 'HOLD_BATCH_DEMOTION'
+    ) {
+      return null;
+    }
+
     const limitObj = await this.prisma.degreeSemesterLimit.findFirst({
       where: {
         degree_id: student.degree_id,
@@ -213,6 +221,15 @@ export class RegistrationsService {
 
     if (courseIds.length === 0) {
       throw new BadRequestException('No courses selected for registration.');
+    }
+
+    if (
+      student.progression_status === 'HOLD_REMEDIATION' ||
+      student.progression_status === 'HOLD_BATCH_DEMOTION'
+    ) {
+      throw new BadRequestException(
+        'Registration is suspended: Your academic progression is currently on hold.',
+      );
     }
 
     // 1. Verify Active Registration Period
@@ -774,6 +791,238 @@ export class RegistrationsService {
         isRegistered: s.registrations.length > 0,
         registeredCourses: s.registrations.map((r) => r.course),
       })),
+    };
+  }
+
+  // ==========================================
+  // PROGRESSION & PROMOTION ENGINE
+  // ==========================================
+
+  async evaluateProgression(
+    batch: string,
+    targetSemester: string,
+    consideredSemesters: string[] = [],
+    minGpa: number = 2.0,
+  ) {
+    // 1. Fetch all active students in the selected batch
+    const cohortStudents = await this.prisma.student.findMany({
+      where: {
+        batch,
+        status: 'ACTIVE',
+      },
+      include: {
+        user: true,
+        degree: true,
+        semester_gpas: true,
+      },
+      orderBy: { registration_number: 'asc' },
+    });
+
+    // 2. Fetch remediation students from earlier/other batches whose target re-evaluation semester matches targetSemester
+    const resurfacedStudents = await this.prisma.student.findMany({
+      where: {
+        status: 'ACTIVE',
+        target_re_evaluation_sem: targetSemester,
+        NOT: { batch }, // Don't duplicate if already in cohortStudents
+      },
+      include: {
+        user: true,
+        degree: true,
+        semester_gpas: true,
+      },
+      orderBy: { registration_number: 'asc' },
+    });
+
+    const allStudentsToEvaluate = [
+      ...cohortStudents.map((s) => ({ ...s, isResurfacedCandidate: false })),
+      ...resurfacedStudents.map((s) => ({ ...s, isResurfacedCandidate: true })),
+    ];
+
+    const results = allStudentsToEvaluate.map((student) => {
+      // Find GPA records for selected discrete semesters
+      const semesterGpaMap: Record<string, { gpa: number; credits: number }> = {};
+      let totalWeightedGpa = 0;
+      let totalConsideredCredits = 0;
+
+      for (const semGpa of student.semester_gpas) {
+        semesterGpaMap[semGpa.semester] = {
+          gpa: semGpa.semester_gpa,
+          credits: semGpa.total_credits || 0,
+        };
+      }
+
+      const consideredDetails: {
+        semester: string;
+        gpa: number | null;
+        credits: number;
+        isReleased: boolean;
+      }[] = [];
+
+      if (consideredSemesters.length > 0) {
+        for (const sem of consideredSemesters) {
+          const rec = semesterGpaMap[sem];
+          if (rec && rec.credits > 0) {
+            consideredDetails.push({
+              semester: sem,
+              gpa: rec.gpa,
+              credits: rec.credits,
+              isReleased: true,
+            });
+            totalWeightedGpa += rec.gpa * rec.credits;
+            totalConsideredCredits += rec.credits;
+          } else {
+            // Either marks are not released or 0 credits recorded
+            consideredDetails.push({
+              semester: sem,
+              gpa: rec ? rec.gpa : null,
+              credits: 0,
+              isReleased: false,
+            });
+          }
+        }
+      }
+
+      // Compute weighted CGPA based on RELEASED marks only
+      let calculatedCgpa: number | null = null;
+      if (consideredSemesters.length === 0) {
+        calculatedCgpa = null; // No GPA consideration required
+      } else if (totalConsideredCredits > 0) {
+        calculatedCgpa = Number((totalWeightedGpa / totalConsideredCredits).toFixed(2));
+      } else {
+        calculatedCgpa = 0.0;
+      }
+
+      // Determine Eligibility
+      let isEligible = true;
+      if (consideredSemesters.length > 0) {
+        if (calculatedCgpa !== null) {
+          isEligible = calculatedCgpa >= minGpa;
+        }
+      }
+
+      // Default recommendation
+      const recommendedAction = isEligible ? 'PROMOTE' : 'HOLD_REMEDIATION';
+
+      return {
+        studentId: student.student_id,
+        registrationNumber: student.registration_number,
+        indexNumber: student.index_number,
+        fullName: student.user?.full_name,
+        batch: student.batch,
+        degreeCode: student.degree?.degree_code,
+        currentSemester: student.current_semester || '1.1',
+        progressionStatus: student.progression_status || 'REGULAR',
+        isResurfacedCandidate: student.isResurfacedCandidate,
+        consideredDetails,
+        totalConsideredCredits,
+        calculatedCgpa,
+        isEligible,
+        recommendedAction,
+      };
+    });
+
+    const eligibleCount = results.filter((r) => r.isEligible).length;
+    const ineligibleCount = results.filter((r) => !r.isEligible).length;
+
+    return {
+      batch,
+      targetSemester,
+      minGpa,
+      consideredSemesters,
+      totalCount: results.length,
+      eligibleCount,
+      ineligibleCount,
+      students: results,
+    };
+  }
+
+  async executePromotion(
+    batch: string,
+    targetSemester: string,
+    decisions: { studentId: number; action: string; remarks?: string }[],
+    executorId: number,
+  ) {
+    if (!decisions || decisions.length === 0) {
+      throw new BadRequestException('No student promotion decisions provided.');
+    }
+
+    const updatedStudents: any[] = [];
+
+    // Helper: calculate next sequential semester after targetSemester for Option 1
+    // e.g., if targetSemester is "3.1", next semester is "3.2"
+    const calculateNextSemester = (sem: string): string => {
+      const parts = sem.split('.');
+      if (parts.length === 2) {
+        const year = parseInt(parts[0], 10);
+        const term = parseInt(parts[1], 10);
+        if (term === 1) return `${year}.2`;
+        return `${year + 1}.1`;
+      }
+      return sem;
+    };
+
+    const nextSemesterForRemediation = calculateNextSemester(targetSemester);
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of decisions) {
+        let updateData: any = {};
+
+        if (item.action === 'PROMOTE') {
+          updateData = {
+            current_semester: targetSemester,
+            progression_status: 'REGULAR',
+            target_re_evaluation_sem: null,
+          };
+        } else if (item.action === 'HOLD_REMEDIATION') {
+          // Option 1: Remediation. Keep in current semester, re-evaluate when batch promotes to next term (e.g. 3.2)
+          updateData = {
+            progression_status: 'HOLD_REMEDIATION',
+            target_re_evaluation_sem: nextSemesterForRemediation,
+          };
+        } else if (item.action === 'HOLD_BATCH_DEMOTION') {
+          // Option 2: Fall back to junior batch. Re-evaluate when junior batch promotes to targetSemester (e.g. 3.1)
+          updateData = {
+            progression_status: 'HOLD_BATCH_DEMOTION',
+            target_re_evaluation_sem: targetSemester,
+          };
+        }
+
+        const student = await tx.student.update({
+          where: { student_id: item.studentId },
+          data: updateData,
+          include: { user: true },
+        });
+
+        updatedStudents.push({
+          studentId: student.student_id,
+          registrationNumber: student.registration_number,
+          action: item.action,
+          newSemester: student.current_semester,
+          progressionStatus: student.progression_status,
+        });
+      }
+
+      await this.auditService.log({
+        action: 'EXECUTE_SEMESTER_PROMOTION',
+        entityType: 'PROMOTION',
+        entityId: 0,
+        executorId,
+        details: {
+          batch,
+          targetSemester,
+          totalProcessed: decisions.length,
+          promotedCount: decisions.filter((d) => d.action === 'PROMOTE').length,
+          remediationCount: decisions.filter((d) => d.action === 'HOLD_REMEDIATION').length,
+          demotionCount: decisions.filter((d) => d.action === 'HOLD_BATCH_DEMOTION').length,
+        },
+      });
+    });
+
+    return {
+      batch,
+      targetSemester,
+      processedCount: updatedStudents.length,
+      students: updatedStudents,
     };
   }
 }

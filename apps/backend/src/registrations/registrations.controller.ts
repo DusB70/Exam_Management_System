@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { RegistrationsService } from './registrations.service';
 import { RegisterCoursesDto, AdminRegisterCourseDto } from './dtos/registrations.dto';
+import { ExecutePromotionDto } from './dtos/progression.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { UserRole } from '@ems/shared';
@@ -177,6 +178,60 @@ export class RegistrationsController {
       success: true,
       message: 'Course registration dropped successfully via admin override',
       data: dropped,
+    };
+  }
+
+  // ==========================================
+  // PROGRESSION & PROMOTION ENDPOINTS
+  // ==========================================
+
+  @Get('progression/evaluate')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async evaluateProgression(
+    @Query('batch') batch: string,
+    @Query('targetSemester') targetSemester: string,
+    @Query('consideredSemesters') consideredSemesters?: string | string[],
+    @Query('minGpa') minGpa?: string,
+  ) {
+    let sems: string[] = [];
+    if (consideredSemesters) {
+      sems = Array.isArray(consideredSemesters)
+        ? consideredSemesters
+        : consideredSemesters
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+    }
+    const gpaThreshold = minGpa ? parseFloat(minGpa) : 2.0;
+
+    const evaluation = await this.registrationsService.evaluateProgression(
+      batch,
+      targetSemester,
+      sems,
+      gpaThreshold,
+    );
+
+    return {
+      success: true,
+      message: 'Progression evaluation computed successfully',
+      data: evaluation,
+    };
+  }
+
+  @Post('progression/promote')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EXAM_DIVISION_STAFF)
+  async executePromotion(@Body() dto: ExecutePromotionDto, @GetUser('id') executorId: number) {
+    const result = await this.registrationsService.executePromotion(
+      dto.batch,
+      dto.targetSemester,
+      dto.decisions,
+      executorId,
+    );
+
+    return {
+      success: true,
+      message: 'Semester promotion executed successfully',
+      data: result,
     };
   }
 }

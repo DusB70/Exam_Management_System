@@ -14,6 +14,7 @@ import PeriodDialog from '../../../components/courses/period-dialog';
 import { formatNameWithTitle } from '../../../lib/nic-utils';
 import { AxiosError } from 'axios';
 import { ApiResponse, UserRole } from '@ems/shared';
+import { ProgressionConsole } from './progression-console';
 import {
   BookOpen,
   CheckCircle2,
@@ -30,6 +31,7 @@ import {
   Search,
   Users,
   RotateCcw,
+  GraduationCap,
 } from 'lucide-react';
 
 // ==========================================
@@ -39,7 +41,7 @@ function StaffRegistrationView() {
   const toast = useToast();
   const confirm = useConfirm();
 
-  const [activeTab, setActiveTab] = useState<'windows' | 'monitor'>('windows');
+  const [activeTab, setActiveTab] = useState<'windows' | 'monitor' | 'progression'>('windows');
 
   // Tab 1: Registration Windows States & Filters
   const [windowSearch, setWindowSearch] = useState('');
@@ -340,6 +342,16 @@ function StaffRegistrationView() {
           }`}
         >
           <Users className="h-4 w-4" /> Enrollment Monitor
+        </button>
+        <button
+          onClick={() => setActiveTab('progression')}
+          className={`pb-3 transition flex items-center gap-2 relative cursor-pointer ${
+            activeTab === 'progression'
+              ? 'text-primary border-b-2 border-primary font-semibold'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <GraduationCap className="h-4 w-4" /> Academic Progression & Promotion
         </button>
       </div>
 
@@ -1001,6 +1013,15 @@ function StaffRegistrationView() {
         </div>
       )}
 
+      {/* ========================================== */}
+      {/* TAB 3: ACADEMIC PROGRESSION & PROMOTION */}
+      {/* ========================================== */}
+      {activeTab === 'progression' && (
+        <div className="animate-tabSwipeUp">
+          <ProgressionConsole availableBatches={availableBatches} />
+        </div>
+      )}
+
       {/* Period Dialog Modal */}
       <PeriodDialog
         open={periodDialogOpen}
@@ -1054,6 +1075,19 @@ function StudentRegistrationView() {
       return response.data?.data || [];
     },
   });
+
+  // Fetch student profile to detect progression hold
+  const { data: profileData } = useQuery({
+    queryKey: ['profile'],
+    queryFn: async () => {
+      const response = await apiClient.get('/profile');
+      return response.data?.data;
+    },
+  });
+
+  const studentProgression = profileData?.student?.progression_status;
+  const isProgressionHold =
+    studentProgression === 'HOLD_REMEDIATION' || studentProgression === 'HOLD_BATCH_DEMOTION';
 
   // Register mutation
   const registerMutation = useMutation({
@@ -1238,6 +1272,25 @@ function StudentRegistrationView() {
           <span className="text-xs text-muted-foreground font-semibold">
             Checking registration window availability...
           </span>
+        </div>
+      ) : isProgressionHold ? (
+        <div className="p-5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <h4 className="text-sm font-bold text-amber-600 dark:text-amber-400">
+              Registration On Academic Hold
+            </h4>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              Your academic progression is currently on hold (
+              <strong>
+                {studentProgression === 'HOLD_REMEDIATION'
+                  ? 'Option 1: Remediation Period'
+                  : 'Option 2: Batch Demotion Hold'}
+              </strong>
+              ). You are not eligible to register for regular semester lecture modules at this time.
+              You may only sit for repeat exams or backlog components when repeat windows open.
+            </p>
+          </div>
         </div>
       ) : isWindowOpen ? (
         <div className="p-5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">

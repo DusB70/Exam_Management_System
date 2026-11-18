@@ -65,6 +65,9 @@ model Student {
   degree_id           Int
   specialization_id   Int?
   batch               String?              @default("21/22") @db.VarChar(50)
+  current_semester    String?              @default("1.1") @db.VarChar(10)
+  progression_status  String               @default("REGULAR") @db.VarChar(30)
+  target_re_evaluation_sem String?         @db.VarChar(10)
   status              String               @default("ACTIVE") @db.VarChar(20)
   enrollment_date     DateTime?            @db.Timestamp(6)
   graduation_date     DateTime?            @db.Timestamp(6)

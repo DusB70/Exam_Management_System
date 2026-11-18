@@ -242,6 +242,28 @@ export default function CoursesManagementPage() {
 
   const getCourseKey = useCallback((c: any) => c.course_id, []);
 
+  // Fetch all courses for Lecturer & Examiner Allocations table using progressive lazy loading
+  const {
+    items: allocationCourses,
+    total: totalAllocationCourses,
+    isLoading: isAllocationCoursesLoading,
+    isFetchingNextPage: isFetchingNextAllocPage,
+    hasNextPage: hasNextAllocPage,
+    isFetchNextPageError: isAllocNextError,
+    fetchNextPage: fetchNextAllocPage,
+    refetch: refetchAllocationCourses,
+  } = useProgressiveInfiniteQuery<any>({
+    queryKey: ['courses-allocations-all'],
+    queryFn: async (page, limit) => {
+      const response = await apiClient.get('/courses', {
+        params: { page, limit },
+      });
+      return response.data?.data;
+    },
+    enabled: activeTab === 'lecturers',
+    getItemKey: getCourseKey,
+  });
+
   const handleRemovePrimaryFirstMarker = async (c: any) => {
     const confirmed = await confirm({
       title: 'Remove 1st Marker?',
