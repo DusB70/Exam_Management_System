@@ -37,6 +37,12 @@ lerna-debug.log*
 *.sln
 *.sw?
 
+# Test outputs
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
 # OS files
 .DS_Store
 Thumbs.db
