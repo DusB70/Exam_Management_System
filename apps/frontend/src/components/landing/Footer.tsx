@@ -1,108 +1,100 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
+import { MapPin, Mail, Phone } from 'lucide-react';
 
 export default function Footer() {
   return (
-    <footer className="border-t border-slate-200 bg-slate-100 text-slate-900 transition-colors duration-300 dark:border-white/10 dark:bg-[#050505] dark:text-white">
+    <footer className="border-t border-border/80 bg-card/40 text-foreground backdrop-blur-md transition-colors duration-300">
       <div className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-12">
           {/* Brand */}
           <div className="lg:col-span-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#980000] text-xl font-black text-white">
-                E
-              </div>
+              <Image
+                src="/images/logo.webp"
+                alt="FOT EMS"
+                width={28}
+                height={36}
+                className="object-contain shrink-0"
+              />
 
               <div>
-                <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                  Exam<span className="text-[#980000] dark:text-red-500">MS</span>
-                </h3>
-
-                <p className="text-sm text-slate-600 dark:text-gray-400">
-                  University Examination Management System
-                </p>
+                <h3 className="text-xl font-bold tracking-tight text-foreground">FOT EMS</h3>
+                <p className="text-xs text-muted-foreground">Examination Management System</p>
               </div>
             </div>
 
-            <p className="mt-6 max-w-md leading-7 text-slate-600 dark:text-gray-400">
-              A secure and modern platform for managing examinations, schedules, students, hall
-              allocation, invigilators and reports from one centralized system.
+            <p className="mt-5 max-w-md text-sm leading-relaxed text-muted-foreground">
+              A secure, centralized platform for semester course registration, marks management,
+              automated GPA calculation, result publication, and official academic reporting.
             </p>
           </div>
 
           {/* Quick Links */}
-          <div className="lg:col-span-2">
-            <h4 className="mb-5 text-lg font-semibold text-slate-900 dark:text-white">
+          <div className="lg:col-span-3">
+            <h4 className="mb-4 text-sm font-bold uppercase tracking-wider text-foreground">
               Quick Links
             </h4>
 
-            <ul className="space-y-3 text-slate-600 dark:text-gray-400">
+            <ul className="space-y-2.5 text-sm text-muted-foreground">
               <li>
-                <a
-                  href="#"
-                  className="transition-colors hover:text-[#980000] dark:hover:text-red-400"
-                >
+                <a href="#" className="transition-colors hover:text-foreground">
                   Home
                 </a>
               </li>
               <li>
-                <a
-                  href="#features"
-                  className="transition-colors hover:text-[#980000] dark:hover:text-red-400"
-                >
+                <a href="#features" className="transition-colors hover:text-foreground">
                   Features
                 </a>
               </li>
               <li>
-                <a
-                  href="#faq"
-                  className="transition-colors hover:text-[#980000] dark:hover:text-red-400"
-                >
+                <a href="#faq" className="transition-colors hover:text-foreground">
                   FAQ
                 </a>
               </li>
               <li>
-                <Link
-                  href="/login"
-                  className="transition-colors hover:text-[#980000] dark:hover:text-red-400"
-                >
+                <Link href="/login" className="transition-colors hover:text-foreground">
                   Login
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Modules */}
-          <div className="lg:col-span-2">
-            <h4 className="mb-5 text-lg font-semibold text-slate-900 dark:text-white">Modules</h4>
-
-            <ul className="space-y-3 text-slate-600 dark:text-gray-400">
-              <li>Students</li>
-              <li>Examinations</li>
-              <li>Hall Allocation</li>
-              <li>Invigilators</li>
-              <li>Reports</li>
-            </ul>
-          </div>
-
           {/* Contact */}
-          <div className="lg:col-span-3">
-            <h4 className="mb-5 text-lg font-semibold text-slate-900 dark:text-white">Contact</h4>
+          <div className="lg:col-span-4">
+            <h4 className="mb-4 text-sm font-bold uppercase tracking-wider text-foreground">
+              Contact
+            </h4>
 
-            <ul className="space-y-3 text-slate-600 dark:text-gray-400">
-              <li>📍 Faculty of Technology</li>
-              <li>📧 examms@university.edu</li>
-              <li>📞 +94 11 234 5678</li>
+            <ul className="space-y-3 text-sm text-muted-foreground">
+              <li className="flex items-center gap-2.5">
+                <MapPin className="h-4 w-4 text-primary shrink-0" />
+                <span>Faculty of Technology, RUSL</span>
+              </li>
+              <li className="flex items-center gap-2.5">
+                <Mail className="h-4 w-4 text-primary shrink-0" />
+                <a
+                  href="mailto:exam@tec.rjt.ac.lk"
+                  className="transition-colors hover:text-foreground"
+                >
+                  exam@tec.rjt.ac.lk
+                </a>
+              </li>
+              <li className="flex items-center gap-2.5">
+                <Phone className="h-4 w-4 text-primary shrink-0" />
+                <span>+94 25 226 6200</span>
+              </li>
             </ul>
           </div>
         </div>
 
         {/* Bottom */}
-        <div className="mt-14 flex flex-col items-center justify-between gap-4 border-t border-slate-200 pt-8 text-sm text-slate-500 dark:border-white/10 dark:text-gray-500 md:flex-row">
-          <p>© {new Date().getFullYear()} ExamMS. All rights reserved.</p>
+        <div className="mt-14 flex flex-col items-center justify-between gap-4 border-t border-border/60 pt-8 text-xs text-muted-foreground md:flex-row">
+          <p>© {new Date().getFullYear()} FOT EMS. All rights reserved.</p>
 
-          <p>Developed for the University Examination Management System Project</p>
+          <p>Faculty of Technology, Rajarata University of Sri Lanka</p>
         </div>
       </div>
     </footer>

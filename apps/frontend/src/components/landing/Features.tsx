@@ -1,47 +1,43 @@
 'use client';
 
-import {
-  CalendarDaysIcon,
-  UserGroupIcon,
-  BuildingOffice2Icon,
-  ShieldCheckIcon,
-  DocumentTextIcon,
-  ChartBarIcon,
-} from '@heroicons/react/24/outline';
+import { BookOpen, FileSpreadsheet, Calculator, Award, BarChart3, ShieldCheck } from 'lucide-react';
 
 const features = [
   {
-    title: 'Exam Scheduling',
+    title: 'Effortless Course Registration',
     description:
-      'Create, organize and manage examination timetables with automatic conflict detection.',
-    icon: CalendarDaysIcon,
+      'Enroll in semester courses with clarity. Easily select electives, keep track of your credit limits, and get your registration summary in seconds.',
+    icon: BookOpen,
   },
   {
-    title: 'Student Management',
+    title: 'Simple Marks Entry & Excel Upload',
     description:
-      'Manage student registrations, seating arrangements and attendance records efficiently.',
-    icon: UserGroupIcon,
+      'Lecturers can enter assessment scores directly or upload Excel sheets in bulk, with smooth verification between first and second markers.',
+    icon: FileSpreadsheet,
   },
   {
-    title: 'Hall Allocation',
-    description: 'Allocate examination halls automatically according to capacity and availability.',
-    icon: BuildingOffice2Icon,
-  },
-  {
-    title: 'Invigilator Assignment',
-    description: 'Assign invigilators quickly while avoiding timetable conflicts.',
-    icon: ShieldCheckIcon,
-  },
-  {
-    title: 'Reports & Analytics',
-    description: 'Generate attendance reports, examination summaries and printable documents.',
-    icon: DocumentTextIcon,
-  },
-  {
-    title: 'Dashboard Insights',
+    title: 'Instant Grades & Accurate GPAs',
     description:
-      'Monitor examinations, students, halls and overall system performance in real time.',
-    icon: ChartBarIcon,
+      'No more manual calculations. The system converts raw marks into university letter grades and calculates SGPA and CGPA automatically.',
+    icon: Calculator,
+  },
+  {
+    title: 'Transparent Result Publishing',
+    description:
+      'Exam staff can review and approve results with confidence, while students can check their grades and download official PDF result sheets anytime.',
+    icon: Award,
+  },
+  {
+    title: 'Clear Reports & Academic Broadsheets',
+    description:
+      'Get clean, easy-to-read performance reports, pass/fail summaries, and departmental broadsheets ready to export in PDF or CSV.',
+    icon: BarChart3,
+  },
+  {
+    title: 'Tailored Portals for Every Role',
+    description:
+      'A focused, secure experience designed specifically for students, lecturers, exam branch staff, and system administrators.',
+    icon: ShieldCheck,
   },
 ];
 

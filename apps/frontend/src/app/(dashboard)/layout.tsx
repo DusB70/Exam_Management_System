@@ -8,6 +8,7 @@ import { useToast } from '../../hooks/use-toast';
 import { useConfirm } from '../../hooks/use-confirm';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import RouteGuard from '../../components/auth/route-guard';
 import {
   LayoutDashboard,
@@ -150,10 +151,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Desktop Sidebar */}
         <aside className="sticky top-0 h-screen hidden md:flex flex-col w-64 bg-card/30 border-r border-border/80 p-5 backdrop-blur-md shrink-0 z-30">
           <div className="flex items-center gap-3 px-2 mb-6 shrink-0">
-            <div className="p-2 bg-primary/10 text-primary rounded-xl shrink-0">
-              <GraduationCap className="h-6 w-6" />
-            </div>
-            <span className="font-bold text-lg tracking-tight truncate">University EMS</span>
+            <Image
+              src="/images/logo.webp"
+              alt="FOT EMS"
+              width={26}
+              height={33}
+              className="object-contain shrink-0"
+            />
+            <span className="font-bold text-lg tracking-tight truncate">FOT EMS</span>
           </div>
 
           <nav className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
@@ -217,7 +222,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Mobile Header / Navigation */}
         <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
           <header className="flex items-center justify-between px-6 py-4 bg-card/20 border-b border-border/60 md:hidden">
-            <span className="font-bold text-lg">University EMS</span>
+            <div className="flex items-center gap-2.5">
+              <Image
+                src="/images/logo.webp"
+                alt="FOT EMS"
+                width={22}
+                height={28}
+                className="object-contain shrink-0"
+              />
+              <span className="font-bold text-lg">FOT EMS</span>
+            </div>
             <button
               onClick={() => setMobileOpen(true)}
               className="p-2 text-muted-foreground hover:text-foreground"
@@ -247,7 +261,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           }`}
         >
           <div className="flex items-center justify-between mb-6 shrink-0">
-            <span className="font-bold text-lg">University EMS</span>
+            <div className="flex items-center gap-2.5">
+              <Image
+                src="/images/logo.webp"
+                alt="FOT EMS"
+                width={22}
+                height={28}
+                className="object-contain shrink-0"
+              />
+              <span className="font-bold text-lg">FOT EMS</span>
+            </div>
             <button
               onClick={() => setMobileOpen(false)}
               className="p-1 text-muted-foreground hover:text-foreground"
