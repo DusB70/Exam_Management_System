@@ -2030,9 +2030,10 @@ export default function ExamsManagementPage() {
                       {/* Expandable Header Card */}
                       <div
                         onClick={() => toggleGroupExpand(group.groupKey)}
-                        className="px-6 py-4 bg-secondary/20 hover:bg-secondary/30 transition flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer border-b border-border/40"
+                        className="px-6 py-4 bg-secondary/20 hover:bg-secondary/30 transition flex flex-col gap-3 cursor-pointer border-b border-border/40"
                       >
-                        <div className="flex items-center gap-3 flex-wrap">
+                        {/* Top Line: Exam Name */}
+                        <div className="flex items-center gap-3">
                           <div className="p-1 text-muted-foreground hover:text-foreground rounded-lg transition">
                             {isExpanded ? (
                               <ChevronDown className="h-5 w-5 text-primary" />
@@ -2040,95 +2041,102 @@ export default function ExamsManagementPage() {
                               <ChevronRight className="h-5 w-5 text-muted-foreground" />
                             )}
                           </div>
-
-                          <span className="px-3 py-1 bg-primary/10 text-primary font-mono font-extrabold rounded-xl border border-primary/20 text-xs">
-                            Batch {group.batch}
-                          </span>
-                          <span className="px-3 py-1 bg-secondary text-foreground font-bold rounded-xl border border-border/60 text-xs">
-                            Semester {group.semester}
-                          </span>
-                          <h4 className="font-bold text-sm md:text-base text-foreground">
+                          <h4 className="font-bold text-base text-foreground tracking-tight">
                             {group.examName}
                           </h4>
-
-                          {group.isPublished &&
-                            (group.hasUnpublishedChanges ? (
-                              <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 font-bold rounded-lg border border-amber-500/20 text-[11px]">
-                                Published (Modified)
-                              </span>
-                            ) : (
-                              <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-bold rounded-lg border border-emerald-500/20 text-[11px]">
-                                Published & Active
-                              </span>
-                            ))}
                         </div>
 
-                        {/* Actions: Course Count Badge, Edit, Delete & Publish Buttons */}
-                        <div
-                          className="flex items-center gap-2"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <span className="text-xs font-semibold text-muted-foreground bg-secondary/40 px-2.5 py-1 rounded-lg mr-1">
-                            {group.items.length} {group.items.length === 1 ? 'Course' : 'Courses'}
-                          </span>
-                          <button
-                            onClick={() => handleEditGroupTimetable(group)}
-                            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-secondary text-foreground hover:bg-secondary/80 text-xs font-bold rounded-xl border border-border/80 transition cursor-pointer"
-                          >
-                            <Edit3 className="h-3.5 w-3.5 text-primary" />
-                            Edit Timetable
-                          </button>
+                        {/* Next Line: Left Badges & Right Action Buttons */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pl-8">
+                          {/* Left Side: Batch, Semester, Published/Unpublished Badges */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-3 py-1 bg-primary/10 text-primary font-mono font-extrabold rounded-xl border border-primary/20 text-xs">
+                              Batch {group.batch}
+                            </span>
+                            <span className="px-3 py-1 bg-secondary text-foreground font-bold rounded-xl border border-border/60 text-xs">
+                              Semester {group.semester}
+                            </span>
+                            {group.isPublished ? (
+                              group.hasUnpublishedChanges ? (
+                                <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 font-bold rounded-lg border border-amber-500/20 text-[11px]">
+                                  Published (Modified)
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-bold rounded-lg border border-emerald-500/20 text-[11px]">
+                                  Published
+                                </span>
+                              )
+                            ) : (
+                              <span className="px-2.5 py-1 bg-secondary/70 text-muted-foreground font-bold rounded-lg border border-border/60 text-[11px]">
+                                Unpublished
+                              </span>
+                            )}
+                          </div>
 
-                          <button
-                            onClick={async () => {
-                              const confirmed = await confirm({
-                                title: 'Delete Timetable?',
-                                message: `Are you sure you want to delete the timetable for Batch ${group.batch} (Semester ${group.semester})? This will remove all timetable entries for this semester.`,
-                                confirmText: 'Delete Timetable',
-                                variant: 'destructive',
-                              });
-                              if (confirmed) {
-                                deleteBatchMutation.mutate({
-                                  batch: group.batch,
-                                  semester: group.semester,
+                          {/* Right Side: Edit, Delete & Publish Buttons */}
+                          <div
+                            className="flex items-center gap-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              onClick={() => handleEditGroupTimetable(group)}
+                              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-secondary text-foreground hover:bg-secondary/80 text-xs font-bold rounded-xl border border-border/80 transition cursor-pointer"
+                            >
+                              <Edit3 className="h-3.5 w-3.5 text-primary" />
+                              Edit
+                            </button>
+
+                            <button
+                              onClick={async () => {
+                                const confirmed = await confirm({
+                                  title: 'Delete Timetable?',
+                                  message: `Are you sure you want to delete the timetable for Batch ${group.batch} (Semester ${group.semester})? This will remove all timetable entries for this semester.`,
+                                  confirmText: 'Delete Timetable',
+                                  variant: 'destructive',
                                 });
-                              }
-                            }}
-                            disabled={deleteBatchMutation.isPending}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-destructive/10 text-destructive hover:bg-destructive/20 text-xs font-bold rounded-xl border border-destructive/20 transition cursor-pointer"
-                            title="Delete Timetable"
-                          >
-                            {deleteBatchMutation.isPending ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-3.5 w-3.5" />
-                            )}
-                            Delete
-                          </button>
+                                if (confirmed) {
+                                  deleteBatchMutation.mutate({
+                                    batch: group.batch,
+                                    semester: group.semester,
+                                  });
+                                }
+                              }}
+                              disabled={deleteBatchMutation.isPending}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-destructive/10 text-destructive hover:bg-destructive/20 text-xs font-bold rounded-xl border border-destructive/20 transition cursor-pointer"
+                              title="Delete Timetable"
+                            >
+                              {deleteBatchMutation.isPending ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
+                              Delete
+                            </button>
 
-                          <button
-                            onClick={() => publishBatchMutation.mutate(group.batch)}
-                            disabled={
-                              publishBatchMutation.isPending ||
-                              (group.isPublished && !group.hasUnpublishedChanges)
-                            }
-                            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl shadow-sm transition ${
-                              group.isPublished && !group.hasUnpublishedChanges
-                                ? 'bg-secondary/50 text-muted-foreground opacity-60 cursor-not-allowed border border-border/40'
-                                : 'bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer'
-                            }`}
-                          >
-                            {publishBatchMutation.isPending ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Send className="h-3.5 w-3.5" />
-                            )}
-                            {group.isPublished
-                              ? group.hasUnpublishedChanges
-                                ? 'Re-Publish Updates'
-                                : 'Published'
-                              : 'Publish'}
-                          </button>
+                            <button
+                              onClick={() => publishBatchMutation.mutate(group.batch)}
+                              disabled={
+                                publishBatchMutation.isPending ||
+                                (group.isPublished && !group.hasUnpublishedChanges)
+                              }
+                              className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl shadow-sm transition ${
+                                group.isPublished && !group.hasUnpublishedChanges
+                                  ? 'bg-secondary/50 text-muted-foreground opacity-60 cursor-not-allowed border border-border/40'
+                                  : 'bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer'
+                              }`}
+                            >
+                              {publishBatchMutation.isPending ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Send className="h-3.5 w-3.5" />
+                              )}
+                              {group.isPublished
+                                ? group.hasUnpublishedChanges
+                                  ? 'Re-Publish Updates'
+                                  : 'Published'
+                                : 'Publish'}
+                            </button>
+                          </div>
                         </div>
                       </div>
 
@@ -2222,17 +2230,17 @@ export default function ExamsManagementPage() {
                                       <td className="py-3 px-4 border-r border-border/40 font-semibold text-foreground">
                                         {item.venue || 'Main Exam Hall A'}
                                       </td>
-                                      <td className="py-3 px-4 text-center">
+                                      <td className="py-3 px-4 text-center whitespace-nowrap">
                                         {item.course?.publishing_progress?.exam_held === 'HELD' ||
                                         item.exam_held === 'HELD' ? (
-                                          <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-extrabold rounded-lg border border-emerald-500/20 text-[10px] inline-flex items-center gap-1 font-mono">
+                                          <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-extrabold rounded-lg border border-emerald-500/20 text-[10px] inline-flex items-center gap-1 font-mono whitespace-nowrap">
                                             <CheckCircle2 className="h-3 w-3" />
                                             {item.exam_date
                                               ? formatToDDMMYYYY(item.exam_date)
                                               : 'Held'}
                                           </span>
                                         ) : (
-                                          <span className="px-2.5 py-1 bg-amber-500/10 text-amber-500 font-extrabold rounded-lg border border-amber-500/20 text-[10px] uppercase">
+                                          <span className="px-2.5 py-1 bg-amber-500/10 text-amber-500 font-extrabold rounded-lg border border-amber-500/20 text-[10px] uppercase whitespace-nowrap">
                                             TBH
                                           </span>
                                         )}

@@ -40,8 +40,8 @@ This file contains the details and credentials of the dummy student accounts see
 
 ## 3. Staff & Administrator Accounts
 
-| Role                | Username / Email   | Password              |
-| ------------------- | ------------------ | --------------------- |
-| Administrator       | `admin@ems.com`    | `AdminPassword123`    |
-| Exam Division Staff | `staff@ems.com`    | `StaffPassword123`    |
-| Demo Lecturer       | `lecturer@ems.com` | `LecturerPassword123` |
+| Role                | Username / Email        | Password              |
+| ------------------- | ----------------------- | --------------------- |
+| Administrator       | `admin@ems.com`         | `AdminPassword123`    |
+| Exam Division Staff | `staff@ems.com`         | `StaffPassword123`    |
+| Demo Lecturer       | `thanushanga@gmail.com` | `LecturerPassword123` |

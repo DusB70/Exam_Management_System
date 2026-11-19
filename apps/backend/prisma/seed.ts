@@ -209,12 +209,12 @@ async function main() {
   // Lecturer
   const lecturerHash = await bcrypt.hash('LecturerPassword123', SALT_ROUNDS);
   const lecturer = await prisma.user.upsert({
-    where: { email: 'lecturer@ems.com' },
+    where: { email: 'thanushanga@gmail.com' },
     update: { password_hash: lecturerHash },
     create: {
       full_name: 'Demo Lecturer',
       name_with_initials: 'D. Lecturer',
-      email: 'lecturer@ems.com',
+      email: 'thanushanga@gmail.com',
       password_hash: lecturerHash,
       role_id: 3,
       is_active: true,
@@ -275,7 +275,7 @@ async function main() {
   console.log('\n🎉 Seed complete! You can now log in with:');
   console.log('   Admin    → admin@ems.com / AdminPassword123');
   console.log('   Staff    → staff@ems.com / StaffPassword123');
-  console.log('   Lecturer → lecturer@ems.com / LecturerPassword123');
+  console.log('   Lecturer → thanushanga@gmail.com / LecturerPassword123');
   console.log('   Student  → student@ems.com / StudentPassword123');
 }
 

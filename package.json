@@ -16,6 +16,7 @@
     "build:backend": "npm run build --workspace=apps/backend",
     "build:frontend": "npm run build --workspace=apps/frontend",
     "build": "npm run build:shared && npm run build:backend && npm run build:frontend",
+    "start:prod": "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"cyan,magenta\" \"npm run start:prod --workspace=apps/backend\" \"npm run start --workspace=apps/frontend\"",
     "test:backend": "npm run test --workspace=apps/backend",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",

@@ -14,7 +14,6 @@ import {
   Loader2,
   Shield,
   AlertTriangle,
-  GraduationCap,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   X,
 } from 'lucide-react';
@@ -232,7 +231,7 @@ export default function DashboardOverview() {
     const credentialsMap = {
       [UserRole.ADMINISTRATOR]: { email: 'admin@ems.com', password: 'AdminPassword123' },
       [UserRole.EXAM_DIVISION_STAFF]: { email: 'staff@ems.com', password: 'StaffPassword123' },
-      [UserRole.LECTURER]: { email: 'lecturer@ems.com', password: 'LecturerPassword123' },
+      [UserRole.LECTURER]: { email: 'thanushanga@gmail.com', password: 'LecturerPassword123' },
       [UserRole.STUDENT]: { email: 'student@ems.com', password: 'StudentPassword123' },
     };
 
@@ -422,22 +421,6 @@ export default function DashboardOverview() {
                 Monitor student enrollments, track registrations per batch, manage evaluations, and
                 publish semester results from this overview panel.
               </p>
-              <div className="pt-2 flex flex-wrap gap-3">
-                <Link
-                  href="/users"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-xs font-semibold rounded-xl hover:bg-primary/90 transition shadow-md shadow-primary/20"
-                >
-                  <Users className="h-4 w-4" />
-                  Manage Members
-                </Link>
-                <Link
-                  href="/students"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground text-xs font-semibold rounded-xl hover:bg-secondary/80 transition border border-border/60"
-                >
-                  <GraduationCap className="h-4 w-4" />
-                  Student Directory
-                </Link>
-              </div>
             </div>
           </div>
 
@@ -481,7 +464,14 @@ export default function DashboardOverview() {
               (() => {
                 const finalPending = (pendingApprovals || []).filter((exam: any) => {
                   const t = String(exam.exam_type || '').toUpperCase();
-                  return t !== 'CA' && !t.includes('CONTINUOUS');
+                  if (t === 'CA' || t.includes('CONTINUOUS')) return false;
+                  const courseSubStatus = String(
+                    exam.course?.result_submission_status || '',
+                  ).toUpperCase();
+                  if (courseSubStatus === 'APPROVED' || courseSubStatus === 'PUBLISHED')
+                    return false;
+                  if (exam.course?.publishing_progress?.results_published) return false;
+                  return true;
                 });
 
                 if (finalPending.length === 0) {

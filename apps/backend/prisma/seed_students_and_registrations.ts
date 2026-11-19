@@ -283,7 +283,7 @@ async function main() {
 
   // 7. Verify Demo Lecturer Account & Course Assignments
   const demoLecturer = await prisma.lecturer.findFirst({
-    where: { user: { email: 'lecturer@ems.com' } },
+    where: { user: { email: 'thanushanga@gmail.com' } },
     include: { user: true },
   });
 

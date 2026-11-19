@@ -491,6 +491,11 @@ export class MarksService {
           not: 'CA',
           mode: 'insensitive',
         },
+        course: {
+          result_submission_status: {
+            notIn: ['APPROVED', 'PUBLISHED'],
+          },
+        },
         exam_marks: {
           some: {
             grading_status: 'SUBMITTED',
@@ -2379,6 +2384,15 @@ export class MarksService {
           is_published: true,
           result_status: 'FINAL',
           is_locked: true,
+        },
+      }),
+      this.prisma.examMark.updateMany({
+        where: {
+          exam: { course_id: courseId },
+          grading_status: 'SUBMITTED',
+        },
+        data: {
+          grading_status: 'APPROVED',
         },
       }),
     ]);

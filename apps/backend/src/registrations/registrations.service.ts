@@ -1002,12 +1002,13 @@ export class RegistrationsService {
         });
       }
 
-      await this.auditService.log({
-        action: 'EXECUTE_SEMESTER_PROMOTION',
-        entityType: 'PROMOTION',
-        entityId: 0,
+      await this.auditService.logAction(
         executorId,
-        details: {
+        'EXECUTE_SEMESTER_PROMOTION',
+        'PROMOTION',
+        '0',
+        null,
+        {
           batch,
           targetSemester,
           totalProcessed: decisions.length,
@@ -1015,7 +1016,7 @@ export class RegistrationsService {
           remediationCount: decisions.filter((d) => d.action === 'HOLD_REMEDIATION').length,
           demotionCount: decisions.filter((d) => d.action === 'HOLD_BATCH_DEMOTION').length,
         },
-      });
+      );
     });
 
     return {

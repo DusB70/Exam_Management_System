@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import Image from 'next/image';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { apiClient } from '../../lib/api-client';
@@ -29,7 +29,7 @@ import {
 import * as XLSX from 'xlsx';
 import ExcelUploadDialog from '../../components/marks/excel-upload-dialog';
 
-export default function SecondMarkingPortalPage() {
+function SecondMarkingPortalContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const token = searchParams.get('token');
@@ -1140,5 +1140,22 @@ export default function SecondMarkingPortalPage() {
         onUpload={handleProcessSecondMarkingExcel}
       />
     </div>
+  );
+}
+
+export default function SecondMarkingPortalPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-6">
+          <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+          <p className="text-sm font-semibold text-muted-foreground">
+            Loading 2nd Marking Portal...
+          </p>
+        </div>
+      }
+    >
+      <SecondMarkingPortalContent />
+    </Suspense>
   );
 }

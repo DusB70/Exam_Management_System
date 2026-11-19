@@ -35,7 +35,7 @@ const DEVELOPMENT_USERS = [
   },
   {
     role: UserRole.LECTURER,
-    email: 'lecturer@ems.com',
+    email: 'thanushanga@gmail.com',
     password: 'LecturerPassword123',
     title: 'Demo Lecturer',
     desc: 'Manage courses, submit marks.',

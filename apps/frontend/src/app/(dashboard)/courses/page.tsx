@@ -198,7 +198,6 @@ export default function CoursesManagementPage() {
   const [allocSearch, setAllocSearch] = useState('');
   const [allocSemesterFilter, setAllocSemesterFilter] = useState('ALL');
   const [allocDeptFilter, setAllocDeptFilter] = useState('ALL');
-  const [updatingCourseId, setUpdatingCourseId] = useState<number | null>(null);
 
   // Course Dialog States
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
@@ -263,130 +262,6 @@ export default function CoursesManagementPage() {
     enabled: activeTab === 'lecturers',
     getItemKey: getCourseKey,
   });
-
-  const handleRemovePrimaryFirstMarker = async (c: any) => {
-    const confirmed = await confirm({
-      title: 'Remove 1st Marker?',
-      message: `Are you sure you want to remove the assigned primary 1st Marker from ${c.course_code}? The 1st Marker position will remain empty (2nd Marker will not be shifted).`,
-      confirmText: 'Remove 1st Marker',
-      variant: 'destructive',
-    });
-    if (!confirmed) return;
-
-    setUpdatingCourseId(c.course_id);
-    try {
-      await apiClient.put(`/courses/${c.course_id}/markers`, {
-        isFirstMarkerSameAsInCharge: c.is_first_marker_same_as_in_charge ?? true,
-        inChargeLecturerId: c.in_charge_lecturer_id || null,
-        firstMarkerType: null,
-        firstMarkerLecturerId: null,
-        firstMarkerName: null,
-        firstMarkerEmail: null,
-        additionalFirstMarkers: (c.additional_first_markers || []).map((m: any) => ({
-          id: m.id,
-          type: m.type,
-          lecturerId: m.lecturerId || null,
-          name: m.name || null,
-          email: m.email || null,
-        })),
-        secondMarkerType: c.second_marker_type || null,
-        secondMarkerLecturerId: c.second_marker_lecturer_id || null,
-        secondMarkerName: c.second_marker_name || null,
-        secondMarkerEmail: c.second_marker_email || null,
-      });
-      toast.success('1st Marker removed. The 1st Marker slot is now empty.');
-      refetchAllocationCourses();
-      refetchCourses();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to remove 1st Marker.');
-    } finally {
-      setUpdatingCourseId(null);
-    }
-  };
-
-  const handleRemoveAdditionalFirstMarkerInline = async (c: any, markerId: string) => {
-    const confirmed = await confirm({
-      title: 'Remove Additional 1st Marker?',
-      message: `Remove this additional 1st marker from ${c.course_code}?`,
-      confirmText: 'Remove',
-      variant: 'destructive',
-    });
-    if (!confirmed) return;
-
-    setUpdatingCourseId(c.course_id);
-    try {
-      const remaining = (c.additional_first_markers || [])
-        .filter((m: any) => m.id !== markerId)
-        .map((m: any) => ({
-          id: m.id,
-          type: m.type,
-          lecturerId: m.lecturerId || null,
-          name: m.name || null,
-          email: m.email || null,
-        }));
-
-      await apiClient.put(`/courses/${c.course_id}/markers`, {
-        isFirstMarkerSameAsInCharge: c.is_first_marker_same_as_in_charge ?? true,
-        inChargeLecturerId: c.in_charge_lecturer_id || null,
-        firstMarkerType: c.first_marker_type || null,
-        firstMarkerLecturerId: c.first_marker_lecturer_id || null,
-        firstMarkerName: c.first_marker_name || null,
-        firstMarkerEmail: c.first_marker_email || null,
-        additionalFirstMarkers: remaining,
-        secondMarkerType: c.second_marker_type || null,
-        secondMarkerLecturerId: c.second_marker_lecturer_id || null,
-        secondMarkerName: c.second_marker_name || null,
-        secondMarkerEmail: c.second_marker_email || null,
-      });
-      toast.success('Additional 1st Marker removed.');
-      refetchAllocationCourses();
-      refetchCourses();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to remove additional 1st Marker.');
-    } finally {
-      setUpdatingCourseId(null);
-    }
-  };
-
-  const handleRemoveSecondMarkerInline = async (c: any) => {
-    const confirmed = await confirm({
-      title: 'Remove 2nd Marker?',
-      message: `Are you sure you want to remove the assigned 2nd Marker from ${c.course_code}?`,
-      confirmText: 'Remove 2nd Marker',
-      variant: 'destructive',
-    });
-    if (!confirmed) return;
-
-    setUpdatingCourseId(c.course_id);
-    try {
-      await apiClient.put(`/courses/${c.course_id}/markers`, {
-        isFirstMarkerSameAsInCharge: c.is_first_marker_same_as_in_charge ?? true,
-        inChargeLecturerId: c.in_charge_lecturer_id || null,
-        firstMarkerType: c.first_marker_type || null,
-        firstMarkerLecturerId: c.first_marker_lecturer_id || null,
-        firstMarkerName: c.first_marker_name || null,
-        firstMarkerEmail: c.first_marker_email || null,
-        additionalFirstMarkers: (c.additional_first_markers || []).map((m: any) => ({
-          id: m.id,
-          type: m.type,
-          lecturerId: m.lecturerId || null,
-          name: m.name || null,
-          email: m.email || null,
-        })),
-        secondMarkerType: null,
-        secondMarkerLecturerId: null,
-        secondMarkerName: null,
-        secondMarkerEmail: null,
-      });
-      toast.success('2nd Marker removed.');
-      refetchAllocationCourses();
-      refetchCourses();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to remove 2nd Marker.');
-    } finally {
-      setUpdatingCourseId(null);
-    }
-  };
 
   // Fetch Degrees for filtering
   const { data: degrees = [] } = useQuery({
@@ -906,17 +781,6 @@ export default function CoursesManagementPage() {
                             <td className="px-4 py-2.5 text-right whitespace-nowrap">
                               <div className="inline-flex items-center justify-end gap-2.5 whitespace-nowrap">
                                 <button
-                                  onClick={() => {
-                                    setAssignmentCourse(course);
-                                    setLecturerAssignmentOpen(true);
-                                  }}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-background border border-border/80 rounded-md text-[11px] font-bold text-foreground hover:bg-secondary/80 transition shadow-2xs cursor-pointer"
-                                  title="Assign Lecturers (Within or Outside Faculty)"
-                                >
-                                  <UserPlus className="h-3 w-3 text-primary" />
-                                  Lecturers
-                                </button>
-                                <button
                                   onClick={() => handleEditCourse(course)}
                                   className="inline-flex items-center gap-1 px-2.5 py-1 bg-background border border-border/80 rounded-md text-[11px] font-bold text-foreground hover:bg-secondary/80 transition shadow-2xs cursor-pointer"
                                 >
@@ -1115,8 +979,6 @@ export default function CoursesManagementPage() {
                             )
                           : 'Unassigned';
 
-                        const isRowUpdating = updatingCourseId === c.course_id;
-
                         return (
                           <tr key={c.course_id} className="hover:bg-secondary/15 transition-colors">
                             <td className="px-4 py-4 text-center font-mono text-muted-foreground font-bold text-xs">
@@ -1189,9 +1051,21 @@ export default function CoursesManagementPage() {
 
                             {/* Column: Course In-Charge */}
                             <td className="px-5 py-4 min-w-[180px]">
-                              <span className="text-xs font-medium text-foreground">
-                                {inChargeName}
-                              </span>
+                              <div className="flex flex-col gap-1 items-start">
+                                <span className="text-xs font-medium text-foreground">
+                                  {inChargeName}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMarkerCourse(c);
+                                    setMarkerDialogOpen(true);
+                                  }}
+                                  className="text-[11px] font-semibold text-primary hover:underline cursor-pointer flex items-center gap-1"
+                                >
+                                  <UserPlus className="h-3 w-3" /> Assign In-Charge
+                                </button>
+                              </div>
                             </td>
 
                             {/* Column: 1st Examiner / Marker (Displayed as name, not as colorful badge) */}
@@ -1207,15 +1081,6 @@ export default function CoursesManagementPage() {
                                         (Separate)
                                       </span>
                                     )}
-                                    <button
-                                      type="button"
-                                      disabled={isRowUpdating}
-                                      onClick={() => handleRemovePrimaryFirstMarker(c)}
-                                      className="text-muted-foreground hover:text-destructive transition cursor-pointer p-0.5"
-                                      title="Remove primary 1st Marker (keeps slot empty)"
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </button>
                                   </div>
                                 ) : (
                                   <span className="text-xs text-muted-foreground">Unassigned</span>
@@ -1240,17 +1105,6 @@ export default function CoursesManagementPage() {
                                       <span>
                                         #{idx + 2}: {addLabel}
                                       </span>
-                                      <button
-                                        type="button"
-                                        disabled={isRowUpdating}
-                                        onClick={() =>
-                                          handleRemoveAdditionalFirstMarkerInline(c, addM.id)
-                                        }
-                                        className="text-muted-foreground hover:text-destructive transition cursor-pointer p-0.5"
-                                        title="Remove additional 1st Marker"
-                                      >
-                                        <X className="h-3 w-3" />
-                                      </button>
                                     </div>
                                   );
                                 })}
@@ -1264,15 +1118,6 @@ export default function CoursesManagementPage() {
                                   <span className="text-xs font-medium text-foreground">
                                     {secondMarkerName}
                                   </span>
-                                  <button
-                                    type="button"
-                                    disabled={isRowUpdating}
-                                    onClick={() => handleRemoveSecondMarkerInline(c)}
-                                    className="text-muted-foreground hover:text-destructive transition cursor-pointer p-0.5"
-                                    title="Remove 2nd Marker"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
                                 </div>
                               ) : (
                                 <span className="text-xs text-muted-foreground">Unassigned</span>

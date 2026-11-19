@@ -32,6 +32,10 @@ import {
   Users,
   RotateCcw,
   GraduationCap,
+  Trash2,
+  ArrowRight,
+  Info,
+  Lock,
 } from 'lucide-react';
 
 // ==========================================
@@ -1039,8 +1043,12 @@ function StaffRegistrationView() {
 }
 
 // ==========================================
+
+// ==========================================
 // STUDENT COURSE REGISTRATION VIEW
 // ==========================================
+// ==========================================
+
 function StudentRegistrationView() {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -1076,19 +1084,6 @@ function StudentRegistrationView() {
     },
   });
 
-  // Fetch student profile to detect progression hold
-  const { data: profileData } = useQuery({
-    queryKey: ['profile'],
-    queryFn: async () => {
-      const response = await apiClient.get('/profile');
-      return response.data?.data;
-    },
-  });
-
-  const studentProgression = profileData?.student?.progression_status;
-  const isProgressionHold =
-    studentProgression === 'HOLD_REMEDIATION' || studentProgression === 'HOLD_BATCH_DEMOTION';
-
   // Register mutation
   const registerMutation = useMutation({
     mutationFn: async (courseIds: number[]) => {
@@ -1122,6 +1117,11 @@ function StudentRegistrationView() {
   });
 
   // Calculate credits
+  const currentRegisteredCredits = myRegistrations.reduce(
+    (sum: number, reg: any) => sum + parseFloat(reg.course.credit_value),
+    0,
+  );
+
   const selectedCourses = eligibleCourses.filter((c: any) =>
     selectedCourseIds.includes(c.course_id),
   );
@@ -1145,49 +1145,104 @@ function StudentRegistrationView() {
       if (match) {
         return `${match[1].slice(-2)}/${match[2].slice(-2)}`;
       }
-      return batch;
+      return String(batch);
     }
-    if (!ay) return '22/23';
-    const s = String(ay);
-    if (s.includes('/')) return s;
+    if (ay === undefined || ay === null || ay === '') return 'N/A';
+    const s = String(ay).trim();
+    const match = s.match(/(\d{2,4})[/-](\d{2,4})/);
+    if (match) {
+      const y1 = match[1].slice(-2);
+      const y2 = match[2].slice(-2);
+      return `${y1}/${y2}`;
+    }
     const num = parseInt(s, 10);
-    if (!isNaN(num) && num > 2000) {
+    if (!isNaN(num) && num > 1900 && num <= 2100) {
       const next = (num + 1) % 100;
       return `${String(num).slice(-2)}/${String(next).padStart(2, '0')}`;
     }
     return s;
   };
 
-  const handleSelectAll = () => {
-    if (selectedCourseIds.length === eligibleCourses.length) {
-      setSelectedCourseIds([]);
-    } else {
-      setSelectedCourseIds(eligibleCourses.map((c: any) => c.course_id));
+  const availableWorkload = React.useMemo(
+    () =>
+      eligibleCourses.reduce((sum: number, c: any) => sum + parseFloat(c.credit_value || '0'), 0),
+    [eligibleCourses],
+  );
+
+  const compulsoryRegisteredCredits = React.useMemo(
+    () =>
+      myRegistrations
+        .filter((r: any) => r.is_compulsory)
+        .reduce((sum: number, r: any) => sum + parseFloat(r.course?.credit_value || '0'), 0),
+    [myRegistrations],
+  );
+
+  const optionalRegisteredCredits = React.useMemo(
+    () =>
+      myRegistrations
+        .filter((r: any) => !r.is_compulsory)
+        .reduce((sum: number, r: any) => sum + parseFloat(r.course?.credit_value || '0'), 0),
+    [myRegistrations],
+  );
+
+  React.useEffect(() => {
+    if (eligibleCourses && eligibleCourses.length > 0) {
+      const compulsoryIds = eligibleCourses
+        .filter((c: any) => c.is_compulsory)
+        .map((c: any) => c.course_id);
+      setSelectedCourseIds((prev) => {
+        const next = new Set([...prev, ...compulsoryIds]);
+        return Array.from(next);
+      });
     }
-  };
+  }, [eligibleCourses]);
 
-  const handleSelectCompulsory = () => {
-    const compulsoryIds = eligibleCourses
-      .filter((c: any) => c.is_compulsory)
-      .map((c: any) => c.course_id);
-    setSelectedCourseIds(compulsoryIds);
-  };
-
-  const toggleCourse = (courseId: number) => {
+  const handleToggleCourse = (courseId: number) => {
+    const course = eligibleCourses.find((c: any) => c.course_id === courseId);
+    if (course?.is_compulsory) {
+      toast.info('Compulsory subjects are required and cannot be removed.');
+      return;
+    }
     setSelectedCourseIds((prev) =>
       prev.includes(courseId) ? prev.filter((id) => id !== courseId) : [...prev, courseId],
     );
   };
 
-  const handleRegister = () => {
-    if (selectedCourseIds.length === 0) {
-      toast.error('Please select at least one course to register.');
-      return;
+  const selectableEligibleIds = React.useMemo(
+    () => eligibleCourses.filter((c: any) => !c.is_compulsory).map((c: any) => c.course_id),
+    [eligibleCourses],
+  );
+
+  const isAllEligibleSelected =
+    selectableEligibleIds.length > 0 &&
+    selectableEligibleIds.every((id: number) => selectedCourseIds.includes(id));
+
+  const isIndeterminateEligible =
+    selectableEligibleIds.some((id: number) => selectedCourseIds.includes(id)) &&
+    !isAllEligibleSelected;
+
+  const toggleAllEligible = () => {
+    if (isAllEligibleSelected) {
+      setSelectedCourseIds((prev) => prev.filter((id) => !selectableEligibleIds.includes(id)));
+    } else {
+      setSelectedCourseIds((prev) => Array.from(new Set([...prev, ...selectableEligibleIds])));
     }
-    registerMutation.mutate(selectedCourseIds);
   };
 
-  const handleDrop = async (registrationId: number, courseCode: string) => {
+  const handleRegister = () => {
+    const compulsoryIds = eligibleCourses
+      .filter((c: any) => c.is_compulsory)
+      .map((c: any) => c.course_id);
+    const finalCourseIds = Array.from(new Set([...selectedCourseIds, ...compulsoryIds]));
+    if (finalCourseIds.length === 0) return;
+    registerMutation.mutate(finalCourseIds);
+  };
+
+  const handleDrop = async (registrationId: number, courseCode: string, isCompulsory?: boolean) => {
+    if (isCompulsory) {
+      toast.error('Compulsory courses cannot be dropped.');
+      return;
+    }
     const confirmed = await confirm({
       title: 'Drop Course?',
       message: `Are you sure you want to drop course ${courseCode}? You can re-register if the registration window is still open.`,
@@ -1199,44 +1254,54 @@ function StudentRegistrationView() {
     }
   };
 
+  const sortedMyRegistrations = React.useMemo(() => {
+    return [...myRegistrations].sort((a: any, b: any) => {
+      if (a.is_compulsory && !b.is_compulsory) return -1;
+      if (!a.is_compulsory && b.is_compulsory) return 1;
+      return 0;
+    });
+  }, [myRegistrations]);
+
+  const selectableRegistrationIds: number[] = sortedMyRegistrations
+    .filter((reg: any) => !reg.is_compulsory)
+    .map((reg: any) => reg.registration_id);
+
   const handleBulkDrop = async () => {
-    if (regSelection.selectedCount === 0) return;
+    const ids = Array.from(regSelection.selectedIds);
+    if (ids.length === 0) return;
+
     const confirmed = await confirm({
-      title: 'Drop Selected Courses?',
-      message: `Are you sure you want to drop ${regSelection.selectedCount} course(s)? You can re-register while the registration window remains open.`,
-      confirmText: `Drop (${regSelection.selectedCount})`,
+      title: `Drop ${ids.length} Course${ids.length === 1 ? '' : 's'}?`,
+      message: `Are you sure you want to drop ${ids.length} selected course${ids.length === 1 ? '' : 's'}? You can re-register while the registration window is open.`,
+      confirmText: `Drop ${ids.length}`,
       variant: 'destructive',
     });
     if (!confirmed) return;
 
     setIsBulkDropping(true);
     try {
-      const droppedIds: number[] = [];
-      const { deletedCount, failedCount, firstErrorMessage } = await runBulkDelete(
-        regSelection.selectedIds,
-        async (id) => {
-          await apiClient.delete(`/registrations/${id}`);
-          droppedIds.push(id);
-        },
-      );
-      if (deletedCount > 0) {
-        toast.success(`${deletedCount} course(s) dropped successfully.`);
-        regSelection.removeFromSelection(droppedIds);
-        queryClient.invalidateQueries({ queryKey: ['eligible-courses'] });
-        queryClient.invalidateQueries({ queryKey: ['my-registrations'] });
+      const result = await runBulkDelete(ids, async (regId) => {
+        await apiClient.delete(`/registrations/${regId}`);
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['eligible-courses'] });
+      queryClient.invalidateQueries({ queryKey: ['my-registrations'] });
+
+      if (result.deletedCount > 0) {
+        regSelection.clear();
       }
-      if (failedCount > 0) {
-        toast.error(
-          `${failedCount} course(s) could not be dropped${firstErrorMessage ? `: ${firstErrorMessage}` : '.'}`,
+
+      if (result.failedCount > 0) {
+        toast.warning(
+          `Dropped ${result.deletedCount} course(s), but ${result.failedCount} failed${result.firstErrorMessage ? `: ${result.firstErrorMessage}` : '.'}`,
         );
+      } else {
+        toast.success(`Dropped ${result.deletedCount} course(s) successfully.`);
       }
-      if (failedCount === 0) regSelection.clear();
     } finally {
       setIsBulkDropping(false);
     }
   };
-
-  const isWindowOpen = activePeriod && activePeriod.status === 'OPEN';
 
   const {
     visibleItems: visibleEligibleCourses,
@@ -1246,208 +1311,263 @@ function StudentRegistrationView() {
   } = useProgressiveList<any>(eligibleCourses);
 
   const {
-    visibleItems: visibleMyRegs,
+    visibleItems: visibleMyRegistrations,
     visibleCount: visibleMyRegsCount,
     totalCount: totalMyRegsCount,
     hasMore: hasMoreMyRegs,
-  } = useProgressiveList<any>(myRegistrations);
+  } = useProgressiveList<any>(sortedMyRegistrations);
+
+  // Loading Screen
+  const isGlobalLoading = isActivePeriodLoading || isEligibleLoading || isMyRegsLoading;
+  if (isGlobalLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 space-y-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground font-medium">
+          Loading Course Registration portal...
+        </p>
+      </div>
+    );
+  }
+
+  const isRegistrationWindowOpen = !!activePeriod;
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-6">
       {/* Title Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Course Registration</h1>
-          <p className="text-muted-foreground mt-1.5 text-sm">
-            Select and enroll in academic courses for your active semester within the published
-            registration window.
-          </p>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Course Registration</h1>
+        <p className="text-muted-foreground mt-1.5 text-sm">
+          Browse and register for academic modules, track your semester credit workload, and manage
+          enrollments.
+        </p>
       </div>
 
-      {/* Registration Period Alert / Banner */}
-      {isActivePeriodLoading ? (
-        <div className="p-5 bg-card/60 border border-border/70 rounded-2xl flex items-center gap-3">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          <span className="text-xs text-muted-foreground font-semibold">
-            Checking registration window availability...
-          </span>
-        </div>
-      ) : isProgressionHold ? (
-        <div className="p-5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-start gap-3">
-          <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+      {/* Window Status Banner */}
+      {!isRegistrationWindowOpen ? (
+        <div className="p-6 bg-amber-500/5 border border-amber-500/15 rounded-3xl flex gap-4 backdrop-blur-md">
+          <div className="p-3 bg-amber-500/10 text-amber-400 rounded-2xl h-fit shrink-0">
+            <AlertTriangle className="h-6 w-6" />
+          </div>
           <div>
-            <h4 className="text-sm font-bold text-amber-600 dark:text-amber-400">
-              Registration On Academic Hold
-            </h4>
-            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-              Your academic progression is currently on hold (
-              <strong>
-                {studentProgression === 'HOLD_REMEDIATION'
-                  ? 'Option 1: Remediation Period'
-                  : 'Option 2: Batch Demotion Hold'}
-              </strong>
-              ). You are not eligible to register for regular semester lecture modules at this time.
-              You may only sit for repeat exams or backlog components when repeat windows open.
+            <h4 className="text-lg font-bold text-foreground mb-1">Registration Window Closed</h4>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              There is currently no active registration period open for your academic semester.
+              Course enrollment limits and edits are suspended. If you require a manual override or
+              need to register past-due backlog modules, please contact the{' '}
+              <strong>Exam Division office</strong>.
             </p>
           </div>
         </div>
-      ) : isWindowOpen ? (
-        <div className="p-5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
+      ) : (
+        <div className="p-6 bg-primary/5 border border-primary/15 rounded-3xl flex flex-col md:flex-row gap-6 md:items-center justify-between backdrop-blur-md">
+          <div className="flex gap-4">
+            <div className="p-3 bg-primary/10 text-primary rounded-2xl h-fit shrink-0">
+              <Calendar className="h-6 w-6" />
+            </div>
             <div>
-              <h4 className="text-sm font-bold text-foreground">
-                Course Registration is Open (Batch{' '}
-                {formatAcademicYear(activePeriod.academic_year, activePeriod.batch)} - Semester{' '}
-                {activePeriod.semester})
-              </h4>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Window closes on{' '}
+              <div className="flex items-center gap-2">
+                <h4 className="text-lg font-bold text-foreground">Registration Period Active</h4>
+              </div>
+              <p className="text-sm text-muted-foreground mt-1 leading-normal">
+                Academic Year:{' '}
+                <strong>
+                  {formatAcademicYear(activePeriod.academic_year, activePeriod.batch)}
+                </strong>{' '}
+                | Semester: <strong>{activePeriod.semester}</strong>
+              </p>
+              <p className="text-xs text-muted-foreground/75 mt-1.5 flex items-center gap-1">
+                <Info className="h-3 w-3" />
+                Enrollment window closes on{' '}
                 {new Date(activePeriod.end_date).toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
                   year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
                 })}
               </p>
             </div>
           </div>
-          <span className="px-3 py-1 bg-emerald-500 text-white font-bold text-xs rounded-full uppercase tracking-wider self-start sm:self-auto shadow-sm">
-            Active Window
-          </span>
-        </div>
-      ) : (
-        <div className="p-5 bg-destructive/10 border border-destructive/20 rounded-2xl flex items-start gap-3">
-          <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-          <div>
-            <h4 className="text-sm font-bold text-destructive">Registration Window Closed</h4>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              There is currently no open course registration period for your batch and semester.
-              Course enrollment and drops are disabled.
-            </p>
+
+          {/* Credit WORKLOAD tracker */}
+          <div className="w-full md:w-80 bg-secondary/15 border border-border/40 p-4 rounded-2xl flex flex-col justify-center space-y-2">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-muted-foreground font-semibold">Available Workload</span>
+              <span className="font-mono font-bold text-foreground">
+                {availableWorkload.toFixed(1)} Credits
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-xs pt-2 border-t border-border/30">
+              <span className="text-muted-foreground font-semibold">Registered Workload</span>
+              <span className="font-mono font-bold text-primary">
+                {currentRegisteredCredits.toFixed(1)} Credits
+              </span>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Main Grid: Eligible Courses vs Selection Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Eligible Courses Table */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="bg-card/40 border border-border/80 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <BookOpen className="h-4 w-4 text-primary" />
-              <h3 className="text-sm font-bold text-foreground">
-                Available Courses ({eligibleCourses.length})
-              </h3>
-            </div>
-
-            {isWindowOpen && eligibleCourses.length > 0 && (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleSelectCompulsory}
-                  className="px-2.5 py-1 text-xs font-semibold bg-secondary hover:bg-secondary/80 rounded-lg text-secondary-foreground transition cursor-pointer"
-                >
-                  Select Compulsory
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSelectAll}
-                  className="px-2.5 py-1 text-xs font-semibold bg-primary/10 hover:bg-primary/20 text-primary rounded-lg transition cursor-pointer"
-                >
-                  {selectedCourseIds.length === eligibleCourses.length
-                    ? 'Deselect All'
-                    : 'Select All'}
-                </button>
-              </div>
-            )}
+      {/* 1. Available Modules List View */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-foreground">Available Modules</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Select the modules you wish to enroll in for this semester. Compulsory modules are
+              pre-selected and required.
+            </p>
           </div>
+        </div>
 
+        {!isRegistrationWindowOpen ? (
+          <div className="p-8 text-center bg-card/10 rounded-3xl border border-border/60 flex flex-col items-center justify-center">
+            <BookOpen className="h-10 w-10 text-muted-foreground/50 mb-3" />
+            <p className="text-sm font-semibold text-muted-foreground">
+              Registration not available
+            </p>
+            <p className="text-xs text-muted-foreground/75 mt-1 max-w-sm">
+              Modules list is disabled because the enrollment window is currently closed.
+            </p>
+          </div>
+        ) : eligibleCourses.length === 0 ? (
+          <div className="p-8 text-center bg-card/10 rounded-3xl border border-dashed border-border flex flex-col items-center justify-center">
+            <CheckCircle2 className="h-10 w-10 text-emerald-400/70 mb-3" />
+            <p className="text-sm font-semibold text-foreground">All Modules Registered</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+              You have registered for all offered modules in your semester. Check your registered
+              course list below.
+            </p>
+          </div>
+        ) : (
           <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
-                    {isWindowOpen && <th className="px-4 py-3.5 w-10 text-center">Select</th>}
-                    <th className="px-4 py-3.5 w-12 text-center">#</th>
-                    <th className="px-5 py-3.5">Course</th>
-                    <th className="px-4 py-3.5">Type</th>
-                    <th className="px-4 py-3.5 text-center">Credits</th>
-                    <th className="px-4 py-3.5">Offering Dept</th>
+                  <tr className="border-b border-border/80 text-[11px] font-bold text-muted-foreground uppercase tracking-wider bg-secondary/15">
+                    <th className="px-3.5 py-3 w-10 text-center">
+                      <SelectAllCheckbox
+                        checked={isAllEligibleSelected}
+                        indeterminate={isIndeterminateEligible}
+                        disabled={selectableEligibleIds.length === 0}
+                        onChange={toggleAllEligible}
+                        ariaLabel="Select all optional courses"
+                      />
+                    </th>
+                    <th className="px-3 py-3 w-10 text-center">#</th>
+                    <th className="px-4 py-3 whitespace-nowrap">Course Code</th>
+                    <th className="px-4 py-3">Course Name</th>
+                    <th className="px-4 py-3 whitespace-nowrap text-center">Credit Value</th>
+                    <th className="px-4 py-3 whitespace-nowrap">Status</th>
+                    <th className="px-4 py-3">Lecturer</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60 text-xs font-medium">
-                  {isEligibleLoading ? (
-                    <tr>
-                      <td colSpan={6} className="text-center py-16 text-muted-foreground">
-                        <span className="inline-flex items-center gap-2">
-                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                          Loading available courses...
-                        </span>
-                      </td>
-                    </tr>
-                  ) : eligibleCourses.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="text-center py-16 text-muted-foreground">
-                        No eligible courses found for your current degree or semester.
-                      </td>
-                    </tr>
-                  ) : (
-                    visibleEligibleCourses.map((c: any, idx: number) => {
-                      const isSelected = selectedCourseIds.includes(c.course_id);
-                      return (
-                        <tr
-                          key={c.course_id}
-                          onClick={() => isWindowOpen && toggleCourse(c.course_id)}
-                          className={`hover:bg-secondary/20 transition-colors ${
-                            isSelected ? 'bg-primary/5' : ''
-                          } ${isWindowOpen ? 'cursor-pointer' : ''}`}
+                  {visibleEligibleCourses.map((course: any, idx: number) => {
+                    const isSelected =
+                      selectedCourseIds.includes(course.course_id) || course.is_compulsory;
+                    return (
+                      <tr
+                        key={course.course_id}
+                        onClick={() => handleToggleCourse(course.course_id)}
+                        className={`hover:bg-secondary/15 transition-colors cursor-pointer ${
+                          isSelected ? 'bg-primary/5' : ''
+                        }`}
+                      >
+                        <td
+                          className="px-3.5 py-3 text-center"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          {isWindowOpen && (
-                            <td
-                              className="px-4 py-3.5 text-center"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleCourse(c.course_id)}
-                                className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
-                              />
-                            </td>
-                          )}
-                          <td className="px-4 py-3.5 text-center font-mono text-muted-foreground font-bold">
-                            {idx + 1}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <div className="font-bold text-foreground font-mono">
-                              {c.course_code}
-                            </div>
-                            <div className="text-muted-foreground text-xs">{c.course_name}</div>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                                c.is_compulsory
-                                  ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                                  : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                              }`}
-                            >
-                              {c.is_compulsory ? 'Compulsory' : 'Optional'}
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={course.is_compulsory}
+                            onChange={() => handleToggleCourse(course.course_id)}
+                            aria-label={`Select ${course.course_code}`}
+                            className="h-3.5 w-3.5 rounded border-border/80 accent-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
+                        </td>
+                        <td className="px-3 py-3 text-center font-mono text-muted-foreground font-bold text-xs">
+                          {idx + 1}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md uppercase">
+                            {course.course_code}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-bold text-foreground">
+                          {course.course_name}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-center font-mono font-semibold text-foreground">
+                          {parseFloat(course.credit_value).toFixed(1)}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {course.is_compulsory ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-amber-500/10 text-amber-500 dark:text-amber-400 border-amber-500/25 inline-flex items-center gap-1">
+                              <Lock className="h-3 w-3" />
+                              Compulsory
                             </span>
-                          </td>
-                          <td className="px-4 py-3.5 text-center font-mono font-bold text-foreground">
-                            {c.credit_value}
-                          </td>
-                          <td className="px-4 py-3.5 uppercase font-semibold text-muted-foreground">
-                            {c.department?.department_code || c.department?.department_name || '—'}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-blue-500/10 text-blue-500 dark:text-blue-400 border-blue-500/25 inline-flex items-center">
+                              Optional
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {course.lecturers?.length > 0
+                            ? course.lecturers
+                                .map((l: any) => l.lecturer?.user?.full_name)
+                                .join(', ')
+                            : 'No instructor assigned'}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Bottom Credits Summary & Confirmation Footer */}
+            <div className="p-4 bg-secondary/15 border-t border-border/80 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-4 text-xs">
+                <div className="flex items-center gap-1.5 bg-card/60 px-3 py-1.5 rounded-xl border border-border/60">
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded shrink-0">
+                    C
+                  </span>
+                  <span className="text-muted-foreground">Compulsory Selected:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {compulsorySelectedCredits.toFixed(1)} Credits
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-card/60 px-3 py-1.5 rounded-xl border border-border/60">
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded shrink-0">
+                    O
+                  </span>
+                  <span className="text-muted-foreground">Optional Selected:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {optionalSelectedCredits.toFixed(1)} Credits
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-primary/10 px-3 py-1.5 rounded-xl border border-primary/20">
+                  <span className="text-muted-foreground font-semibold">Total Selected:</span>
+                  <span className="font-mono font-bold text-primary text-sm">
+                    {selectedCredits.toFixed(1)} Credits
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleRegister}
+                disabled={registerMutation.isPending || selectedCourseIds.length === 0}
+                className="px-6 py-2.5 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/95 transition flex items-center justify-center gap-2 text-xs shadow-lg shadow-primary/20 disabled:opacity-50 cursor-pointer shrink-0"
+              >
+                {registerMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <span>Confirm Registration</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </button>
             </div>
 
             <ProgressiveLoadFooter
@@ -1458,192 +1578,204 @@ function StudentRegistrationView() {
               entityLabel="courses"
             />
           </div>
+        )}
+      </div>
+
+      {/* 2. Registered Modules List View */}
+      <div className="space-y-4 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-bold text-foreground">My Registered Courses</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Modules currently confirmed on your academic record for this semester.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isRegistrationWindowOpen && (
+              <BulkDeleteButton
+                count={regSelection.selectedCount}
+                isDeleting={isBulkDropping}
+                onClick={handleBulkDrop}
+                label="Drop Selected"
+              />
+            )}
+          </div>
         </div>
 
-        {/* Right Column: Enrollment Cart & Summary */}
-        <div className="space-y-4">
-          <div className="bg-card border border-border/80 rounded-2xl p-5 shadow-sm space-y-5">
-            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-primary" /> Selection Summary
-            </h3>
+        {myRegistrations.length === 0 ? (
+          <div className="p-8 text-center bg-card/10 rounded-3xl border border-border/60 flex flex-col items-center justify-center">
+            <BookOpen className="h-8 w-8 text-muted-foreground/45 mb-2" />
+            <p className="text-sm font-semibold text-muted-foreground">No course registrations</p>
+            <p className="text-xs text-muted-foreground/75 mt-0.5">
+              You are not enrolled in any courses for this semester yet.
+            </p>
+          </div>
+        ) : (
+          <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-border/80 text-[11px] font-bold text-muted-foreground uppercase tracking-wider bg-secondary/15">
+                    {isRegistrationWindowOpen && (
+                      <th className="px-3.5 py-3 w-10 text-center">
+                        <SelectAllCheckbox
+                          checked={regSelection.isAllSelected(selectableRegistrationIds)}
+                          indeterminate={regSelection.isIndeterminate(selectableRegistrationIds)}
+                          disabled={isBulkDropping || selectableRegistrationIds.length === 0}
+                          onChange={() => regSelection.toggleAll(selectableRegistrationIds)}
+                          ariaLabel="Select all registered courses"
+                        />
+                      </th>
+                    )}
+                    <th className="px-3 py-3 w-10 text-center">#</th>
+                    <th className="px-4 py-3 whitespace-nowrap">Course Code</th>
+                    <th className="px-4 py-3">Course Name</th>
+                    <th className="px-4 py-3 whitespace-nowrap text-center">Credit Value</th>
+                    <th className="px-4 py-3 whitespace-nowrap">Status</th>
+                    <th className="px-4 py-3">Lecturer</th>
+                    {isRegistrationWindowOpen && (
+                      <th className="px-4 py-3 text-right whitespace-nowrap">Action</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60 text-xs font-medium">
+                  {visibleMyRegistrations.map((reg: any, idx: number) => {
+                    const isComp = Boolean(reg.is_compulsory);
+                    return (
+                      <tr
+                        key={reg.registration_id}
+                        className={`hover:bg-secondary/15 transition-colors ${
+                          regSelection.isSelected(reg.registration_id) ? 'bg-primary/5' : ''
+                        }`}
+                      >
+                        {isRegistrationWindowOpen && (
+                          <td className="px-3.5 py-3 text-center">
+                            {isComp ? (
+                              <div
+                                className="h-4 w-4 mx-auto flex items-center justify-center text-amber-400"
+                                title="Compulsory course"
+                              >
+                                <Lock className="h-3.5 w-3.5" />
+                              </div>
+                            ) : (
+                              <input
+                                type="checkbox"
+                                checked={regSelection.isSelected(reg.registration_id)}
+                                disabled={isBulkDropping}
+                                onChange={() => regSelection.toggle(reg.registration_id)}
+                                aria-label={`Select ${reg.course.course_code}`}
+                                className="h-3.5 w-3.5 rounded border-border/80 accent-primary cursor-pointer disabled:opacity-50"
+                              />
+                            )}
+                          </td>
+                        )}
+                        <td className="px-3 py-3 text-center font-mono text-muted-foreground font-bold text-xs">
+                          {idx + 1}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="text-[10px] font-bold font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md uppercase">
+                            {reg.course.course_code}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-bold text-foreground">
+                          {reg.course.course_name}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-center font-mono font-semibold text-foreground">
+                          {parseFloat(reg.course.credit_value).toFixed(1)}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {isComp ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-amber-500/10 text-amber-500 dark:text-amber-400 border-amber-500/25 inline-flex items-center gap-1">
+                              <Lock className="h-3 w-3" />
+                              Compulsory
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-blue-500/10 text-blue-500 dark:text-blue-400 border-blue-500/25 inline-flex items-center">
+                              Optional
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {reg.course.lecturers?.length > 0
+                            ? reg.course.lecturers
+                                .map((l: any) => l.lecturer?.user?.full_name)
+                                .join(', ')
+                            : 'TBD'}
+                        </td>
+                        {isRegistrationWindowOpen && (
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
+                            {isComp ? (
+                              <span
+                                className="px-2.5 py-1 text-[10px] font-semibold text-muted-foreground bg-secondary/30 rounded-lg inline-flex items-center gap-1 cursor-default select-none border border-border/40"
+                                title="Compulsory courses cannot be dropped"
+                              >
+                                <Lock className="h-3 w-3 text-amber-400" />
+                                Required
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() =>
+                                  handleDrop(
+                                    reg.registration_id,
+                                    reg.course.course_code,
+                                    reg.is_compulsory,
+                                  )
+                                }
+                                disabled={dropMutation.isPending}
+                                className="p-1.5 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition disabled:opacity-50 cursor-pointer"
+                                title="Drop course"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between py-1.5 border-b border-border/60">
-                <span className="text-muted-foreground">Courses Selected</span>
-                <span className="font-bold text-foreground font-mono">
-                  {selectedCourseIds.length}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1.5 border-b border-border/60">
-                <span className="text-muted-foreground">Compulsory Credits</span>
-                <span className="font-bold text-amber-500 font-mono">
-                  {compulsorySelectedCredits.toFixed(1)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1.5 border-b border-border/60">
-                <span className="text-muted-foreground">Optional Credits</span>
-                <span className="font-bold text-blue-400 font-mono">
-                  {optionalSelectedCredits.toFixed(1)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-border/80">
-                <span className="font-bold text-foreground">Total Selected Credits</span>
-                <span className="font-bold text-primary font-mono text-sm">
-                  {selectedCredits.toFixed(1)}
-                </span>
+            {/* Registered Courses Credit Summary Footer */}
+            <div className="p-4 bg-secondary/15 border-t border-border/70 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                <div className="flex items-center gap-1.5 bg-card/60 px-3 py-1.5 rounded-xl border border-border/60">
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded shrink-0">
+                    C
+                  </span>
+                  <span className="text-muted-foreground">Compulsory Registered:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {compulsoryRegisteredCredits.toFixed(1)} Credits
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-card/60 px-3 py-1.5 rounded-xl border border-border/60">
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded shrink-0">
+                    O
+                  </span>
+                  <span className="text-muted-foreground">Optional Registered:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {optionalRegisteredCredits.toFixed(1)} Credits
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-primary/10 px-3 py-1.5 rounded-xl border border-primary/20">
+                  <span className="text-muted-foreground font-semibold">Total Registered:</span>
+                  <span className="font-mono font-bold text-primary text-sm">
+                    {currentRegisteredCredits.toFixed(1)} Credits
+                  </span>
+                </div>
               </div>
             </div>
 
-            <button
-              type="button"
-              disabled={
-                !isWindowOpen || selectedCourseIds.length === 0 || registerMutation.isPending
-              }
-              onClick={handleRegister}
-              className="w-full py-2.5 px-4 bg-primary text-primary-foreground font-bold text-xs rounded-xl hover:bg-primary/95 transition shadow-lg shadow-primary/20 flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            >
-              {registerMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Registering Courses...
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4" /> Confirm & Register Selected
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Currently Registered Courses Section */}
-      <div className="space-y-4 pt-4">
-        <div className="bg-card/40 border border-border/80 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-            <h3 className="text-sm font-bold text-foreground">
-              Currently Registered Courses ({myRegistrations.length})
-            </h3>
-          </div>
-
-          {isWindowOpen && (
-            <BulkDeleteButton
-              count={regSelection.selectedCount}
-              isDeleting={isBulkDropping}
-              onClick={handleBulkDrop}
+            <ProgressiveLoadFooter
+              loadedCount={visibleMyRegsCount}
+              totalCount={totalMyRegsCount}
+              isLoadingMore={hasMoreMyRegs}
+              hasMore={hasMoreMyRegs}
+              entityLabel="registered courses"
             />
-          )}
-        </div>
-
-        <div className="bg-card/25 border border-border/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-border/80 text-xs font-bold text-muted-foreground uppercase bg-secondary/15">
-                  {isWindowOpen && (
-                    <th className="px-4 py-3.5 w-10 text-center">
-                      <SelectAllCheckbox
-                        checked={regSelection.isAllSelected(
-                          myRegistrations.map((r: any) => r.registration_id),
-                        )}
-                        indeterminate={regSelection.isIndeterminate(
-                          myRegistrations.map((r: any) => r.registration_id),
-                        )}
-                        disabled={myRegistrations.length === 0}
-                        onChange={() =>
-                          regSelection.toggleAll(myRegistrations.map((r: any) => r.registration_id))
-                        }
-                        ariaLabel="Select all registered courses"
-                      />
-                    </th>
-                  )}
-                  <th className="px-4 py-3.5 w-12 text-center">#</th>
-                  <th className="px-5 py-3.5">Course Code</th>
-                  <th className="px-6 py-3.5">Course Name</th>
-                  <th className="px-4 py-3.5">Type</th>
-                  <th className="px-4 py-3.5 text-center">Credits</th>
-                  {isWindowOpen && <th className="px-4 py-3.5 text-right">Action</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60 text-xs font-medium">
-                {isMyRegsLoading ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-16 text-muted-foreground">
-                      <span className="inline-flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                        Loading current registrations...
-                      </span>
-                    </td>
-                  </tr>
-                ) : myRegistrations.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-16 text-muted-foreground">
-                      You have not registered for any courses in this semester yet.
-                    </td>
-                  </tr>
-                ) : (
-                  visibleMyRegs.map((reg: any, idx: number) => (
-                    <tr
-                      key={reg.registration_id}
-                      className="hover:bg-secondary/15 transition-colors"
-                    >
-                      {isWindowOpen && (
-                        <td className="px-4 py-3.5 text-center">
-                          <input
-                            type="checkbox"
-                            checked={regSelection.isSelected(reg.registration_id)}
-                            onChange={() => regSelection.toggle(reg.registration_id)}
-                            className="h-4 w-4 rounded border-border/80 accent-primary cursor-pointer"
-                          />
-                        </td>
-                      )}
-                      <td className="px-4 py-3.5 text-center font-mono text-muted-foreground font-bold">
-                        {idx + 1}
-                      </td>
-                      <td className="px-5 py-3.5 font-bold font-mono text-foreground">
-                        {reg.course.course_code}
-                      </td>
-                      <td className="px-6 py-3.5 text-foreground">{reg.course.course_name}</td>
-                      <td className="px-4 py-3.5">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                            reg.course.is_compulsory
-                              ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                              : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                          }`}
-                        >
-                          {reg.course.is_compulsory ? 'Compulsory' : 'Optional'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-center font-mono font-bold text-foreground">
-                        {reg.course.credit_value}
-                      </td>
-                      {isWindowOpen && (
-                        <td className="px-4 py-3.5 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleDrop(reg.registration_id, reg.course.course_code)}
-                            className="text-[11px] font-bold text-red-500 hover:text-red-600 transition cursor-pointer px-1 py-0.5"
-                          >
-                            Drop
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
           </div>
-
-          <ProgressiveLoadFooter
-            loadedCount={visibleMyRegsCount}
-            totalCount={totalMyRegsCount}
-            isLoadingMore={hasMoreMyRegs}
-            hasMore={hasMoreMyRegs}
-            entityLabel="registered courses"
-          />
-        </div>
+        )}
       </div>
     </div>
   );
